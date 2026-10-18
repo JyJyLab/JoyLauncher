@@ -1,0 +1,43 @@
+name: release
+
+# v1.2.3 형식의 태그를 올리면: 그 버전으로 빌드 → SHA-256 → 깃헙 릴리스 생성
+# 런처의 자동 업데이트는 최신 릴리스의 joylauncher.nro (+ .sha256) 를 받아 검증 후 설치한다.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install portlibs
+        run: |
+          dkp-pacman -Syu --noconfirm --needed switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-ffmpeg switch-curl switch-dav1d switch-freetype switch-harfbuzz switch-libpng switch-libjpeg-turbo switch-libwebp switch-bzip2 switch-zlib
+          (type -p zip >/dev/null) || (apt-get update -qq && apt-get install -y -qq zip)
+      - name: Build
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          make -j"$(nproc)" APP_VERSION="$VER"
+          sha256sum joylauncher.nro | cut -d' ' -f1 > joylauncher.nro.sha256
+          mkdir -p pkg/switch/joylauncher
+          cp joylauncher.nro pkg/switch/joylauncher/
+          cp docs/설명서.md OFL.txt LICENSE pkg/
+          (cd pkg && zip -qr "../JoyLauncher_${VER}.zip" .)
+          echo "VER=$VER" >> "$GITHUB_ENV"
+      - name: Release notes
+        run: |
+          if [ -f "docs/releases/v${VER}.md" ]; then cp "docs/releases/v${VER}.md" notes.md; else echo "Joy Launcher v${VER}" > notes.md; fi
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Joy Launcher v${{ env.VER }}
+          body_path: notes.md
+          files: |
+            joylauncher.nro
+            joylauncher.nro.sha256
+            JoyLauncher_${{ env.VER }}.zip
