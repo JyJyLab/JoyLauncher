@@ -954,6 +954,16 @@ int main(int argc, char **argv) {
         else if (s == "--cat" && i + 1 < argc) wantCat = atoi(argv[++i]);  // 카테고리 화면 커서
         else if (s == "--opt" && i + 1 < argc) wantOpt = atoi(argv[++i]);
         else if (s == "--applet") gAppletMode = true;  // 애플릿 모드 표시 확인용
+        else if (s == "--update-install") {  // JOY_SDROOT 의 가짜 SD 에 최신 릴리스 설치 시험
+            UpdateInfo u;
+            std::string err;
+            bool ok = FetchLatestRelease(u, err) &&
+                      DownloadAndInstall(u, gSelfNro, CurrentHbmenu() == HbKind::Self, err,
+                                         [](long long g, long long t) { return true; });
+            printf("install ok=%d version=%s hbmenu=%d err=%s\n", ok, u.version.c_str(), CurrentHbmenu() == HbKind::Self,
+                   err.c_str());
+            return ok ? 0 : 1;
+        }
         else if (s == "--update-check") {  // 깃헙 최신 릴리스 조회 결과 출력
             UpdateInfo u;
             std::string err;

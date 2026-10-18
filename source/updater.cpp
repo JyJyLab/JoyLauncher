@@ -340,25 +340,52 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
     std::string hex = d.sha.Hex();
     if (info.sha256.empty()) return fail("검증 정보(SHA-256)가 없어 설치하지 않았습니다");
     if (hex != info.sha256) return fail("검증 실패 (SHA-256 불일치)");
+    // 실행 중인 nro(자기 자신 또는 /hbmenu.nro)는 romfs 때문에 열려 있어 지우거나 바꿀 수 없다.
+    // 글꼴 등은 이미 메모리에 올라와 있으므로 romfs 를 닫고 교체한다. 실패하면 다시 연다 (성공하면 곧바로 다시 시작)
+    struct RomfsReleased {
+        bool keepClosed = false;
+        RomfsReleased() {
+#ifdef __SWITCH__
+            romfsExit();
+#endif
+        }
+        ~RomfsReleased() {
+#ifdef __SWITCH__
+            if (!keepClosed) romfsInit();
+#endif
+        }
+    } romfsGuard;
     // 교체: 현재 파일은 .old 로 남겨 두고 새 파일로
     std::string old = self + ".old";
     remove(old.c_str());
-    rename(self.c_str(), old.c_str());
-    if (rename(tmp.c_str(), self.c_str()) != 0) {
-        rename(old.c_str(), self.c_str());
+    if (rename(self.c_str(), old.c_str()) != 0) CopyFile(self, old);  // 백업 (이름 바꾸기가 안 되면 복사)
+    remove(self.c_str());
+    if (rename(tmp.c_str(), self.c_str()) != 0 && !CopyFile(tmp, self)) {
+        CopyFile(old, self);
         return fail("파일 교체 실패");
     }
+    remove(tmp.c_str());
     if (alsoHbmenu) {
         std::string hb = SdPath("/hbmenu.nro"), hbTmp = hb + ".new";
-        if (!CopyFile(self, hbTmp) || (remove(hb.c_str()), rename(hbTmp.c_str(), hb.c_str()) != 0)) {
-            remove(hbTmp.c_str());
-            err = "런처는 업데이트했지만 기본 홈브루 메뉴(/hbmenu.nro) 교체에 실패했습니다";
+        remove(hbTmp.c_str());
+        bool hbOk = CopyFile(self, hbTmp);
+        if (hbOk) {
+            remove(hb.c_str());
+            hbOk = rename(hbTmp.c_str(), hb.c_str()) == 0;
+            // 이름 바꾸기가 안 되면 내용 복사로 덮어쓰기
+            if (!hbOk) hbOk = CopyFile(hbTmp, hb);
+        }
+        remove(hbTmp.c_str());
+        if (!hbOk) {
+            err = "런처는 업데이트했지만 기본 홈브루 메뉴(/hbmenu.nro) 교체에 실패했습니다. "
+                  "옵션 창의 \"기본 홈브루 메뉴를 Joy Launcher 로 업데이트\" 로 다시 시도하세요";
             return false;
         }
     }
 #ifdef __SWITCH__
     if (FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc")) fsFsCommit(fs);
 #endif
+    romfsGuard.keepClosed = true;
     return true;
 }
 
