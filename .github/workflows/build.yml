@@ -12,9 +12,9 @@ jobs:
     container: devkitpro/devkita64:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install portlibs
+      - name: Check portlibs (devkitpro/devkita64 이미지에 포함, devkitPro 서버는 CI 다운로드를 막음)
         run: |
-          dkp-pacman -Syu --noconfirm --needed switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-ffmpeg switch-curl switch-dav1d switch-freetype switch-harfbuzz switch-libpng switch-libjpeg-turbo switch-libwebp switch-bzip2 switch-zlib
+          for l in libSDL2 libSDL2_image libSDL2_ttf libavformat libcurl libdav1d; do test -f /opt/devkitpro/portlibs/switch/lib/$l.a || { echo "missing $l"; exit 1; }; done
       - name: Build
         run: make -j"$(nproc)"
       - uses: actions/upload-artifact@v4
