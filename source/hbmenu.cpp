@@ -100,6 +100,19 @@ static bool CopyFile(const std::string &src, const std::string &dst) {
     return ok;
 }
 
+// /hbmenu.nro 에 복사. 런처가 /hbmenu.nro 로 실행 중이면 romfs 가 그 파일을 열어 두고 있어 덮어쓸 수 없으므로
+// 잠시 romfs 를 닫고 복사한다 (글꼴 등은 이미 메모리에 있음)
+static bool CopyToHbmenu(const std::string &src) {
+#ifdef __SWITCH__
+    romfsExit();
+#endif
+    bool ok = CopyFile(src, kHb);
+#ifdef __SWITCH__
+    romfsInit();
+#endif
+    return ok;
+}
+
 static void MkdirP(const std::string &sdDir) {
     std::string cur;
     std::stringstream ss(sdDir);
@@ -147,7 +160,7 @@ bool InstallAsHbmenu(const std::string &selfNro, std::string &msg) {
     HbKind kind = CurrentHbmenu();
     if (kind == HbKind::Self) {
         // 이전 버전(Temp Launcher)이 설치돼 있으면 새 버전으로 교체만
-        if (NroTitle(kHb) != "Joy Launcher" && !CopyFile(selfNro, kHb)) { msg = "Joy Launcher 복사 실패"; return false; }
+        if (NroTitle(kHb) != "Joy Launcher" && !CopyToHbmenu(selfNro)) { msg = "Joy Launcher 복사 실패"; return false; }
         msg = "Joy Launcher 가 기본 메뉴입니다";
         return true;
     }
@@ -168,7 +181,7 @@ bool InstallAsHbmenu(const std::string &selfNro, std::string &msg) {
     } else {
         prev = "none";
     }
-    if (!CopyFile(selfNro, kHb)) { msg = "Joy Launcher 복사 실패"; return false; }
+    if (!CopyToHbmenu(selfNro)) { msg = "Joy Launcher 복사 실패"; return false; }
     MkdirP("/JoyLauncher");
     std::ofstream(SdPath(kPrev)) << prev << "\n";
     msg = std::string("기본 메뉴로 설정 완료 (이전: ") + HbKindName(kind) + ")";
@@ -189,17 +202,17 @@ bool RestoreHbmenu(std::string &msg) {
     if (prev.empty()) prev = SdExists(kSphaira) ? "sphaira:1" : (SdExists(kNxBackup) ? "nx-hbmenu" : "");
     bool ok = false;
     if (prev.rfind("sphaira", 0) == 0) {
-        ok = SdExists(kSphaira) && CopyFile(kSphaira, kHb);
+        ok = SdExists(kSphaira) && CopyToHbmenu(kSphaira);
         if (ok) {
             size_t c = prev.find(':');
             WriteSphairaReplace(c == std::string::npos ? "1" : prev.substr(c + 1));
         }
-        msg = ok ? "sphaira 로 되돌렸습니다" : "sphaira 가 없어 되돌릴 수 없습니다";
+        msg = ok ? "sphaira 로 되돌렸습니다" : (SdExists(kSphaira) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "sphaira 가 없어 되돌릴 수 없습니다");
     } else if (prev == "nx-hbmenu") {
-        ok = SdExists(kNxBackup) && CopyFile(kNxBackup, kHb);
-        msg = ok ? "nx-hbmenu 로 되돌렸습니다" : "/switch/hbmenu.nro 가 없어 되돌릴 수 없습니다";
+        ok = SdExists(kNxBackup) && CopyToHbmenu(kNxBackup);
+        msg = ok ? "nx-hbmenu 로 되돌렸습니다" : (SdExists(kNxBackup) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "/switch/hbmenu.nro 가 없어 되돌릴 수 없습니다");
     } else if (prev == "other") {
-        ok = SdExists(kOtherBackup) && CopyFile(kOtherBackup, kHb);
+        ok = SdExists(kOtherBackup) && CopyToHbmenu(kOtherBackup);
         msg = ok ? "이전 메뉴로 되돌렸습니다" : "백업 파일이 없어 되돌릴 수 없습니다";
     } else {
         msg = "되돌릴 메뉴 정보가 없습니다";

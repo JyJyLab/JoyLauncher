@@ -27,6 +27,12 @@ const char *kLatestApi = "https://api.github.com/repos/JyJyLab/JoyLauncher/relea
 const char *kAssetName = "joylauncher.nro";
 const char *kUserAgent = "JoyLauncher-Updater";
 
+bool gCurlReady = false;  // 백그라운드 확인이 끝난 뒤에만 설치하므로 동시 호출 없음
+volatile bool gAbort = false;  // 종료 중: 진행 중인 통신을 바로 끊음
+
+// 통신 중 주기적으로 불림. 종료 중이면 중단
+int AbortCb(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t) { return gAbort ? 1 : 0; }
+
 // ---------------------------------------------------------------- 네트워크 초기화 (스위치)
 struct NetGuard {
     bool ok = true;
@@ -34,8 +40,7 @@ struct NetGuard {
 #ifdef __SWITCH__
         ok = R_SUCCEEDED(socketInitializeDefault());
 #endif
-        static bool curlReady = false;  // 백그라운드 확인이 끝난 뒤에만 설치하므로 동시 호출 없음
-        if (ok && !curlReady) { curl_global_init(CURL_GLOBAL_DEFAULT); curlReady = true; }
+        if (ok && !gCurlReady) { curl_global_init(CURL_GLOBAL_DEFAULT); gCurlReady = true; }
     }
     ~NetGuard() {
 #ifdef __SWITCH__
@@ -58,8 +63,10 @@ bool HttpGet(const std::string &url, std::string &out, std::string &err) {
     curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
     curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 8L);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 6L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
+    curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, AbortCb);
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteString);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &out);
     CURLcode r = curl_easy_perform(c);
@@ -410,4 +417,16 @@ void UpdateCheckStop() {
     if (!gThread) return;
     SDL_WaitThread(gThread, nullptr);
     gThread = nullptr;
+}
+
+void UpdaterShutdown() {
+    // 스레드를 정리하지 않고 끝내면 그 스레드 스택(힙에서 빌려 다른 주소로 매핑됨)이 풀리지 않아,
+    // 같은 hbloader 에서 다음에 실행되는 프로그램(게임 코어·sphaira·ezremote 등)의 메모리가 깨진다.
+    gAbort = true;
+    UpdateCheckStop();
+    gAbort = false;
+    if (gCurlReady) {
+        curl_global_cleanup();  // curl 이 연 ssl·nifm·csrng 서비스 닫기
+        gCurlReady = false;
+    }
 }

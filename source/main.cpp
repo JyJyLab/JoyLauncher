@@ -1358,6 +1358,7 @@ int main(int argc, char **argv) {
         SDL_RenderPresent(a.r);
     }
     FrameWorkerStop();
+    UpdaterShutdown();
     a.text.Clear();
     a.images.Clear();
     a.backs.Clear();

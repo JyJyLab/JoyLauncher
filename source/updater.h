@@ -27,3 +27,5 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
 void UpdateCheckStart();
 int UpdateCheckState(UpdateInfo &info, std::string &err);
 void UpdateCheckStop();
+// 런처를 끝내거나 다른 프로그램을 실행하기 전에 반드시 호출: 확인 스레드 정리 + 네트워크 서비스 닫기
+void UpdaterShutdown();
