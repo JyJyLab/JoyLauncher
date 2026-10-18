@@ -13,6 +13,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
+    env:
+      LC_ALL: C.UTF-8   # zip 이 한글 파일 이름(설명서.md)을 UTF-8 로 저장하도록
+      LANG: C.UTF-8
     steps:
       - uses: actions/checkout@v4
       - name: Check portlibs (devkitpro/devkita64 이미지에 포함, devkitPro 서버는 CI 다운로드를 막음)
@@ -27,7 +30,7 @@ jobs:
           mkdir -p pkg/switch/joylauncher
           cp joylauncher.nro pkg/switch/joylauncher/
           cp docs/설명서.md OFL.txt LICENSE pkg/
-          (cd pkg && zip -qr "../JoyLauncher_${VER}.zip" .)
+          (cd pkg && zip -qr -UN=UTF8 "../JoyLauncher_${VER}.zip" .)
           echo "VER=$VER" >> "$GITHUB_ENV"
       - name: Release notes
         run: |
