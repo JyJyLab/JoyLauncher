@@ -1,4 +1,5 @@
 #include "hbmenu.h"
+#include "i18n.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -77,8 +78,8 @@ const char *HbKindName(HbKind k) {
     case HbKind::Self: return "Joy Launcher";
     case HbKind::NxHbmenu: return "nx-hbmenu";
     case HbKind::Sphaira: return "sphaira";
-    case HbKind::Other: return "기타";
-    default: return "없음";
+    case HbKind::Other: return T("기타");
+    default: return T("없음");
     }
 }
 
@@ -160,31 +161,31 @@ bool InstallAsHbmenu(const std::string &selfNro, std::string &msg) {
     HbKind kind = CurrentHbmenu();
     if (kind == HbKind::Self) {
         // 이전 버전(Temp Launcher)이 설치돼 있으면 새 버전으로 교체만
-        if (NroTitle(kHb) != "Joy Launcher" && !CopyToHbmenu(selfNro)) { msg = "Joy Launcher 복사 실패"; return false; }
-        msg = "Joy Launcher 가 기본 메뉴입니다";
+        if (NroTitle(kHb) != "Joy Launcher" && !CopyToHbmenu(selfNro)) { msg = T("Joy Launcher 복사 실패"); return false; }
+        msg = T("Joy Launcher 가 기본 메뉴입니다");
         return true;
     }
     std::string prev;
     if (kind == HbKind::NxHbmenu) {
-        if (!SdExists(kNxBackup) && !CopyFile(kHb, kNxBackup)) { msg = "nx-hbmenu 백업 실패"; return false; }
+        if (!SdExists(kNxBackup) && !CopyFile(kHb, kNxBackup)) { msg = T("nx-hbmenu 백업 실패"); return false; }
         prev = "nx-hbmenu";
     } else if (kind == HbKind::Sphaira) {
         MkdirP("/switch/sphaira");
-        if (!SdExists(kSphaira) && !CopyFile(kHb, kSphaira)) { msg = "sphaira 백업 실패"; return false; }
+        if (!SdExists(kSphaira) && !CopyFile(kHb, kSphaira)) { msg = T("sphaira 백업 실패"); return false; }
         std::string old = ReadSphairaReplace();
         // sphaira 가 다시 /hbmenu.nro 를 덮어쓰지 않도록
-        if (!WriteSphairaReplace("0")) { msg = "sphaira 설정 변경 실패"; return false; }
+        if (!WriteSphairaReplace("0")) { msg = T("sphaira 설정 변경 실패"); return false; }
         prev = "sphaira:" + (old.empty() ? std::string("1") : old);
     } else if (kind == HbKind::Other) {
-        if (!CopyFile(kHb, kOtherBackup)) { msg = "기존 메뉴 백업 실패"; return false; }
+        if (!CopyFile(kHb, kOtherBackup)) { msg = T("기존 메뉴 백업 실패"); return false; }
         prev = "other";
     } else {
         prev = "none";
     }
-    if (!CopyToHbmenu(selfNro)) { msg = "Joy Launcher 복사 실패"; return false; }
+    if (!CopyToHbmenu(selfNro)) { msg = T("Joy Launcher 복사 실패"); return false; }
     MkdirP("/JoyLauncher");
     std::ofstream(SdPath(kPrev)) << prev << "\n";
-    msg = std::string("기본 메뉴로 설정 완료 (이전: ") + HbKindName(kind) + ")";
+    msg = Fmt(T("기본 메뉴로 설정 완료 (이전: %s)"), HbKindName(kind));
     return true;
 }
 
@@ -207,15 +208,15 @@ bool RestoreHbmenu(std::string &msg) {
             size_t c = prev.find(':');
             WriteSphairaReplace(c == std::string::npos ? "1" : prev.substr(c + 1));
         }
-        msg = ok ? "sphaira 로 되돌렸습니다" : (SdExists(kSphaira) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "sphaira 가 없어 되돌릴 수 없습니다");
+        msg = T(ok ? "sphaira 로 되돌렸습니다" : (SdExists(kSphaira) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "sphaira 가 없어 되돌릴 수 없습니다"));
     } else if (prev == "nx-hbmenu") {
         ok = SdExists(kNxBackup) && CopyToHbmenu(kNxBackup);
-        msg = ok ? "nx-hbmenu 로 되돌렸습니다" : (SdExists(kNxBackup) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "/switch/hbmenu.nro 가 없어 되돌릴 수 없습니다");
+        msg = T(ok ? "nx-hbmenu 로 되돌렸습니다" : (SdExists(kNxBackup) ? "/hbmenu.nro 를 바꾸지 못했습니다" : "/switch/hbmenu.nro 가 없어 되돌릴 수 없습니다"));
     } else if (prev == "other") {
         ok = SdExists(kOtherBackup) && CopyToHbmenu(kOtherBackup);
-        msg = ok ? "이전 메뉴로 되돌렸습니다" : "백업 파일이 없어 되돌릴 수 없습니다";
+        msg = T(ok ? "이전 메뉴로 되돌렸습니다" : "백업 파일이 없어 되돌릴 수 없습니다");
     } else {
-        msg = "되돌릴 메뉴 정보가 없습니다";
+        msg = T("되돌릴 메뉴 정보가 없습니다");
     }
     if (ok) {
         remove(SdPath(kPrev).c_str());

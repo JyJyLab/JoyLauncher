@@ -46,14 +46,14 @@ ROMFS		:=	romfs
 
 APP_TITLE   := Joy Launcher
 APP_AUTHOR  := Joy
-APP_VERSION	:=	0.7.3
+APP_VERSION	:=	0.7.4
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	`$(PREFIX)pkg-config --cflags sdl2 SDL2_image SDL2_ttf` -Wall -O2 -ffunction-sections \
+CFLAGS	:=	`$(PREFIX)pkg-config --cflags sdl2 SDL2_image SDL2_ttf SDL2_mixer` -Wall -O2 -ffunction-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ -DAPP_VERSION_STR=\"$(APP_VERSION)\"
@@ -64,7 +64,7 @@ ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBS	:=	-lavformat -lavcodec -lswscale -lswresample -lavutil -ldav1d \
-			`$(PREFIX)pkg-config --libs SDL2_ttf SDL2_image sdl2` \
+			`$(PREFIX)pkg-config --libs SDL2_mixer SDL2_ttf SDL2_image sdl2` \
 			-lcurl -lbz2 -lz -lnx
 
 #---------------------------------------------------------------------------------

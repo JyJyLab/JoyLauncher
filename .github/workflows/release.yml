@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check portlibs (devkitpro/devkita64 이미지에 포함, devkitPro 서버는 CI 다운로드를 막음)
         run: |
-          for l in libSDL2 libSDL2_image libSDL2_ttf libavformat libcurl libdav1d; do test -f /opt/devkitpro/portlibs/switch/lib/$l.a || { echo "missing $l"; exit 1; }; done
+          for l in libSDL2 libSDL2_image libSDL2_ttf libSDL2_mixer libmpg123 libvorbisidec libavformat libcurl libdav1d; do test -f /opt/devkitpro/portlibs/switch/lib/$l.a || { echo "missing $l"; exit 1; }; done
           (type -p zip >/dev/null) || (apt-get update -qq && apt-get install -y -qq zip)
       - name: Build
         run: |
@@ -29,7 +29,10 @@ jobs:
           sha256sum joylauncher.nro | cut -d' ' -f1 > joylauncher.nro.sha256
           mkdir -p pkg/switch/joylauncher
           cp joylauncher.nro pkg/switch/joylauncher/
+          mkdir -p pkg/JoyLauncher/themes
+          cp -r themes/JoyBasic pkg/JoyLauncher/themes/
           cp docs/설명서.md OFL.txt LICENSE pkg/
+          cp docs/manual-en.md pkg/Manual_en.md
           (cd pkg && zip -qr -UN=UTF8 "../JoyLauncher_${VER}.zip" .)
           echo "VER=$VER" >> "$GITHUB_ENV"
       - name: Release notes

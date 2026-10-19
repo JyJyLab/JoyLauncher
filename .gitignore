@@ -9,6 +9,9 @@
 !/OFL.txt
 !/LICENSE
 !/README.md
+!/README.en.md
+!/themes/
+!/tools/
 !/icon.jpg
 !/.gitignore
 *.o

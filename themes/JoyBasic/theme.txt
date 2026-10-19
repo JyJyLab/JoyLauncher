@@ -1,0 +1,83 @@
+# JoyBasic — Joy Launcher 기본 테마 (자체 제작, 자유롭게 사용·수정 가능)
+# JoyBasic — Joy Launcher default theme (self-made, free to use and modify)
+# 배경은 색 그라디언트, 로고는 나눔고딕 Bold 글자로 만들었습니다 (tools/make_joybasic.py).
+
+# dim = 배경 어둡게 (0~255) / darken backgrounds
+dim=40
+
+# <카테고리 또는 롬 폴더 이름>=<그림 파일 이름>  (backgrounds/·logos/ 안, 확장자 생략)
+# <category or rom folder name>=<image file name>  (in backgrounds/ and logos/, no extension)
+
+[카테고리 이름 (응애팩 등)]
+액션-아케이드=arcade_action
+캐주얼-아케이드=arcade_casual
+비행-아케이드=arcade_flying
+대전-아케이드=arcade_fighting
+슈팅-아케이드=arcade_shooting
+Play Station=PS1
+
+[런처가 폴더로 추정한 기종 이름]
+아케이드 (FBNeo)=ARCADE
+아케이드 (MAME)=ARCADE
+드림캐스트=DC
+게임보이=GB
+패미컴=FC
+슈퍼패미컴=SFC
+메가드라이브=MD
+마스터시스템=SMS
+게임기어=GG
+PC엔진=PCE
+원더스완=WSC
+네오지오 포켓=NGPC
+새턴=SS
+아타리 링크스=LYNX
+버추얼보이=VB
+
+[롬 폴더 이름]
+snes=SFC
+superfamicom=SFC
+nes=FC
+famicom=FC
+fds=FC
+megadrive=MD
+genesis=MD
+segacd=MD-CD
+megacd=MD-CD
+sega32x=MD-32X
+32x=MD-32X
+mastersystem=SMS
+gamegear=GG
+saturn=SS
+dreamcast=DC
+psx=PS1
+ps=PS1
+pcengine=PCE
+tg16=PCE
+pcecd=PCE-CD
+pcfx=PC-FX
+pc98=PC-98
+ngp=NGPC
+neogeopocket=NGPC
+neogeocd=NEOGEO-CD
+wonderswan=WS
+wonderswancolor=WSC
+gameboy=GB
+gameboycolor=GBC
+gameboyadvance=GBA
+virtualboy=VB
+pokemini=POKE MINI
+gw=GAME WATCH
+lynx=LYNX
+atarilynx=LYNX
+atari2600=ATARI
+cdi=CD-i
+pico8=PICO-8
+fbneo=ARCADE
+fba=ARCADE
+mame=ARCADE
+mame2003plus=ARCADE
+neogeo=ARCADE
+cps1=ARCADE
+cps2=ARCADE
+cps3=ARCADE
+dos=DOS

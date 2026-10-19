@@ -1,6 +1,7 @@
 #include "updater.h"
 
 #include "hbmenu.h"
+#include "i18n.h"
 
 #include <SDL.h>
 #include <curl/curl.h>
@@ -56,7 +57,7 @@ size_t WriteString(char *p, size_t s, size_t n, void *ud) {
 
 bool HttpGet(const std::string &url, std::string &out, std::string &err) {
     CURL *c = curl_easy_init();
-    if (!c) { err = "curl 초기화 실패"; return false; }
+    if (!c) { err = T("curl 초기화 실패"); return false; }
     struct curl_slist *h = nullptr;
     h = curl_slist_append(h, "Accept: application/vnd.github+json");
     curl_easy_setopt(c, CURLOPT_URL, url.c_str());
@@ -74,9 +75,9 @@ bool HttpGet(const std::string &url, std::string &out, std::string &err) {
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
     curl_slist_free_all(h);
     curl_easy_cleanup(c);
-    if (r != CURLE_OK) { err = std::string("네트워크 오류: ") + curl_easy_strerror(r); return false; }
-    if (code == 404) { err = "아직 배포된 버전이 없습니다"; return false; }
-    if (code != 200) { err = "서버 응답 " + std::to_string(code); return false; }
+    if (r != CURLE_OK) { err = std::string(T("네트워크 오류: ")) + curl_easy_strerror(r); return false; }
+    if (code == 404) { err = T("아직 배포된 버전이 없습니다"); return false; }
+    if (code != 200) { err = T("서버 응답 ") + std::to_string(code); return false; }
     return true;
 }
 
@@ -273,17 +274,17 @@ int CompareVersions(const std::string &a, const std::string &b) {
 
 bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
     NetGuard net;
-    if (!net.ok) { err = "네트워크를 사용할 수 없습니다"; return false; }
+    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
     std::string j;
     if (!HttpGet(kLatestApi, j, err)) return false;
     size_t p = FindKey(j, "tag_name", 0, j.size());
-    if (p == std::string::npos) { err = "릴리스 정보를 읽을 수 없습니다"; return false; }
+    if (p == std::string::npos) { err = T("릴리스 정보를 읽을 수 없습니다"); return false; }
     info.version = ReadJsonString(j, p);
     if (!info.version.empty() && (info.version[0] == 'v' || info.version[0] == 'V')) info.version.erase(0, 1);
     size_t bp = FindKey(j, "body", 0, j.size());
     if (bp != std::string::npos) info.notes = ReadJsonString(j, bp);
     size_t ap = FindKey(j, "assets", 0, j.size());
-    if (ap == std::string::npos || j[ap] != '[') { err = "내려받을 파일이 없습니다"; return false; }
+    if (ap == std::string::npos || j[ap] != '[') { err = T("내려받을 파일이 없습니다"); return false; }
     size_t aend = MatchBracket(j, ap);
     std::string shaUrl;
     for (size_t o = j.find('{', ap); o != std::string::npos && o < aend; o = j.find('{', o + 1)) {
@@ -305,7 +306,7 @@ bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
         }
         o = oend;
     }
-    if (info.url.empty()) { err = "릴리스에 " + std::string(kAssetName) + " 가 없습니다"; return false; }
+    if (info.url.empty()) { err = Fmt(T("릴리스에 %s 가 없습니다"), kAssetName); return false; }
     if (info.sha256.empty() && !shaUrl.empty()) {
         std::string s, e2;
         if (HttpGet(shaUrl, s, e2)) info.sha256 = s.substr(0, std::min<size_t>(64, s.find_first_of(" \t\r\n")));
@@ -317,12 +318,12 @@ bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
 bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool alsoHbmenu, std::string &err,
                         const std::function<bool(long long, long long)> &progress) {
     NetGuard net;
-    if (!net.ok) { err = "네트워크를 사용할 수 없습니다"; return false; }
+    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
     std::string self = SdPath(selfNro);
     std::string tmp = self + ".new";
     DlCtx d;
     d.f = fopen(tmp.c_str(), "wb");
-    if (!d.f) { err = "임시 파일을 만들 수 없습니다"; return false; }
+    if (!d.f) { err = T("임시 파일을 만들 수 없습니다"); return false; }
     d.total = info.size;
     d.progress = &progress;
     CURL *c = curl_easy_init();
@@ -340,13 +341,13 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
     curl_easy_cleanup(c);
     bool closed = fclose(d.f) == 0;
     auto fail = [&](const std::string &m) { remove(tmp.c_str()); err = m; return false; };
-    if (d.cancelled) return fail("취소했습니다");
-    if (r != CURLE_OK) return fail(std::string("내려받기 실패: ") + curl_easy_strerror(r));
-    if (code != 200 || !closed) return fail("내려받기 실패 (응답 " + std::to_string(code) + ")");
-    if (info.size > 0 && d.got != info.size) return fail("파일 크기가 맞지 않습니다");
+    if (d.cancelled) return fail(T("취소했습니다"));
+    if (r != CURLE_OK) return fail(std::string(T("내려받기 실패: ")) + curl_easy_strerror(r));
+    if (code != 200 || !closed) return fail(Fmt(T("내려받기 실패 (응답 %d)"), (int)code));
+    if (info.size > 0 && d.got != info.size) return fail(T("파일 크기가 맞지 않습니다"));
     std::string hex = d.sha.Hex();
-    if (info.sha256.empty()) return fail("검증 정보(SHA-256)가 없어 설치하지 않았습니다");
-    if (hex != info.sha256) return fail("검증 실패 (SHA-256 불일치)");
+    if (info.sha256.empty()) return fail(T("검증 정보(SHA-256)가 없어 설치하지 않았습니다"));
+    if (hex != info.sha256) return fail(T("검증 실패 (SHA-256 불일치)"));
     // 실행 중인 nro(자기 자신 또는 /hbmenu.nro)는 romfs 때문에 열려 있어 지우거나 바꿀 수 없다.
     // 글꼴 등은 이미 메모리에 올라와 있으므로 romfs 를 닫고 교체한다. 실패하면 다시 연다 (성공하면 곧바로 다시 시작)
     struct RomfsReleased {
@@ -369,7 +370,7 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
     remove(self.c_str());
     if (rename(tmp.c_str(), self.c_str()) != 0 && !CopyFile(tmp, self)) {
         CopyFile(old, self);
-        return fail("파일 교체 실패");
+        return fail(T("파일 교체 실패"));
     }
     remove(tmp.c_str());
     if (alsoHbmenu) {
@@ -384,8 +385,8 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
         }
         remove(hbTmp.c_str());
         if (!hbOk) {
-            err = "런처는 업데이트했지만 기본 홈브루 메뉴(/hbmenu.nro) 교체에 실패했습니다. "
-                  "옵션 창의 \"기본 홈브루 메뉴를 Joy Launcher 로 업데이트\" 로 다시 시도하세요";
+            err = T("런처는 업데이트했지만 기본 홈브루 메뉴(/hbmenu.nro) 교체에 실패했습니다. "
+                    "옵션 창의 \"기본 홈브루 메뉴를 Joy Launcher 로 업데이트\" 로 다시 시도하세요");
             return false;
         }
     }
