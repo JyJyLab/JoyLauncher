@@ -1,6 +1,6 @@
 # 데스크톱(리눅스) 테스트 빌드: 화면 스냅샷과 실행 인자 확인용
 APP_VERSION := $(shell sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' Makefile)
-PKGS = sdl2 SDL2_ttf SDL2_image SDL2_mixer libavformat libavcodec libswscale libavutil libcurl
+PKGS = sdl2 SDL2_ttf SDL2_image SDL2_mixer zlib libavformat libavcodec libswscale libavutil libcurl
 CXXFLAGS = -O2 -Wall -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(shell pkg-config --cflags $(PKGS))
 LIBS = $(shell pkg-config --libs $(PKGS))
 SRCS = source/main.cpp source/pegasus.cpp source/hbmenu.cpp source/videoframe.cpp source/updater.cpp source/i18n.cpp source/bgm.cpp

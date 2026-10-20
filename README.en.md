@@ -13,7 +13,7 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Per-category background themes with the free default theme **JoyBasic**, launch log, cached game list (fast start)
 - Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
 - Systems beyond the Switch's performance (above PS1/PSP) are excluded or hidden automatically
-- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; for themes, download the release zip and copy `JoyLauncher/themes/` yourself
+- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the default theme from "Download default theme JoyBasic" in the theme picker or from the release zip
 
 ## Installation
 1. Download the latest `JoyLauncher_<version>.zip` from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and copy `switch/` and `JoyLauncher/` to the root of the SD card

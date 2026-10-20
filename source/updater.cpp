@@ -5,6 +5,7 @@
 
 #include <SDL.h>
 #include <curl/curl.h>
+#include <zlib.h>
 
 #include <algorithm>
 #include <cctype>
@@ -13,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <vector>
 
 #ifdef __SWITCH__
@@ -232,6 +234,150 @@ bool CopyFile(const std::string &src, const std::string &dst) {
     return ok;
 }
 
+// ---------------------------------------------------------------- 릴리스 자산
+struct Asset {
+    std::string name, url, sha256;
+    long long size = 0;
+};
+
+// 최신 릴리스의 자산 목록 (version: 태그의 v 를 뺀 값)
+bool FetchAssets(std::vector<Asset> &out, std::string &version, std::string &err) {
+    std::string j;
+    if (!HttpGet(kLatestApi, j, err)) return false;
+    size_t p = FindKey(j, "tag_name", 0, j.size());
+    if (p != std::string::npos) version = ReadJsonString(j, p);
+    if (!version.empty() && (version[0] == 'v' || version[0] == 'V')) version.erase(0, 1);
+    size_t ap = FindKey(j, "assets", 0, j.size());
+    if (ap == std::string::npos || j[ap] != '[') { err = T("내려받을 파일이 없습니다"); return false; }
+    size_t aend = MatchBracket(j, ap);
+    for (size_t o = j.find('{', ap); o != std::string::npos && o < aend; o = j.find('{', o + 1)) {
+        size_t oend = MatchBracket(j, o);
+        if (oend == std::string::npos || oend > aend) break;
+        Asset a;
+        size_t np = FindKey(j, "name", o, oend);
+        if (np != std::string::npos) a.name = ReadJsonString(j, np);
+        size_t up = FindKey(j, "browser_download_url", o, oend);
+        if (up != std::string::npos) a.url = ReadJsonString(j, up);
+        size_t sp = FindKey(j, "size", o, oend);
+        if (sp != std::string::npos) a.size = atoll(j.c_str() + sp);
+        size_t dp = FindKey(j, "digest", o, oend);
+        std::string dg = dp == std::string::npos ? "" : ReadJsonString(j, dp);
+        if (dg.rfind("sha256:", 0) == 0) a.sha256 = dg.substr(7);
+        for (auto &ch : a.sha256) ch = (char)tolower((unsigned char)ch);
+        out.push_back(a);
+        o = oend;
+    }
+    return true;
+}
+
+// url → path 로 받고 크기·SHA-256 확인. 실패하면 파일을 지운다
+bool DownloadVerified(const Asset &a, const std::string &path, std::string &err,
+                      const std::function<bool(long long, long long)> &progress) {
+    DlCtx d;
+    d.f = fopen(path.c_str(), "wb");
+    if (!d.f) { err = T("임시 파일을 만들 수 없습니다"); return false; }
+    d.total = a.size;
+    d.progress = &progress;
+    CURL *c = curl_easy_init();
+    curl_easy_setopt(c, CURLOPT_URL, a.url.c_str());
+    curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);
+    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteFileCb);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &d);
+    CURLcode r = curl_easy_perform(c);
+    long code = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(c);
+    bool closed = fclose(d.f) == 0;
+    auto fail = [&](const std::string &m) { remove(path.c_str()); err = m; return false; };
+    if (d.cancelled) return fail(T("취소했습니다"));
+    if (r != CURLE_OK) return fail(std::string(T("내려받기 실패: ")) + curl_easy_strerror(r));
+    if (code != 200 || !closed) return fail(Fmt(T("내려받기 실패 (응답 %d)"), (int)code));
+    if (a.size > 0 && d.got != a.size) return fail(T("파일 크기가 맞지 않습니다"));
+    if (a.sha256.empty()) return fail(T("검증 정보(SHA-256)가 없어 설치하지 않았습니다"));
+    if (d.sha.Hex() != a.sha256) return fail(T("검증 실패 (SHA-256 불일치)"));
+    return true;
+}
+
+// ---------------------------------------------------------------- zip 풀기 (저장·deflate 만, zlib)
+uint16_t Le16(const uint8_t *p) { return p[0] | (p[1] << 8); }
+uint32_t Le32(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+
+void MakeDirs(const std::string &path) {  // path 의 상위 폴더들
+    for (size_t p = path.find('/', 1); p != std::string::npos; p = path.find('/', p + 1)) mkdir(path.substr(0, p).c_str(), 0777);
+}
+
+// zip 안에서 prefix 로 시작하는 파일을 dest 아래에 (prefix 를 뗀 경로로) 푼다
+bool ExtractPrefix(const std::string &zip, const std::string &prefix, const std::string &dest, int &files, std::string &err) {
+    FILE *f = fopen(zip.c_str(), "rb");
+    if (!f) { err = T("내려받은 파일을 열 수 없습니다"); return false; }
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> z(n > 0 ? n : 0);
+    bool readOk = n > 0 && fread(z.data(), 1, n, f) == (size_t)n;
+    fclose(f);
+    if (!readOk || n < 22) { err = T("압축 파일이 손상되었습니다"); return false; }
+    long eocd = -1;
+    for (long i = n - 22; i >= 0 && i >= n - 22 - 65535; i--)
+        if (Le32(&z[i]) == 0x06054b50) { eocd = i; break; }
+    if (eocd < 0) { err = T("압축 파일이 손상되었습니다"); return false; }
+    uint16_t count = Le16(&z[eocd + 10]);
+    uint32_t cd = Le32(&z[eocd + 16]);
+    files = 0;
+    for (uint16_t k = 0; k < count; k++) {
+        if (cd + 46 > (uint32_t)n || Le32(&z[cd]) != 0x02014b50) { err = T("압축 파일이 손상되었습니다"); return false; }
+        uint16_t method = Le16(&z[cd + 10]);
+        uint32_t crc = Le32(&z[cd + 16]), csize = Le32(&z[cd + 20]), usize = Le32(&z[cd + 24]);
+        uint16_t nl = Le16(&z[cd + 28]), el = Le16(&z[cd + 30]), cl = Le16(&z[cd + 32]);
+        uint32_t lho = Le32(&z[cd + 42]);
+        std::string name(reinterpret_cast<char *>(&z[cd + 46]), nl);
+        cd += 46 + nl + el + cl;
+        if (name.rfind(prefix, 0) != 0 || name.back() == '/') continue;
+        std::string rel = name.substr(prefix.size());
+        if (rel.empty() || rel.find("..") != std::string::npos) continue;
+        if (lho + 30 > (uint32_t)n || Le32(&z[lho]) != 0x04034b50) { err = T("압축 파일이 손상되었습니다"); return false; }
+        uint32_t data = lho + 30 + Le16(&z[lho + 26]) + Le16(&z[lho + 28]);
+        if ((uint64_t)data + csize > (uint64_t)n) { err = T("압축 파일이 손상되었습니다"); return false; }
+        std::vector<uint8_t> out(usize);
+        if (method == 0) {
+            if (csize != usize) { err = T("압축 파일이 손상되었습니다"); return false; }
+            memcpy(out.data(), &z[data], usize);
+        } else if (method == 8) {
+            z_stream s = {};
+            if (inflateInit2(&s, -MAX_WBITS) != Z_OK) { err = T("압축 해제 실패"); return false; }
+            s.next_in = &z[data];
+            s.avail_in = csize;
+            s.next_out = out.data();
+            s.avail_out = usize;
+            int r = inflate(&s, Z_FINISH);
+            inflateEnd(&s);
+            if (r != Z_STREAM_END || s.total_out != usize) { err = T("압축 해제 실패"); return false; }
+        } else {
+            err = T("지원하지 않는 압축 방식입니다");
+            return false;
+        }
+        if (crc32(0, out.data(), usize) != crc) { err = T("압축 파일이 손상되었습니다"); return false; }
+        std::string path = dest + "/" + rel, tmp = path + ".tmp";
+        MakeDirs(path);
+        FILE *o = fopen(tmp.c_str(), "wb");
+        bool ok = o && fwrite(out.data(), 1, usize, o) == usize;
+        if (o && fclose(o) != 0) ok = false;
+        remove(path.c_str());
+        if (!ok || rename(tmp.c_str(), path.c_str()) != 0) {
+            remove(tmp.c_str());
+            err = T("테마 파일을 쓸 수 없습니다") + std::string(": ") + rel;
+            return false;
+        }
+        files++;
+    }
+    if (files == 0) { err = T("받은 파일에 테마가 없습니다"); return false; }
+    return true;
+}
+
 // ---------------------------------------------------------------- 백그라운드 확인
 SDL_Thread *gThread = nullptr;
 SDL_mutex *gLock = nullptr;
@@ -395,6 +541,37 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
 #endif
     romfsGuard.keepClosed = true;
     return true;
+}
+
+bool DownloadTheme(const std::string &themesDir, int &files, std::string &err,
+                   const std::function<bool(long long, long long)> &progress) {
+    files = 0;
+    UpdateCheckStop();  // 시작할 때의 확인 스레드와 통신이 겹치지 않게
+    NetGuard net;
+    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
+    std::vector<Asset> assets;
+    std::string version;
+    if (!FetchAssets(assets, version, err)) return false;
+    const Asset *pick = nullptr;
+    std::string prefix;
+    for (const auto &a : assets)
+        if (a.name == "JoyBasic.zip") { pick = &a; prefix = "JoyBasic/"; }
+    if (!pick)  // 테마 전용 파일이 없는 릴리스: 런처 zip 에서 테마 부분만
+        for (const auto &a : assets)
+            if (a.name.rfind("JoyLauncher_", 0) == 0 && a.name.size() > 4 && a.name.compare(a.name.size() - 4, 4, ".zip") == 0) {
+                pick = &a;
+                prefix = "JoyLauncher/themes/JoyBasic/";
+            }
+    if (!pick) { err = T("릴리스에 기본 테마가 없습니다"); return false; }
+    mkdir(themesDir.c_str(), 0777);
+    std::string tmp = themesDir + "/.JoyBasic.download";
+    if (!DownloadVerified(*pick, tmp, err, progress)) return false;
+    bool ok = ExtractPrefix(tmp, prefix, themesDir + "/JoyBasic", files, err);
+    remove(tmp.c_str());
+#ifdef __SWITCH__
+    if (FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc")) fsFsCommit(fs);
+#endif
+    return ok;
 }
 
 void UpdateCheckStart() {

@@ -128,7 +128,7 @@ Images are matched by: category name in `theme.txt` → ROM folder name (e.g. `/
 
 ### Default theme JoyBasic
 
-> Themes are not installed by the launcher's automatic update. Download the release zip and copy `JoyLauncher/themes/JoyBasic/` to the SD card.
+> Themes are not installed by the automatic update. Use **"Download default theme JoyBasic"** at the bottom of the theme picker ("Download ... again (latest)" if it is already there). It downloads from the latest GitHub release, checks size and SHA-256, unpacks into `/JoyLauncher/themes/JoyBasic/`, replaces the stock images and keeps images you added. B cancels. (Needs internet; otherwise copy `JoyLauncher/themes/JoyBasic/` from the release zip.)
 
 The release zip includes the free default theme **JoyBasic**; copied to `/JoyLauncher/themes/JoyBasic/`, it is selected on first run.
 
@@ -191,7 +191,7 @@ The interface is available in Korean and English. **Auto** (default) follows the
 - At start the launcher checks GitHub Releases in the background and briefly shows "New version vX.Y.Z is available" (it does not install by itself).
 - Install: **Y** Options → **"Install update: vX.Y.Z"** → A, then A again to confirm. B cancels the download.
 - The file is verified (size and SHA-256) before replacing; the old file is kept as `joylauncher.nro.old`. If Joy Launcher is the default homebrew menu, `/hbmenu.nro` is updated too. The launcher then restarts.
-- **Automatic updates replace only the launcher (`joylauncher.nro`).** Themes such as JoyBasic are not installed or updated automatically: download `JoyLauncher_<version>.zip` from the release page and copy `JoyLauncher/themes/` to `/JoyLauncher/themes/` on the SD card yourself.
+- **Automatic updates replace only the launcher (`joylauncher.nro`).** Get the default theme JoyBasic with **Y Options → Theme → "Download default theme JoyBasic"**, or download the release zip and copy `JoyLauncher/themes/` to the SD card yourself.
 - `auto_update=off` in `settings.txt` turns the start-up check off.
 
 ## 10. Settings (`/JoyLauncher/settings.txt`)

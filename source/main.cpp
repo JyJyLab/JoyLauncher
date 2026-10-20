@@ -895,10 +895,12 @@ static void RenderGames(App &a) {
     }
 }
 
+static const char *kThemeDownload = "\x01download";  // 테마 목록 끝의 "기본 테마 내려받기" 항목
+
 static void RenderThemePick(App &a) {
     int n = (int)a.themeList.size();
     int rows = std::min(n, 10);
-    int bw = 560, bh = 110 + rows * kRowH;
+    int bw = 640, bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = (H - bh) / 2;
     Fill(a, 0, 0, W, H, {0, 0, 0, 120});
     Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
@@ -909,10 +911,14 @@ static void RenderThemePick(App &a) {
         int y = by + 66 + i * kRowH;
         bool sel = idx == a.themeSel;
         if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
+        bool dl = a.themeList[idx] == kThemeDownload;
         std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : a.themeList[idx];
-        bool cur = (idx == 0 && gThemeName.empty()) || (idx > 0 && a.themeList[idx] == gThemeName);
-        if (cur) label += "  ✓";
-        DrawText(a, a.fList, label, bx + 32, y + 4, sel ? kWhite : kGrey, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+        if (dl)
+            label = IsDirPath(gHome + "/themes/JoyBasic") ? T("기본 테마 JoyBasic 다시 받기 (최신으로)") : T("기본 테마 JoyBasic 내려받기");
+        bool cur = !dl && ((idx == 0 && gThemeName.empty()) || (idx > 0 && a.themeList[idx] == gThemeName));
+        if (cur) label += T("  (사용 중)");
+        SDL_Color c = dl ? kAccent : sel ? kWhite : kGrey;
+        DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     DrawText(a, a.fInfo, T("[A] 적용   [B] 닫기   (테마 폴더: /JoyLauncher/themes)"), W / 2, by + bh - 34, kGrey, 0, 1);
 }
@@ -1263,6 +1269,14 @@ int main(int argc, char **argv) {
                    err.c_str());
             return ok ? 0 : 1;
         }
+        else if (s == "--theme-download") {  // --home 의 themes 에 기본 테마 받기 시험
+            int files = 0;
+            std::string err;
+            bool ok = DownloadTheme(gHome + "/themes", files, err, [](long long, long long) { return true; });
+            printf("theme ok=%d files=%d err=%s\n", ok, files, err.c_str());
+            UpdaterShutdown();
+            return ok ? 0 : 1;
+        }
         else if (s == "--update-check") {  // 깃헙 최신 릴리스 조회 결과 출력
             UpdateInfo u;
             std::string err;
@@ -1359,6 +1373,7 @@ int main(int argc, char **argv) {
     auto openThemePick = [&]() {
         a.themeList = ThemeNames();
         a.themeList.insert(a.themeList.begin(), "");
+        a.themeList.push_back(kThemeDownload);
         a.themeSel = 0;
         for (size_t i = 1; i < a.themeList.size(); i++)
             if (a.themeList[i] == gThemeName) a.themeSel = (int)i;
@@ -1454,6 +1469,50 @@ int main(int argc, char **argv) {
         a.message = Fmt(T("새 버전 v%s: A 를 한 번 더 누르면 내려받아 설치합니다"), gUpdate.version.c_str());
         a.messageColor = {60, 70, 120, 240};
         a.messageUntil = a.confirmUntil;
+    };
+    // 테마 선택 창의 "기본 테마 JoyBasic 내려받기": 최신 릴리스에서 받아 /JoyLauncher/themes/JoyBasic 에 풀기
+    auto runThemeDownload = [&]() {
+        Uint32 lastDraw = 0;
+        auto progress = [&](long long got, long long total) {
+            bool cancel = false;
+            SDL_Event e;
+            while (SDL_PollEvent(&e)) {
+                if (e.type == SDL_QUIT) cancel = true;
+                if (e.type == SDL_JOYBUTTONDOWN && e.jbutton.button == 1) cancel = true;
+                if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) cancel = true;
+            }
+            if (SDL_GetTicks() - lastDraw >= 100 || got == total) {
+                lastDraw = SDL_GetTicks();
+                Render(a);
+                Fill(a, 240, 280, 800, 150, {28, 28, 40, 245});
+                DrawText(a, a.fList, Fmt(T("기본 테마 내려받는 중  %.1f / %.1f MB"), got / 1048576.0, total / 1048576.0), W / 2, 300,
+                         kWhite, 760, 1);
+                Fill(a, 280, 350, 720, 14, {60, 60, 80, 255});
+                if (total > 0) Fill(a, 280, 350, (int)(720.0 * got / total), 14, kAccent);
+                DrawText(a, a.fInfo, T("[B] 취소"), W / 2, 380, kGrey, 760, 1);
+                SDL_RenderPresent(a.r);
+            }
+            return !cancel;
+        };
+        showBusy(T("최신 릴리스 확인 중..."));
+        int files = 0;
+        std::string err;
+        bool ok = DownloadTheme(gHome + "/themes", files, err, progress);
+        if (!ok) {
+            modal(T("기본 테마 내려받기 실패: ") + err, false);
+            return;
+        }
+        // 새 그림으로 다시 읽기 (지금 JoyBasic 을 쓰고 있었으면 바로 반영)
+        a.backs.Clear();
+        a.images.Clear();
+        a.lastBack.clear();
+        if (gThemeName == "JoyBasic") LoadTheme("JoyBasic");
+        openThemePick();
+        for (size_t i = 0; i < a.themeList.size(); i++)
+            if (a.themeList[i] == "JoyBasic") a.themeSel = (int)i;
+        a.message = Fmt(T("JoyBasic 을 받았습니다 (파일 %d개) · A 를 누르면 적용합니다"), files);
+        a.messageColor = {40, 100, 60, 240};
+        a.messageUntil = SDL_GetTicks() + 4000;
     };
     // 옵션 창에서 값을 바꾸는 항목 (A 또는 ◀ ▶). dir: +1 / -1
     auto adjust = [&](MenuAct act, int dir) {
@@ -1561,7 +1620,9 @@ int main(int argc, char **argv) {
             int n = (int)a.themeList.size();
             if (b == 13) a.themeSel = (a.themeSel + n - 1) % n;
             else if (b == 15) a.themeSel = (a.themeSel + 1) % n;
-            else if (b == 0) {
+            else if (b == 0 && a.themeList[a.themeSel] == kThemeDownload) {
+                runThemeDownload();
+            } else if (b == 0) {
                 LoadTheme(a.themeList[a.themeSel]);
                 SaveSettings();
                 a.backs.Clear();

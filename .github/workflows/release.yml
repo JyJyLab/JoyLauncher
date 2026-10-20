@@ -33,6 +33,7 @@ jobs:
           cp -r themes/JoyBasic pkg/JoyLauncher/themes/
           cp docs/설명서.md OFL.txt LICENSE pkg/
           cp docs/manual-en.md pkg/Manual_en.md
+          (cd themes && zip -qr -X ../JoyBasic.zip JoyBasic)   # 런처의 테마 선택 창에서 받는 기본 테마
           (cd pkg && zip -qr -UN=UTF8 "../JoyLauncher_${VER}.zip" .)
           echo "VER=$VER" >> "$GITHUB_ENV"
       - name: Release notes
@@ -47,3 +48,4 @@ jobs:
             joylauncher.nro
             joylauncher.nro.sha256
             JoyLauncher_${{ env.VER }}.zip
+            JoyBasic.zip
