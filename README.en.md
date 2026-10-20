@@ -11,14 +11,15 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Finds ROMs in per-system folders even without a list file; reads ES-DE `gamelist.xml`
 - Box art and screenshots; grabs a frame from the preview video when there is no screenshot
 - Per-category background themes with the free default theme **JoyBasic**, launch log, cached game list (fast start)
-- Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
+- Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
 - Systems beyond the Switch's performance (above PS1/PSP) are excluded or hidden automatically
-- **Automatic updates from GitHub Releases** (Y Options → Update)
+- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; for themes, download the release zip and copy `JoyLauncher/themes/` yourself
 
 ## Installation
 1. Download the latest `JoyLauncher_<version>.zip` from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and copy `switch/` and `JoyLauncher/` to the root of the SD card
 2. Install RetroArch for Switch (with cores) and PPSSPP
 3. Copy your ROM pack to `/roms` and start Joy Launcher from the Album (homebrew menu)
+   - Use ASCII names for ROM files and folders (non-ASCII names may drop out of the list or break)
 
 Manual: [docs/manual-en.md](docs/manual-en.md)
 

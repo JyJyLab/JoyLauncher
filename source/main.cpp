@@ -16,6 +16,7 @@
 #include <fstream>
 #include <list>
 #include <map>
+#include <set>
 #include <string>
 #include <sys/stat.h>
 #include <vector>
@@ -58,7 +59,9 @@ struct MenuItem {
     std::string label;
     std::string nro;
     MenuAct act;
+    bool on = false;  // 켜져 있는 상태 (BGM 재생 중): 초록색 글자
 };
+static const SDL_Color kOn = {90, 220, 120, 255};
 static std::vector<MenuItem> gMenu;
 static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM 설정" 에서 여는 BGM 창
 // 앨범(애플릿)으로 실행됐는지. 애플릿 모드는 쓸 수 있는 메모리가 적어 큰 게임이 느리거나 실행되지 않을 수 있음
@@ -76,6 +79,25 @@ static Lang gSystemLang = Lang::Ko;         // 본체 언어 (시작할 때 한 
 static bool gBgmOn = false;                 // BGM (/JoyLauncher/bgm 의 mp3·ogg)
 static int gBgmVolume = 60;                 // 0~100
 static bool gBgmShuffle = false;
+
+// 즐겨찾기: /JoyLauncher/favorites.txt (롬 파일 경로 한 줄씩)
+static std::set<std::string> gFavSet;
+
+static void LoadFavorites() {
+    gFavSet.clear();
+    std::ifstream in(gHome + "/favorites.txt");
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (!line.empty() && line[0] != '#') gFavSet.insert(line);
+    }
+}
+
+static void SaveFavorites() {
+    std::ofstream o(gHome + "/favorites.txt");
+    o << "# Joy Launcher favorites (rom paths)\n";
+    for (const auto &f : gFavSet) o << f << "\n";
+}
 
 static void ApplyLanguage() {
     SetLang(gLanguage == "ko" ? Lang::Ko : gLanguage == "en" ? Lang::En : gSystemLang);
@@ -110,12 +132,12 @@ static void BuildMenu() {
     if (BgmCount() == 0)
         gMenu.push_back({T("BGM: 곡 없음  (/JoyLauncher/bgm 에 mp3·ogg 넣기)"), "", MenuAct::BgmNone});
     else if (gBgmOn)
-        gMenu.push_back({Fmt(T("BGM 설정 (켜짐 · 볼륨 %d%% · %s)"), gBgmVolume, gBgmShuffle ? T("무작위") : T("차례대로")), "",
-                         MenuAct::BgmMenu});
+        gMenu.push_back({Fmt(T("BGM 설정 (켜짐 (On) · 볼륨 %d%% · %s)"), gBgmVolume, gBgmShuffle ? T("무작위") : T("차례대로")), "",
+                         MenuAct::BgmMenu, true});
     else
-        gMenu.push_back({T("BGM 설정 (꺼짐)"), "", MenuAct::BgmMenu});
+        gMenu.push_back({T("BGM 설정 (꺼짐 (Off))"), "", MenuAct::BgmMenu});
     gBgmMenu.clear();
-    gBgmMenu.push_back({Fmt(gBgmOn ? T("BGM: 켜짐 (%d곡)") : T("BGM: 꺼짐 (%d곡)"), BgmCount()), "", MenuAct::Bgm});
+    gBgmMenu.push_back({Fmt(gBgmOn ? T("BGM: 켜짐 (On) (%d곡)") : T("BGM: 꺼짐 (Off) (%d곡)"), BgmCount()), "", MenuAct::Bgm, gBgmOn});
     gBgmMenu.push_back({Fmt(T("볼륨: %d%%"), gBgmVolume), "", MenuAct::BgmVolume});
     gBgmMenu.push_back({gBgmShuffle ? T("순서: 무작위") : T("순서: 차례대로"), "", MenuAct::BgmOrder});
     if (gBgmOn) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
@@ -758,8 +780,9 @@ static bool FrameCached(const Game &g) {
 static void CountFramesPending(const std::vector<Collection> &cols) {
     gFramesPending = 0;
     for (const auto &c : cols)
-        for (const auto &g : c.games)
-            if (g.screenshot.empty() && !g.video.empty() && !FrameCached(g)) gFramesPending++;
+        if (!c.virt)
+            for (const auto &g : c.games)
+                if (g.screenshot.empty() && !g.video.empty() && !FrameCached(g)) gFramesPending++;
 }
 
 static SDL_Color SelColor() { return Themed() ? SDL_Color{70, 70, 110, 210} : kSel; }
@@ -798,7 +821,7 @@ static void RenderCategories(App &a) {
 
 static void RenderGames(App &a) {
     const Collection &c = a.cols[a.col];
-    Frame(a, T(c.name), T("[A] 실행   [B] 카테고리   [L][R] 카테고리 이동   ◀ ▶ 페이지   [X] 홈브루 메뉴   [Y] 옵션"), &c, true);
+    Frame(a, T(c.name), T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션"), &c, true);
     char idx[64];
     snprintf(idx, sizeof(idx), "%d / %d", a.col + 1, (int)a.cols.size());
     DrawText(a, a.fInfo, "◀ L", 30, 26, kGrey);
@@ -812,7 +835,8 @@ static void RenderGames(App &a) {
         int gi = a.top + i;
         int y = kListY + i * kRowH;
         if (gi == a.sel) Fill(a, kListX - 12, y - 4, 720, kRowH, SelColor());
-        DrawText(a, a.fList, c.games[gi].title, kListX, y + 4, gi == a.sel ? kWhite : kGrey, 690, 0, 0, 0,
+        bool star = !c.virt && gFavSet.count(c.games[gi].file);
+        DrawText(a, a.fList, star ? "★ " + c.games[gi].title : c.games[gi].title, kListX, y + 4, gi == a.sel ? kWhite : kGrey, 690, 0, 0, 0,
                  gi == a.sel ? kScroll : 0);
     }
     char cnt[64];
@@ -911,7 +935,7 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
         int y = by + 66 + (i - top) * kRowH;
         bool sel = i == selIdx;
         if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
-        SDL_Color c = items[i].act == MenuAct::BgmNone ? SDL_Color{110, 110, 125, 255} : sel ? kWhite : kGrey;
+        SDL_Color c = items[i].act == MenuAct::BgmNone ? SDL_Color{110, 110, 125, 255} : items[i].on ? kOn : sel ? kWhite : kGrey;
         DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
@@ -936,8 +960,9 @@ static void Render(App &a);
 static void RunFrameBatch(App &a) {
     std::vector<const Game *> todo;
     for (const auto &c : a.cols)
-        for (const auto &g : c.games)
-            if (g.screenshot.empty() && !g.video.empty() && !FrameCached(g)) todo.push_back(&g);
+        if (!c.virt)
+            for (const auto &g : c.games)
+                if (g.screenshot.empty() && !g.video.empty() && !FrameCached(g)) todo.push_back(&g);
     FrameWorkerStop();
     int done = 0, failed = 0;
     bool cancel = false;
@@ -988,6 +1013,33 @@ static void RunFrameBatch(App &a) {
 // 게임 목록: 저장해 둔 목록(library.cache)이 유효하면 그대로 쓰고, 아니면(또는 force) 롬 폴더를 다시 읽어 저장
 static std::vector<std::string> gRoots;
 
+// 카테고리 맨 앞에 "즐겨찾기" (즐겨찾기가 있을 때만). keepPos: 지금 보고 있는 카테고리 번호를 맞춰 줌
+static void RebuildFavorites(App &a, bool keepPos) {
+    bool had = !a.cols.empty() && a.cols[0].virt;
+    if (had) a.cols.erase(a.cols.begin());
+    Collection fav;
+    fav.name = "즐겨찾기";
+    fav.sortBy = "000";
+    fav.shortName = "favorites";
+    fav.virt = true;
+    std::set<std::string> seen;
+    for (const auto &c : a.cols)
+        for (const auto &g : c.games)
+            if (gFavSet.count(g.file) && seen.insert(g.file).second) fav.games.push_back(g);
+    bool has = !fav.games.empty();
+    if (has) a.cols.insert(a.cols.begin(), fav);
+    if (!keepPos) return;
+    int shift = (has ? 1 : 0) - (had ? 1 : 0);
+    if (had && a.col == 0 && !has) {  // 즐겨찾기를 모두 빼서 카테고리가 사라짐
+        a.mode = Mode::Categories;
+        a.col = a.catSel = 0;
+        a.sel = a.top = 0;
+    } else if (!(had && a.col == 0)) {
+        a.col = std::max(0, a.col + shift);
+    }
+    a.catSel = std::max(0, a.catSel + shift);
+}
+
 static void LoadGames(App &a, bool force, std::string &log) {
     std::string cache = gHome + "/library.cache";
     std::string sig = LibrarySignature(gRoots);
@@ -1008,6 +1060,7 @@ static void LoadGames(App &a, bool force, std::string &log) {
     }
     CountFramesPending(a.cols);
     BuildMenu();
+    RebuildFavorites(a, false);
 }
 
 static void Render(App &a) {
@@ -1288,6 +1341,7 @@ int main(int argc, char **argv) {
         }
     }
     LoadCoreConfig(gHome + "/cores.txt");
+    LoadFavorites();
     gRoots = roots;
     LoadGames(a, false, log);
     printf("%s", log.c_str());
@@ -1441,7 +1495,8 @@ int main(int argc, char **argv) {
             LoadGames(a, true, log);
             LoadState(a, true);
             int n = 0;
-            for (const auto &col : a.cols) n += (int)col.games.size();
+            for (const auto &col : a.cols)
+                if (!col.virt) n += (int)col.games.size();
             a.message = Fmt(T("게임 목록을 새로 읽었습니다 (%d개)"), n);
             a.messageColor = {40, 100, 60, 240};
             a.messageModal = true;
@@ -1572,6 +1627,18 @@ int main(int argc, char **argv) {
             case 7: a.col = (a.col + 1) % ncol; a.catSel = a.col; a.sel = a.top = 0; break;
             case 0: if (LaunchGame(a)) running = false; break;
             case 1: a.mode = Mode::Categories; a.catSel = a.col; break;
+            case 11: {  // −: 즐겨찾기 넣기/빼기
+                std::string file = a.cols[a.col].games[a.sel].file;
+                bool add = !gFavSet.count(file);
+                if (add) gFavSet.insert(file);
+                else gFavSet.erase(file);
+                SaveFavorites();
+                RebuildFavorites(a, true);
+                a.message = add ? T("즐겨찾기에 넣었습니다") : T("즐겨찾기에서 뺐습니다");
+                a.messageColor = {60, 70, 120, 240};
+                a.messageUntil = SDL_GetTicks() + 1500;
+                break;
+            }
             case 10: SaveState(a); ExitHome(); running = false; break;
             }
         }
@@ -1663,6 +1730,7 @@ int main(int argc, char **argv) {
                 case SDLK_RETURN: act(0); break;
                 case SDLK_ESCAPE: act(1); break;
                 case SDLK_t: act(2); break;
+                case SDLK_f: act(11); break;
                 }
             }
         }

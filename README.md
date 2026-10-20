@@ -11,14 +11,15 @@
 - 목록 파일이 없어도 기종별 폴더의 롬을 자동 인식, ES-DE `gamelist.xml` 지원
 - 박스·화면 사진, 화면 사진이 없으면 미리보기 영상에서 장면 추출
 - 카테고리별 배경 테마(무료 기본 테마 **JoyBasic** 포함), 실행 기록, 게임 목록 캐시(빠른 시작)
-- 한국어 / 영어 화면, 직접 넣은 mp3·ogg 배경 음악, HOME 화면과 같은 배터리 표시
+- 즐겨찾기(− 버튼), 한국어 / 영어 화면, 직접 넣은 mp3·ogg 배경 음악, HOME 화면과 같은 배터리 표시
 - 스위치 성능 범위(아케이드 ~ PS1, PSP) 밖의 기종은 자동 제외·숨김
-- **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트)
+- **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트) — 런처 본체만 바뀝니다. 테마는 릴리스 zip 을 내려받아 `JoyLauncher/themes/` 를 직접 복사
 
 ## 설치
 1. [Releases](https://github.com/JyJyLab/JoyLauncher/releases) 에서 최신 `JoyLauncher_<버전>.zip` 을 받아 `switch/` 와 `JoyLauncher/` 를 SD 카드 루트에 복사
 2. 스위치용 RetroArch(코어 포함)와 PPSSPP 를 설치
 3. 롬 모음을 `/roms` 에 복사하고 앨범(홈브루 메뉴)에서 Joy Launcher 실행
+   - 롬 파일·폴더 이름은 영문(ASCII)을 권장합니다 (한글 이름은 목록에서 빠지거나 깨질 수 있음)
 
 자세한 사용법: [docs/설명서.md](docs/설명서.md) · English: [docs/manual-en.md](docs/manual-en.md)
 

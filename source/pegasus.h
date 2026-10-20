@@ -25,6 +25,7 @@ struct Collection {
     std::string name;
     std::string sortBy;      // sort-by 값 (없으면 이름)
     std::string shortName;   // shortname 값 (테마 배경·로고 이름에 사용, 없으면 빈 값)
+    bool virt = false;       // 런처가 만든 카테고리 (즐겨찾기). 목록 캐시에 저장하지 않음
     std::vector<std::string> folders;  // 게임이 들어 있는 롬 폴더 이름들 (/roms/<이름>)
     std::vector<Game> games;
 };

@@ -41,6 +41,7 @@ PAL = {
 # (파일 이름, 로고 글자, 색 계열). 파일 이름은 응애팩 등 흔한 롬 폴더 이름과 같게 (ASCII)
 SYSTEMS = [
     ("default", "JOY LAUNCHER", "default"),
+    ("favorites", "FAVORITES", "snk"),
     ("arcade_action", "ACTION ARCADE", "act"),
     ("arcade_casual", "CASUAL ARCADE", "cas"),
     ("arcade_flying", "FLYING ARCADE", "fly"),
