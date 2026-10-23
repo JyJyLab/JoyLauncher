@@ -5,7 +5,7 @@
 Joy Launcher reads an Android **Pegasus ROM pack** copied to the Switch SD card as-is, shows the games by category, and launches the selected game with **RetroArch cores / PPSSPP**.
 
 - Converts the Android launch settings in `metadata.pegasus.txt` (RetroArch cores, PPSSPP app) to Switch programs automatically.
-- Works without a list file too: ROMs in per-system folders are found and matched automatically. ES-DE `gamelist.xml` is also read.
+- Works without a list file too: ROMs in per-system folders are found and matched automatically. ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) are read as they are.
 - Shows box art, screenshots and descriptions. When there is no screenshot, it grabs a frame from the preview video.
 - Per-category background themes. The free default theme **JoyBasic** is included.
 - Korean / English interface (default: the Switch system language).
@@ -49,12 +49,16 @@ LICENSE                              launcher license (GPL-3.0)
 3. Start **Joy Launcher** from the Album (homebrew menu).
 4. To come back to the launcher automatically after a game, press **Y** for Options, choose **"Set Joy Launcher as the default homebrew menu"** and press A again to confirm.
 
-Both common homebrew menus are handled:
+The current homebrew menu (`/hbmenu.nro`) is handled by type (judged from the program name inside the nro):
 
-- **nx-hbmenu** (Atmosphere default): backed up to `/switch/hbmenu.nro`, then replaced.
-- **sphaira**: its `replace_hbmenu` setting is turned off first so it doesn't overwrite the launcher. sphaira itself stays at `/switch/sphaira/sphaira.nro`.
+- **nx-hbmenu** (default in Atmosphere, Kefir etc.): backed up to `/switch/hbmenu.nro`, then replaced. If another program is already there, it is not overwritten and the backup goes to `/switch/hbmenu_prev/nx-hbmenu.nro`.
+- **sphaira**: replaced; sphaira itself stays at `/switch/sphaira/sphaira.nro`.
+- **Any other menu**: backed up to `/switch/hbmenu_prev/<program name>.nro`, then replaced.
+- **sphaira's auto-replace** (`replace_hbmenu`): if sphaira is installed, this option is turned off whatever the current menu is (when on, starting sphaira overwrites `/hbmenu.nro`). The original value is saved and restored when you go back to sphaira. If it gets turned on again (e.g. by a sphaira update), the launcher tells you at start and turns it off.
 
-**"Restore the original homebrew menu"** in Options puts the previous menu and the sphaira setting back.
+**"Restore the original homebrew menu"** in Options puts the previous menu back (without a record, it uses the backups it finds).
+
+**After updating Atmosphere**: the Atmosphere zip contains `hbmenu.nro` (nx-hbmenu), so extracting it to the SD card replaces Joy Launcher at `/hbmenu.nro`. Start Joy Launcher once from the album (nx-hbmenu): it shows "The default homebrew menu was changed to nx-hbmenu", backs up the new nx-hbmenu and puts **"Set Joy Launcher as the default homebrew menu again"** at the top of Options. Choose it.
 
 ### Created automatically on first run (`/JoyLauncher/`)
 
@@ -68,17 +72,54 @@ Both common homebrew menus are handled:
 | `bgm/` | background music + guide `README.txt` (section 9) |
 | `state.txt`, `launch_log.txt` | created when you launch a game |
 
+### How to start the launcher
+
+Joy Launcher is not installed as an app with its own icon. It **takes the place of the Switch homebrew menu (`/hbmenu.nro`)** ("Set Joy Launcher as the default homebrew menu" above). The homebrew loader always starts `/hbmenu.nro`, so every way of opening the homebrew menu opens Joy Launcher.
+
+| Method | Memory | Notes |
+|---|---|---|
+| **Start an installed game/app while holding R** | full (title mode) | On the HOME screen pick any game and press A **while holding R**; Joy Launcher opens instead of the game. (Atmosphere default; the key is `override_any_app_key` in `/atmosphere/config/override_config.ini`) |
+| **Install a homebrew-menu forwarder NSP** | full (title mode) | A forwarder NSP that starts `/hbmenu.nro`, installed with DBI etc., gives a HOME screen icon (e.g. Kefir's "Homebrew menu" NSP or one made with a forwarder tool) |
+| **Album** | less (applet mode) | Browsing, settings and opening the homebrew menu only. **Games cannot be started.** See "Applet mode" below |
+
+> When a game ends, the homebrew loader opens `/hbmenu.nro` (= Joy Launcher) again, so you come straight back to the launcher.
+
 ### Applet mode
 
-Started from the Album, the Switch runs homebrew in **applet mode** with less memory, and a red **"Applet mode"** label appears at the top left. Most games still run; if a large game is slow or won't start, run the launcher in **title mode (full memory)**, e.g. by holding R while starting a game.
+Started from the Album, the Switch runs homebrew in **applet mode** with less memory, and a red **"Applet mode"** label appears at the top left.
+
+In applet mode the launcher **does not start games or RetroArch/PPSSPP; it only shows a warning.** On hardware, RetroArch failed for PS1, PSP, FBNeo and GBA alike for lack of memory, and quitting it then crashed the Switch HOME menu (error 2144-0001), requiring a reboot. To play, open the launcher in **title mode (full memory)**, e.g. by holding **R** while starting an installed game.
 
 ## 4. Your ROM pack
 
 The default ROM folder is `/roms`. Folders are read two levels deep, and each folder is checked in this order:
 
 1. **`metadata.pegasus.txt`**: the Pegasus list is used as-is (Android lists too). The same `collection` name in different folders becomes one category. `launch:` may point directly to a Switch nro.
-2. **`gamelist.xml`**: ES-DE / EmulationStation list (names, descriptions, images).
-3. **No list file**: ROM files are registered automatically. The system is guessed from the folder name (gba, snes, sfc, md, psx, ps1, psp, fbneo...) or the file extension.
+2. **`gamelist.xml`** in the folder: EmulationStation-style list (Batocera, RetroBat etc.: names, descriptions, images).
+3. **ES-DE list** (`ES-DE/gamelists/<folder name>/gamelist.xml`): see "ES-DE packs" below.
+4. **No list file**: ROM files are registered automatically. The system is guessed from the folder name (gba, snes, sfc, md, psx, ps1, psp, fbneo...) or the file extension.
+
+Each folder is judged separately, so you can mix them (e.g. GBA with a Pegasus list, SFC with an ES-DE list).
+
+### ES-DE packs
+
+ES-DE keeps game lists and images outside the ROM folders. Copy them like this:
+
+| Original (Android etc.) | Switch SD card |
+|---|---|
+| `ROMs/<system>/` (ROMs) | `/roms/<system>/` |
+| `ES-DE/gamelists/` | `/ES-DE/gamelists/` |
+| `ES-DE/downloaded_media/` | `/ES-DE/downloaded_media/` |
+
+- The rest of the ES-DE folder (settings, themes, custom_systems...) is not needed.
+- Lists and images are matched by ROM folder name (case-insensitive), so keep the ES-DE system names (gba, megadrive, psx...).
+- Images: box from covers → 3dboxes → physicalmedia → miniatures → marquees; game screen from screenshots → titlescreens → fanart. Videos in `videos` are used to grab a frame when there is no screenshot (section 6); you can delete them afterwards.
+- Launching: an emulator chosen in the list (per game or per system, e.g. MAME 2003-Plus, PCSX ReARMed, PPSSPP) picks the core; otherwise folder name / extension.
+- Categories get the launcher's system names (Mega Drive, GBA...).
+- The ES-DE folder is looked for at `/ES-DE` (next to the ROM folder). If it is elsewhere, add a line `esde=/path/ES-DE` to `/JoyLauncher/roots.txt`.
+- Games in Pegasus-list folders that have no images also get ES-DE images.
+
+Other notes:
 
 - RetroArch playlists (`.lpl`) are not read.
 - Games whose ROM file is missing are hidden.
@@ -87,12 +128,14 @@ The default ROM folder is `/roms`. Folders are read two levels deep, and each fo
 
 ## 5. Systems and cores
 
-| | Systems | Runs with |
-|---|---|---|
-| Shown | Arcade (FBNeo, MAME 2003-Plus, MAME 2010), SFC, FC, GB/GBC, GBA, Mega Drive, Master System, Game Gear, PC Engine, WonderSwan, Neo Geo Pocket, PC-98, DOS, MSX, PS1... | RetroArch cores |
-| Shown | PSP | PPSSPP |
-| Hidden by default | NDS, N64, Saturn, Dreamcast, NAOMI/Atomiswave | too slow; change `hide_cores` in `settings.txt` |
-| Excluded | PS2, PS3, 3DS, GameCube/Wii/Wii U, PS Vita, Switch, Xbox, Windows/Android apps | never shown |
+**Display rule:** a game is shown when the Switch has a **RetroArch core** for its system (`/retroarch/cores/…_libretro_libnx.nro`); PSP uses the **PPSSPP** app (`/switch/ppsspp/PPSSPP.nro`). Games of systems without a core are not shown, and appear automatically on the next start once you add the core.
+
+- The launcher starts the **core file directly with the ROM**, not through the RetroArch app (each Switch RetroArch core is a full RetroArch nro).
+- With the distributed RetroArch this covers arcade (FBNeo, MAME 2003-Plus, MAME 2010), SFC, FC, GB/GBC, GBA, Mega Drive, Master System, Game Gear, PC Engine, WonderSwan, Neo Geo Pocket, PC-98, DOS, MSX, PS1 and more.
+
+**Exception 1 – hidden by default:** NDS, N64, Saturn, Dreamcast and NAOMI/Atomiswave are hidden even with a core, because they are too slow. Remove them from `hide_cores` in `settings.txt` to show them.
+
+**Exception 2 – PS2 etc.:** systems without a Switch core (PS2, PS3, 3DS, GameCube/Wii/Wii U, PS Vita, Switch, Xbox, Windows/Android apps) are filtered by folder name (`PS2`, `Sony PlayStation 2`, `3DS`...) and by the emulator named in the list (AetherSX2, NetherSX2, ARMSX2, Citra, Azahar, Dolphin, Yuzu, Vita3K...), so they are not mistaken for PS1 etc. (PS2 `.chd`/`.iso` share extensions with PS1.)
 
 The Android core named in the list is mapped to a Switch core in this order: `cores.txt` `[user]` → `cores.txt` `[auto]` → a Switch core with the same name → the system judged from the core/emulator name → folder name / extension. MAME games use MAME 2003-Plus or MAME 2010, whichever supports the romset.
 
@@ -111,7 +154,7 @@ Every launch is logged in `/JoyLauncher/launch_log.txt` (last 20), including the
 
 ## 7. Saved game list
 
-The game list is saved in `/JoyLauncher/library.cache` for a fast start, and re-read automatically when ROM folders, list files, RetroArch cores, `cores.txt [user]`, `hide_cores` or the launcher version change. If you only added or removed ROM/image/video files, use **"Refresh game list"** in Options.
+The game list is saved in `/JoyLauncher/library.cache` for a fast start, and re-read automatically when ROM folders, list files (including ES-DE `gamelists`), RetroArch cores, `cores.txt [user]`, `hide_cores` or the launcher version change. If you only added or removed ROM/image/video files, use **"Refresh game list"** in Options.
 
 ## 8. Themes
 
@@ -162,14 +205,14 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 
 | Item | |
 |---|---|
-| Homebrew menu (sphaira / nx-hbmenu), RetroArch, PPSSPP | start them directly |
+| Homebrew menu (name version), RetroArch, PPSSPP | start them directly (installed and backed-up homebrew menus, the previous default first) |
 | Extract video frames | section 6 (only when frames are missing) |
 | Refresh game list | section 7 |
 | Check for updates / Install update | see "Automatic updates" |
 | Theme | section 8 |
 | BGM | A opens the BGM window; see "Background music" (dimmed when there are no songs) |
 | Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
-| Set as default homebrew menu / Restore | section 3 |
+| Set as default homebrew menu / Set again / Restore | section 3 ("Set again" appears at the top if another menu took over) |
 | Exit (HOME) | |
 
 ![Options](images/en_03_options.png)
@@ -207,10 +250,11 @@ The interface is available in Korean and English. **Auto** (default) follows the
 
 ## 11. Troubleshooting
 
-- **A game is missing**: rename non-ASCII ROM file names to ASCII (section 4); check the ROM file exists, the system isn't excluded/hidden, and the Switch core exists. After adding ROMs, use "Refresh game list".
+- **A game is missing**: check that the Switch has a **RetroArch core** for the system (PSP: PPSSPP; section 5 display rule), that the system isn't hidden/excluded, that the ROM file exists and that its name is ASCII (section 4). After adding ROMs, use "Refresh game list".
 - **Wrong core**: read "Original core / Chosen by" in `launch_log.txt` and add a line to `[user]` in `cores.txt`.
-- **Doesn't return to the launcher after a game**: "Set Joy Launcher as the default homebrew menu" in Options.
-- **Large games are slow or won't start**: if the red "Applet mode" label is shown, start the launcher in title mode.
+- **Doesn't return to the launcher after a game**: "Set Joy Launcher as the default homebrew menu" in Options. After an Atmosphere update, start the launcher once from the album and choose "Set again" (section 3).
+- **No images/descriptions for an ES-DE pack**: check that `/ES-DE/gamelists` and `/ES-DE/downloaded_media` were copied and that the ROM folder names match the ES-DE system names (section 4).
+- **"Games can't be started in album (applet) mode"**: the launcher was opened from the Album. Open it in title mode, e.g. by holding R while starting an installed game (section 3).
 - **BGM items are dimmed**: there are no mp3/ogg files in `/JoyLauncher/bgm/`. Add some and restart.
 
 ---

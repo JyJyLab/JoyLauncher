@@ -210,6 +210,146 @@ std::string FindVideo(const std::string &dir, const std::string &rel) {
     return "";
 }
 
+std::string FolderKey(const std::string &name);
+
+// ---------------------------------------------------------------- ES-DE (롬 폴더 밖의 목록·그림)
+// ES-DE 는 목록을 ES-DE/gamelists/<기종 폴더>/gamelist.xml 에, 그림·영상을
+// ES-DE/downloaded_media/<기종 폴더>/<종류>/<롬 경로(확장자 뺌)>.png 에 둔다 (목록에는 그림 경로가 없음).
+std::string gEsdeHint;   // roots.txt 의 esde=<경로>
+std::string gEsdeDir;    // 찾은 ES-DE 폴더 ("" = 없음)
+std::string gEsdeMedia;  // 그림·영상 폴더 (기본 <ES-DE>/downloaded_media)
+std::map<std::string, std::string> gEsdeSysDirs;  // "<상위 폴더>|<기종 폴더 이름>" -> 실제 폴더 ("" = 없음)
+
+std::string ParentDir(const std::string &p) {
+    size_t s = p.find_last_of('/');
+    return s == std::string::npos || s == 0 ? "" : p.substr(0, s);
+}
+
+// parent 안에서 이름이 같은(대소문자 무시) 폴더
+std::string EsdeChild(const std::string &parent, const std::string &name) {
+    std::string key = parent + "|" + Lower(name);
+    auto it = gEsdeSysDirs.find(key);
+    if (it != gEsdeSysDirs.end()) return it->second;
+    std::string found;
+    for (const auto &n : ListDir(parent, true))
+        if (Lower(n) == Lower(name)) { found = parent + "/" + n; break; }
+    gEsdeSysDirs[key] = found;
+    return found;
+}
+
+// settings/es_settings.xml 의 MediaDirectory (안드로이드 절대 경로는 ES-DE 폴더 기준으로 바꿈)
+std::string EsdeMediaSetting(const std::string &esde) {
+    std::ifstream in(esde + "/settings/es_settings.xml", std::ios::binary);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string x = ss.str();
+    size_t p = x.find("name=\"MediaDirectory\"");
+    if (p == std::string::npos) return "";
+    size_t v = x.find("value=\"", p);
+    if (v == std::string::npos) return "";
+    v += 7;
+    std::string val = Trim(x.substr(v, x.find('"', v) - v));
+    while (!val.empty() && val.back() == '/') val.pop_back();
+    if (val.empty()) return "";
+    size_t e = val.find("/ES-DE/");
+    if (e != std::string::npos && IsDir(esde + val.substr(e + 6))) return esde + val.substr(e + 6);
+    if (IsDir(val)) return val;
+    if (IsDir(esde + "/" + Base(val))) return esde + "/" + Base(val);
+    return "";
+}
+
+// ES-DE 폴더 찾기: roots.txt 의 esde=, 롬 폴더 옆(/roms → /ES-DE), 롬 폴더 안
+void FindEsde(const std::vector<std::string> &rootDirs) {
+    gEsdeDir.clear();
+    gEsdeMedia.clear();
+    gEsdeSysDirs.clear();
+    std::vector<std::string> cand;
+    if (!gEsdeHint.empty()) cand.push_back(gEsdeHint);
+    for (const auto &r : rootDirs) cand.push_back(ParentDir(r) + "/ES-DE");
+    for (const auto &r : rootDirs) cand.push_back(r + "/ES-DE");
+    for (const auto &c : cand) {
+        if (!IsDir(c + "/gamelists") && !IsDir(c + "/downloaded_media")) continue;
+        gEsdeDir = c;
+        gEsdeMedia = EsdeMediaSetting(c);
+        if (gEsdeMedia.empty()) gEsdeMedia = c + "/downloaded_media";
+        return;
+    }
+}
+
+// <ES-DE>/gamelists/<폴더 이름>/gamelist.xml ("" = 없음)
+std::string EsdeGamelist(const std::string &dir) {
+    if (gEsdeDir.empty()) return "";
+    std::string d = EsdeChild(gEsdeDir + "/gamelists", Base(dir));
+    return !d.empty() && Exists(d + "/gamelist.xml") ? d + "/gamelist.xml" : "";
+}
+
+// kind 0 = 박스, 1 = 게임 화면, 2 = 영상. rel 은 롬 폴더 기준 경로 (하위 폴더 포함)
+std::string EsdeMediaFile(const std::string &dir, const std::string &rel, int kind) {
+    if (gEsdeMedia.empty()) return "";
+    std::string sys = EsdeChild(gEsdeMedia, Base(dir));
+    if (sys.empty()) return "";
+    static const std::vector<std::vector<const char *>> types = {
+        {"covers", "3dboxes", "physicalmedia", "miniatures", "marquees"}, {"screenshots", "titlescreens", "fanart"}, {"videos"}};
+    static const char *vexts[] = {".mp4", ".MP4", ".mkv", ".webm", ".avi", ".m4v"};
+    std::string r = rel;
+    while (r.rfind("./", 0) == 0) r = r.substr(2);
+    size_t dot = r.find_last_of('.');
+    std::string noExt = dot == std::string::npos || dot < r.find_last_of('/') + 1 ? r : r.substr(0, dot);
+    std::vector<std::string> names = {noExt};
+    if (Stem(r) != noExt) names.push_back(Stem(r));
+    for (const char *t : types[kind])
+        for (const auto &n : names) {
+            if (kind == 2) {
+                for (const char *e : vexts)
+                    if (Exists(sys + "/" + t + "/" + n + e)) return sys + "/" + t + "/" + n + e;
+            } else {
+                for (const char *e : kImgExts)
+                    if (Exists(sys + "/" + t + "/" + n + e)) return sys + "/" + t + "/" + n + e;
+            }
+        }
+    return "";
+}
+
+// 그림이 없는 게임만 ES-DE 그림으로 채움 (Pegasus·롬 폴더 쪽 그림이 있으면 그대로)
+void AddEsdeMedia(const std::string &dir, const std::string &rel, Game &g) {
+    if (gEsdeMedia.empty()) return;
+    if (g.boxart.empty()) g.boxart = EsdeMediaFile(dir, rel, 0);
+    if (g.screenshot.empty()) g.screenshot = EsdeMediaFile(dir, rel, 1);
+    if (g.screenshot.empty() && g.video.empty()) g.video = EsdeMediaFile(dir, rel, 2);
+}
+
+// ES-DE 에뮬레이터 표시 이름("MAME 2003-Plus", "PCSX ReARMed", "PPSSPP (Standalone)")을 실행 설정으로.
+// 안드로이드 코어 이름 형식으로 만들어 페가수스와 같은 변환(cores.txt 등)을 거친다. 모르면 ""
+std::string EsdeEmulatorLaunch(const std::string &label) {
+    static const std::vector<std::pair<const char *, const char *>> t = {
+        {"ppsspp", "org.ppsspp.ppsspp"},
+        {"mame2003plus", "mame2003_plus"}, {"mame2003", "mame2003"}, {"mame2010", "mame2010"}, {"mame2000", "mame2000"},
+        {"finalburnneo", "fbneo"}, {"fbneo", "fbneo"},
+        {"pcsxrearmed", "pcsx_rearmed"}, {"beetlepsxhw", "mednafen_psx_hw"}, {"beetlepsx", "mednafen_psx"}, {"swanstation", "swanstation"},
+        {"genesisplusgxwide", "genesis_plus_gx_wide"}, {"genesisplusgx", "genesis_plus_gx"}, {"picodrive", "picodrive"},
+        {"blastem", "blastem"}, {"gearsystem", "gearsystem"}, {"smsplus", "smsplus"},
+        {"mgba", "mgba"}, {"gpsp", "gpsp"}, {"vbam", "vbam"}, {"vbanext", "vba_next"},
+        {"snes9x2010", "snes9x2010"}, {"snes9x2005plus", "snes9x2005_plus"}, {"snes9x2005", "snes9x2005"},
+        {"snes9x2002", "snes9x2002"}, {"snes9x", "snes9x"}, {"bsnes", "bsnes"}, {"mesens", "mesen-s"},
+        {"mesen", "mesen"}, {"fceumm", "fceumm"}, {"nestopia", "nestopia"}, {"quicknes", "quicknes"},
+        {"gambatte", "gambatte"}, {"sameboy", "sameboy"}, {"gearboy", "gearboy"},
+        {"beetlepcefast", "mednafen_pce_fast"}, {"beetlesupergrafx", "mednafen_supergrafx"}, {"beetlepce", "mednafen_pce"},
+        {"beetlewonderswan", "mednafen_wswan"}, {"beetleneopop", "mednafen_ngp"}, {"race", "race"},
+        {"beetlelynx", "mednafen_lynx"}, {"handy", "handy"}, {"beetlevb", "mednafen_vb"},
+        {"bluemsx", "bluemsx"}, {"fmsx", "fmsx"}, {"dosboxpure", "dosbox_pure"}, {"np2kai", "np2kai"},
+        {"flycast", "flycast"}, {"mupen64plusnext", "mupen64plus_next"}, {"melonds", "melonds"}, {"desmume", "desmume"},
+        {"beetlesaturn", "mednafen_saturn"}, {"yabasanshiro", "yabasanshiro"}, {"yabause", "yabause"}, {"kronos", "kronos"},
+        {"mamecurrent", "mame"},
+    };
+    std::string key = FolderKey(label);
+    if (key.empty()) return "";
+    for (const auto &kv : t)
+        if (key.find(kv.first) != std::string::npos)
+            return std::string(kv.second).find('.') != std::string::npos ? kv.second
+                                                                         : std::string("/cores/") + kv.second + "_libretro_android.so";
+    return "";
+}
+
 bool CoreExists(const std::string &nro) {
 #ifdef __SWITCH__
     return Exists(nro);
@@ -327,7 +467,7 @@ int SystemByExt(const std::string &ext) {
 int SystemByIdent(const std::string &ident) {
     static const std::vector<std::pair<const char *, const char *>> t = {
         // 제외 기종: PS2·PS3·3DS·GC/Wii/WiiU·스위치·비타·엑스박스·윈도우
-        {"aethersx2", "-"}, {"nethersx2", "-"}, {"pcsx2", "-"}, {"lrps2", "-"}, {"virtualapplications.play", "-"},
+        {"aethersx2", "-"}, {"nethersx2", "-"}, {"armsx2", "-"}, {"pcsx2", "-"}, {"lrps2", "-"}, {"virtualapplications.play", "-"},
         {"rpcs3", "-"}, {"aps3e", "-"}, {"citra", "-"}, {"lime3ds", "-"}, {"azahar", "-"}, {"mandarine", "-"},
         {"panda3ds", "-"}, {"dolphin", "-"}, {"cemu", "-"}, {"yuzu", "-"}, {"suyu", "-"}, {"sudachi", "-"},
         {"citron", "-"}, {"dev.eden", "-"}, {"strato", "-"}, {"skyline", "-"}, {"ryujinx", "-"}, {"vita3k", "-"},
@@ -577,6 +717,45 @@ struct Library {
     }
 };
 
+// 메타데이터의 실행 설정(launch)으로 스위치에서 실행할 대상을 정한다 (cur.launch·metaCore·how).
+// 실행할 수 없으면(숨김) false. ident: launch 가 없을 때 기종 판단에 쓸 에뮬레이터 이름 (ES-DE 표시 이름 등)
+bool ResolveLaunch(const std::string &dir, const std::string &launch, Game &cur, const std::string &ident = "") {
+    bool userCore = false;
+    cur.launch = launch.empty() ? "" : TranslateLaunch(launch, userCore);
+    if (cur.launch == "-") return false;  // cores.txt 에서 none
+    cur.metaCore = launch.empty() ? ident : LaunchCoreName(launch);
+    if (cur.launch.empty()) cur.how = "폴더 이름/확장자로 추정";
+    else if (launch.find(".nro") != std::string::npos) cur.how = "메타데이터의 nro 그대로";
+    else if (userCore) cur.how = "cores.txt [user]";
+    else {
+        bool dummy = false;
+        cur.how = CoreSetting(cur.metaCore, dummy).empty() && launch.find("_libretro_android") != std::string::npos
+                      ? "같은 이름 코어"
+                      : "cores.txt [auto]";
+    }
+    if (cur.launch.empty()) {
+        // 변환 불가: 원래 코어/에뮬레이터 이름으로 기종을 먼저 판단, 모르면 폴더/확장자로 추정
+        int s = SystemByIdent(cur.metaCore);
+        if (s == -2) return false;  // 제외 기종 에뮬레이터 (PS2·3DS·GC/Wii·스위치·비타 등)
+        if (s >= 0) {
+            cur.launch = TargetFor(s);
+            cur.how = std::string("코어 이름으로 기종 판단 (") + Systems()[s].name + ")";
+        } else {
+            cur.launch = AutoLaunch(dir, cur.file);
+        }
+    }
+    if (cur.launch.empty()) return false;
+    // MAME 계열: 최신 MAME 용 목록이면 latest 표시를 남겨 롬셋으로 코어 선택
+    // (cores.txt [user] 로 직접 정한 코어는 그대로)
+    if (!userCore) {
+        std::string before = cur.launch;
+        cur.launch = PickMameCore(launch.find("mamearcade_libretro") != std::string::npos ? launch : cur.launch, cur.file);
+        if (cur.launch != before) cur.how += " + MAME 롬셋 목록으로 선택";
+    }
+    if (cur.launch.empty()) return false;
+    return true;
+}
+
 // ---------------------------------------------------------------- 1) 페가수스
 struct Entry {
     std::string key;
@@ -650,39 +829,7 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         if (Ext(cur.file) == "custom" || Ext(cur.file) == "apk") { unsupported++; return; }  // 안드로이드 앱 실행용 항목
         if (!Exists(cur.file)) { missing++; return; }
         std::string launch = cur.launch.empty() ? colLaunch : cur.launch;
-        bool userCore = false;
-        cur.launch = launch.empty() ? "" : TranslateLaunch(launch, userCore);
-        if (cur.launch == "-") { unsupported++; return; }  // cores.txt 에서 none
-        cur.metaCore = LaunchCoreName(launch);
-        if (cur.launch.empty()) cur.how = "폴더 이름/확장자로 추정";
-        else if (launch.find(".nro") != std::string::npos) cur.how = "메타데이터의 nro 그대로";
-        else if (userCore) cur.how = "cores.txt [user]";
-        else {
-            bool dummy = false;
-            cur.how = CoreSetting(cur.metaCore, dummy).empty() && launch.find("_libretro_android") != std::string::npos
-                          ? "같은 이름 코어"
-                          : "cores.txt [auto]";
-        }
-        if (cur.launch.empty()) {
-            // 변환 불가: 원래 코어/에뮬레이터 이름으로 기종을 먼저 판단, 모르면 폴더/확장자로 추정
-            int s = SystemByIdent(cur.metaCore);
-            if (s == -2) { unsupported++; return; }  // 제외 기종 에뮬레이터 (PS2·3DS·GC/Wii·스위치·비타 등)
-            if (s >= 0) {
-                cur.launch = TargetFor(s);
-                cur.how = std::string("코어 이름으로 기종 판단 (") + Systems()[s].name + ")";
-            } else {
-                cur.launch = AutoLaunch(dir, cur.file);
-            }
-        }
-        if (cur.launch.empty()) { unsupported++; return; }
-        // MAME 계열: 최신 MAME 용 목록이면 latest 표시를 남겨 롬셋으로 코어 선택
-        // (cores.txt [user] 로 직접 정한 코어는 그대로)
-        if (!userCore) {
-            std::string before = cur.launch;
-            cur.launch = PickMameCore(launch.find("mamearcade_libretro") != std::string::npos ? launch : cur.launch, cur.file);
-            if (cur.launch != before) cur.how += " + MAME 롬셋 목록으로 선택";
-        }
-        if (cur.launch.empty()) { unsupported++; return; }
+        if (!ResolveLaunch(dir, launch, cur)) { unsupported++; return; }
         // assets.* 중 실제로 있는 이미지 중 우선순위가 가장 높은 것, 없으면 폴더 탐색
         cur.boxart.clear();
         for (const std::string &a : assets)
@@ -697,6 +844,7 @@ void ParsePegasus(const std::string &dir, Library &lib) {
             if (!videoAsset.empty() && Exists(Join(dir, videoAsset))) cur.video = Join(dir, videoAsset);
             else cur.video = FindVideo(dir, rel);
         }
+        AddEsdeMedia(dir, rel, cur);
         std::string name = colName.empty() ? Base(dir) : colName;
         if (lib.Add(name, colSort, cur)) added++;
     };
@@ -773,11 +921,27 @@ std::string XmlTag(const std::string &block, const char *tag) {
     return b == std::string::npos ? "" : XmlUnescape(block.substr(a, b - a));
 }
 
-void ParseGamelist(const std::string &dir, Library &lib) {
-    std::ifstream in(dir + "/gamelist.xml", std::ios::binary);
+// xmlPath: 롬 폴더 밖의 목록 (ES-DE/gamelists/<폴더>/gamelist.xml). 비어 있으면 <dir>/gamelist.xml
+void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlPath = "") {
+    bool esde = !xmlPath.empty();
+    if (ExcludedFolder(FolderKey(Base(dir)))) {
+        lib.log += "[skip] " + dir + "\n";
+        return;
+    }
+    std::ifstream in(esde ? xmlPath : dir + "/gamelist.xml", std::ios::binary);
     std::stringstream ss;
     ss << in.rdbuf();
     std::string xml = ss.str();
+    // 기종 전체 에뮬레이터 (ES-DE: 목록 맨 앞 <alternativeEmulator><label>)
+    std::string sysEmu;
+    size_t ae = xml.find("<alternativeEmulator>");
+    if (ae != std::string::npos && ae < xml.find("<gameList")) {
+        size_t aeEnd = xml.find("</alternativeEmulator>", ae);
+        sysEmu = XmlTag(xml.substr(ae, aeEnd == std::string::npos ? std::string::npos : aeEnd - ae), "label");
+    }
+    // ES-DE 는 폴더 이름이 곧 기종 이름(gba, megadrive) → 카테고리는 런처의 기종 이름으로
+    int sys = SystemByFolder(Base(dir));
+    std::string col = esde && sys >= 0 ? Systems()[sys].name : Base(dir);
     int added = 0, missing = 0, unsupported = 0;
     size_t pos = 0;
     while ((pos = xml.find("<game", pos)) != std::string::npos) {
@@ -800,18 +964,21 @@ void ParseGamelist(const std::string &dir, Library &lib) {
         g.players = XmlTag(blk, "players");
         std::string rd = XmlTag(blk, "releasedate");
         if (rd.size() >= 4) g.release = rd.substr(0, 4);
+        std::string emu = XmlTag(blk, "altemulator");
+        if (emu.empty()) emu = sysEmu;
+        if (!ResolveLaunch(dir, EsdeEmulatorLaunch(emu), g, Lower(emu))) { unsupported++; continue; }
+        g.how = std::string(esde ? "ES-DE gamelist" : "gamelist.xml") + (emu.empty() ? "" : " (" + emu + ")") + ", " + g.how;
         std::string img = XmlTag(blk, "image");
         if (img.empty()) img = XmlTag(blk, "thumbnail");
-        g.boxart = img.empty() ? FindBoxart(dir, rel) : Join(dir, img);
+        g.boxart = !img.empty() && Exists(Join(dir, img)) ? Join(dir, img) : FindBoxart(dir, rel);
         g.screenshot = FindScreenshot(dir, rel);
         if (g.screenshot.empty()) g.video = FindVideo(dir, rel);
-        g.launch = AutoLaunch(dir, g.file);
-        g.how = "gamelist.xml, 폴더 이름/확장자로 추정";
-        if (g.launch.empty()) { unsupported++; continue; }
-        if (lib.Add(Base(dir), "", g)) added++;
+        AddEsdeMedia(dir, rel, g);
+        if (lib.Add(col, "", g)) added++;
     }
-    char buf[512];
-    snprintf(buf, sizeof(buf), "[gamelist] %s: %d (missing %d, unsupported %d)\n", dir.c_str(), added, missing, unsupported);
+    char buf[640];
+    snprintf(buf, sizeof(buf), "[%s] %s: %d (missing %d, unsupported %d)\n", esde ? "esde" : "gamelist", dir.c_str(), added,
+             missing, unsupported);
     lib.log += buf;
 }
 
@@ -874,6 +1041,7 @@ void ScanAuto(const std::string &dir, Library &lib) {
         g.boxart = FindBoxart(dir, f);
         g.screenshot = FindScreenshot(dir, f);
         if (g.screenshot.empty()) g.video = FindVideo(dir, f);
+        AddEsdeMedia(dir, f, g);
         std::string col = Base(dir);
         if (lib.Add(col, "~" + col, g)) added++;  // 자동 인식 카테고리는 뒤쪽으로
     }
@@ -892,7 +1060,7 @@ bool IsMediaFolder(const std::string &dir) {
            key == "marquees" || key == "manuals" || key == "downloadedmedia" || key == "covers" || key == "screenshots" ||
            key == "box" || key == "boxfront" || key == "cartridge" || key == "logo" || key == "marquee" ||
            key == "screenshot" || key == "titlescreen" || key == "video" || key == "boxarts" || key == "3dboxes" ||
-           key == "snaps" || key == "namedboxarts";
+           key == "snaps" || key == "namedboxarts" || key == "esde" || key == "gamelists" || key == "downloadedmedia";
 }
 
 void Scan(const std::string &dir, int depth, Library &lib, bool parentHasMeta = false) {
@@ -900,6 +1068,7 @@ void Scan(const std::string &dir, int depth, Library &lib, bool parentHasMeta = 
     bool meta = true;
     if (Exists(dir + "/metadata.pegasus.txt")) ParsePegasus(dir, lib);
     else if (Exists(dir + "/gamelist.xml")) ParseGamelist(dir, lib);
+    else if (!parentHasMeta && !EsdeGamelist(dir).empty()) ParseGamelist(dir, lib, EsdeGamelist(dir));
     else {
         meta = false;
         // 메타데이터 폴더의 하위 폴더(NAOMI/ikaruga 같은 게임 데이터 폴더)는 자동 등록하지 않음
@@ -982,6 +1151,8 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     Library lib;
     gDirCache.clear();
     gDirCacheOn = true;
+    FindEsde(rootDirs);
+    if (!gEsdeDir.empty()) lib.log += "[esde] " + gEsdeDir + " (media " + gEsdeMedia + ")\n";
     for (const auto &r : rootDirs) {
         if (!IsDir(r)) continue;
         // 루트 자체는 목록 파일이 있을 때만 (롬을 루트에 직접 두는 경우는 드묾)
@@ -1094,6 +1265,8 @@ std::vector<std::string> SplitTab(const std::string &line) {
 }
 }  // namespace
 
+void SetEsdeHint(const std::string &path) { gEsdeHint = path; }
+
 std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     std::string sig = std::string(kCacheMagic) + " " + __DATE__ + " " + __TIME__ + "\n";
     for (const auto &h : gHiddenCores) sig += "H" + h + "\n";
@@ -1104,6 +1277,17 @@ std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
 #endif
     for (const auto &n : ListDir(coreDir, false)) sig += "C" + n + "\n";
     sig += CoreExists("/switch/ppsspp/PPSSPP.nro") ? "PPSSPP\n" : "";
+    // ES-DE 폴더와 그 목록들
+    FindEsde(rootDirs);
+    if (!gEsdeDir.empty()) {
+        sig += "E" + gEsdeDir + "\nM" + gEsdeMedia + "\n";
+        for (const auto &d : ListDir(gEsdeDir + "/gamelists", true)) {
+            struct stat st;
+            std::string f = gEsdeDir + "/gamelists/" + d + "/gamelist.xml";
+            if (stat(f.c_str(), &st) == 0)
+                sig += "G" + d + " " + std::to_string((long long)st.st_mtime) + " " + std::to_string((long long)st.st_size) + "\n";
+        }
+    }
     for (const auto &r : rootDirs) {
         if (!IsDir(r)) continue;
         sig += "R" + r + "\n";

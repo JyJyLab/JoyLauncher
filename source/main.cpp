@@ -17,6 +17,7 @@
 #include <list>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <vector>
@@ -60,6 +61,7 @@ struct MenuItem {
     std::string nro;
     MenuAct act;
     bool on = false;  // 켜져 있는 상태 (BGM 재생 중): 초록색 글자
+    bool hb = false;  // 홈브루 메뉴 (X 버튼으로 바로 실행)
 };
 static const SDL_Color kOn = {90, 220, 120, 255};
 static std::vector<MenuItem> gMenu;
@@ -113,10 +115,12 @@ static std::string LanguageLabel() {
 
 static void BuildMenu() {
     gMenu.clear();
-    if (SdExists("/switch/sphaira/sphaira.nro"))
-        gMenu.push_back({T("홈브루 메뉴 (sphaira)"), "/switch/sphaira/sphaira.nro", MenuAct::Launch});
-    if (SdExists("/switch/hbmenu.nro") && NroTitle("/switch/hbmenu.nro") == "nx-hbmenu")
-        gMenu.push_back({T("홈브루 메뉴 (nx-hbmenu)"), "/switch/hbmenu.nro", MenuAct::Launch});
+    HbKind hb = CurrentHbmenu();
+    // Joy 를 기본 메뉴로 설정해 뒀는데 다른 메뉴로 바뀌었으면 (Atmosphere 업데이트 등) 맨 위에 다시 설정
+    bool hbReplaced = hb != HbKind::Self && HbInstalledRecord();
+    if (hbReplaced)
+        gMenu.push_back({Fmt(T("Joy Launcher 를 기본 홈브루 메뉴로 다시 설정 (현재: %s)"), HbKindName(hb)), "", MenuAct::InstallHb});
+    for (const auto &m : HomebrewMenus()) gMenu.push_back({m.label, m.nro, MenuAct::Launch, false, true});
     if (SdExists("/switch/retroarch_switch.nro"))
         gMenu.push_back({"RetroArch", "/switch/retroarch_switch.nro", MenuAct::Launch});
     if (SdExists("/switch/ppsspp/PPSSPP.nro"))
@@ -142,8 +146,8 @@ static void BuildMenu() {
     gBgmMenu.push_back({gBgmShuffle ? T("순서: 무작위") : T("순서: 차례대로"), "", MenuAct::BgmOrder});
     if (gBgmOn) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
-    HbKind hb = CurrentHbmenu();
-    if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
+    if (hbReplaced) {
+    } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
         gMenu.push_back({T("원래 홈브루 메뉴로 되돌리기"), "", MenuAct::RestoreHb});
     else if (hb == HbKind::Self)
         gMenu.push_back({T("기본 홈브루 메뉴를 Joy Launcher 로 업데이트 (현재: 이전 버전)"), "", MenuAct::InstallHb});
@@ -1090,8 +1094,15 @@ static void Render(App &a) {
         DrawText(a, a.fList, a.message, W / 2, 310, kWhite, 760, 1, 0, 0, kScrollMsg);
         DrawText(a, a.fInfo, T("[B] 닫기"), W / 2, 370, kWhite, 0, 1);
     } else if (!a.message.empty() && SDL_GetTicks() < a.messageUntil) {
-        Fill(a, 240, 300, 800, 90, a.messageColor);
-        DrawText(a, a.fList, a.message, W / 2, 330, kWhite, 760, 1, 0, 0, kScrollMsg);
+        // 여러 줄 알림 ("\n" 으로 나눔): 줄마다 가운데 정렬, 한 번에 보이게
+        std::vector<std::string> lines;
+        std::stringstream ss(a.message);
+        for (std::string l; std::getline(ss, l, '\n');) lines.push_back(l);
+        int n = std::max(1, (int)lines.size()), lh = 40;
+        int boxH = 50 + n * lh, top = 345 - boxH / 2;
+        Fill(a, 240, top, 800, boxH, a.messageColor);
+        for (int i = 0; i < n; i++)
+            DrawText(a, a.fList, lines[i], W / 2, top + 30 + i * lh - (n > 1 ? 5 : 0), kWhite, 760, 1, 0, 0, kScrollMsg);
     }
 }
 
@@ -1217,6 +1228,13 @@ static void LogLaunch(const App &a, const Game &g, const std::string &nro, const
     for (const auto &s : entries) o << s << "\n";
 }
 
+// 앨범(애플릿) 모드에서 게임·에뮬레이터를 실행하려 할 때 (두 줄 경고)
+static void ShowAppletBlock(App &a) {
+    a.message = T("앨범(애플릿) 모드에서는 게임을 실행할 수 없습니다") + std::string("\n") + T("R 버튼을 누른 채 게임을 실행해 런처를 여세요");
+    a.messageColor = {120, 40, 40, 240};
+    a.messageUntil = SDL_GetTicks() + 6000;
+}
+
 static bool LaunchGame(App &a) {
     const Game &g = a.cols[a.col].games[a.sel];
     std::string nro, args;
@@ -1224,6 +1242,13 @@ static bool LaunchGame(App &a) {
         a.message = T("실행 설정(launch)이 없습니다");
         a.messageUntil = SDL_GetTicks() + 2500;
         LogLaunch(a, g, nro, T("실패: 실행 설정 없음 (") + g.launch + ")");
+        return false;
+    }
+    // 앨범(애플릿) 모드에서는 RetroArch·PPSSPP 가 메모리 부족으로 오류가 나고(PS1·PSP·FBNeo·GBA 실기 확인),
+    // 끝낼 때 hbloader 가 런처를 다시 올리지 못해(2347-0018) HOME 메뉴까지 오류(2144-0001)로 재부팅이 필요 → 실행 막음
+    if (gAppletMode) {
+        ShowAppletBlock(a);
+        LogLaunch(a, g, nro, T("실행 안 함: 앨범(애플릿) 모드"));
         return false;
     }
     SaveState(a, true);
@@ -1284,6 +1309,17 @@ int main(int argc, char **argv) {
             printf("current=%s ok=%d latest=%s newer=%d size=%lld sha256=%s url=%s err=%s\n", CurrentVersion(), ok,
                    u.version.c_str(), ok ? CompareVersions(u.version, CurrentVersion()) > 0 : 0, u.size,
                    u.sha256.c_str(), u.url.c_str(), err.c_str());
+            return ok ? 0 : 1;
+        } else if (s == "--hb") {  // JOY_SDROOT 의 가짜 SD 에서 기본 메뉴 처리 시험: --hb install|restore|check|list
+            std::string what = i + 1 < argc ? argv[++i] : "list";
+            std::string msg;
+            bool ok = true;
+            if (what == "install") ok = InstallAsHbmenu(gSelfNro, msg);
+            else if (what == "restore") ok = RestoreHbmenu(msg);
+            else if (what == "check") msg = HbCheckOnStart();
+            printf("hb %s ok=%d current=%s record=%d msg=%s\n", what.c_str(), ok, HbKindName(CurrentHbmenu()),
+                   HbInstalledRecord(), msg.c_str());
+            for (const auto &m : HomebrewMenus()) printf("  menu: %s  %s\n", m.label.c_str(), m.nro.c_str());
             return ok ? 0 : 1;
         }  // 옵션 창 열고 커서
         else if (s == "--sel" && i + 1 < argc) wantSel = atoi(argv[++i]);
@@ -1350,6 +1386,7 @@ int main(int argc, char **argv) {
         std::string line;
         while (std::getline(rf, line)) {
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '/')) line.pop_back();
+            if (line.rfind("esde=", 0) == 0) { SetEsdeHint(line.substr(5)); continue; }  // ES-DE 폴더 위치
             if (!line.empty() && line[0] != '#' && std::find(roots.begin(), roots.end(), line) == roots.end())
                 roots.push_back(line);
         }
@@ -1383,6 +1420,10 @@ int main(int argc, char **argv) {
     if (wantFrames) { gShotMode = false; RunFrameBatch(a); gShotMode = !shot.empty(); }
 
     if (!shot.empty()) {
+#ifndef __SWITCH__
+        // 실행을 먼저 시도한 뒤의 화면 (애플릿 모드 경고 등 확인용)
+        if (getenv("JOY_SHOT_LAUNCH") && wantSel >= 0 && a.mode == Mode::Games) { LaunchGame(a); wantSel = -1; }
+#endif
         a.selChanged = SDL_GetTicks() - 1000;
         Render(a);
         SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, W, H, 32, SDL_PIXELFORMAT_ARGB8888);
@@ -1397,6 +1438,14 @@ int main(int argc, char **argv) {
     int held = -1;
     Uint32 nextRepeat = 0;
     int stickDir = -1;  // 스틱이 가리키는 방향 버튼 (12~15) 또는 -1
+    // 기본 홈브루 메뉴 확인: Joy 로 설정해 뒀는데 Atmosphere 업데이트 등으로 바뀌었는지, sphaira 자동 덮어쓰기가 켜졌는지
+    std::string hbNote = HbCheckOnStart();
+    if (!hbNote.empty()) {
+        BuildMenu();
+        a.message = hbNote;
+        a.messageColor = {60, 70, 120, 240};
+        a.messageModal = true;
+    }
     // 옵션 창의 항목 실행
     // 화면 가운데 상자에 한 줄 표시 (오래 걸리는 작업 전)
     auto showBusy = [&](const std::string &text) {
@@ -1571,6 +1620,9 @@ int main(int argc, char **argv) {
             a.message = T("/JoyLauncher/bgm 폴더에 mp3 또는 ogg 파일을 넣고 다시 실행하세요");
             a.messageColor = {60, 70, 120, 240};
             a.messageUntil = SDL_GetTicks() + 3500;
+        } else if (m.act == MenuAct::Launch && gAppletMode && !m.hb) {
+            a.optPick = false;
+            ShowAppletBlock(a);  // RetroArch·PPSSPP 단독 실행도 애플릿 모드에서는 오류
         } else if (m.act == MenuAct::Launch) {
             SaveState(a, true);
             if (ChainLoad(a, m.nro, {})) running = false;
@@ -1649,14 +1701,14 @@ int main(int argc, char **argv) {
             a.confirmIdx = -1;
             return;
         }
-        if (b == 2) {  // X: 홈브루 메뉴 (sphaira / nx-hbmenu)
+        if (b == 2) {  // X: 홈브루 메뉴 (이전 기본 메뉴 → sphaira → nx-hbmenu → 기타 백업)
             for (const auto &m : gMenu)
-                if (m.act == MenuAct::Launch && (m.nro == "/switch/sphaira/sphaira.nro" || m.nro == "/switch/hbmenu.nro")) {
+                if (m.hb) {
                     SaveState(a, true);
                     if (ChainLoad(a, m.nro, {})) running = false;
                     return;
                 }
-            a.message = T("홈브루 메뉴(sphaira / nx-hbmenu)를 찾을 수 없습니다");
+            a.message = T("홈브루 메뉴(sphaira / nx-hbmenu 등)를 찾을 수 없습니다");
             a.messageColor = {120, 40, 40, 240};
             a.messageUntil = SDL_GetTicks() + 3000;
             return;

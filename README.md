@@ -8,11 +8,11 @@
 
 ## 특징
 - 안드로이드용 페가수스 목록의 실행 설정(RetroArch 코어·PPSSPP 앱)을 스위치용으로 자동 변환 (`/JoyLauncher/cores.txt` 로 대체 규칙 지정)
-- 목록 파일이 없어도 기종별 폴더의 롬을 자동 인식, ES-DE `gamelist.xml` 지원
+- 목록 파일이 없어도 기종별 폴더의 롬을 자동 인식, ES-DE 설정 팩(`ES-DE/gamelists`·`downloaded_media`) 지원 — 폴더마다 섞어 써도 됨
 - 박스·화면 사진, 화면 사진이 없으면 미리보기 영상에서 장면 추출
 - 카테고리별 배경 테마(무료 기본 테마 **JoyBasic** 포함), 실행 기록, 게임 목록 캐시(빠른 시작)
 - 즐겨찾기(− 버튼), 한국어 / 영어 화면, 직접 넣은 mp3·ogg 배경 음악, HOME 화면과 같은 배터리 표시
-- 스위치 성능 범위(아케이드 ~ PS1, PSP) 밖의 기종은 자동 제외·숨김
+- 스위치에 RetroArch 코어(PSP 는 PPSSPP)가 있는 기종의 게임만 표시 (성능이 부족한 기종은 기본 숨김)
 - **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트) — 런처 본체만 바뀝니다. 기본 테마는 테마 설정 창의 "기본 테마 JoyBasic 내려받기" 또는 릴리스 zip 으로
 
 ## 설치
@@ -20,6 +20,7 @@
 2. 스위치용 RetroArch(코어 포함)와 PPSSPP 를 설치
 3. 롬 모음을 `/roms` 에 복사하고 앨범(홈브루 메뉴)에서 Joy Launcher 실행
    - 롬 파일·폴더 이름은 영문(ASCII)을 권장합니다 (한글 이름은 목록에서 빠지거나 깨질 수 있음)
+   - ES-DE 팩은 롬을 `/roms`, `ES-DE/gamelists`·`downloaded_media` 를 `/ES-DE` 에 복사
 
 자세한 사용법: [docs/설명서.md](docs/설명서.md) · English: [docs/manual-en.md](docs/manual-en.md)
 

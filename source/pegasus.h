@@ -37,6 +37,8 @@ struct Collection {
 void LoadCoreConfig(const std::string &path);
 void SetHiddenCores(const std::vector<std::string> &cores);
 std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, std::string &log);
+// ES-DE 폴더(gamelists·downloaded_media) 위치 지정 (roots.txt 의 esde=<경로>). 없으면 롬 폴더 옆 /ES-DE 등을 자동으로 찾음
+void SetEsdeHint(const std::string &path);
 
 // 게임 목록 저장/불러오기. 서명(sig)이 같을 때만 저장된 목록을 쓴다.
 std::string LibrarySignature(const std::vector<std::string> &rootDirs);
