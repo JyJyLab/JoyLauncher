@@ -11,6 +11,8 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Finds ROMs in per-system folders even without a list file; reads ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) — formats can be mixed per folder
 - Box art and screenshots; grabs a frame from the preview video when there is no screenshot
 - Per-category background themes with the free default theme **JoyBasic**, launch log, cached game list (fast start)
+- NDS games run with the DraStic Switch port (`/switch/DrasticDS.nro`) when it is installed
+- Homebrew Favorites: nro games picked in the options (ports and others) gathered at the top of the category list
 - Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
 - Shows games only for systems that have a RetroArch core on the Switch (PSP: PPSSPP); systems too slow for the Switch are hidden by default
 - **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the default theme from "Download default theme JoyBasic" in the theme picker or from the release zip

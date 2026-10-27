@@ -134,12 +134,18 @@ Other notes:
 - With the distributed RetroArch this covers arcade (FBNeo, MAME 2003-Plus, MAME 2010), SFC, FC, GB/GBC, GBA, Mega Drive, Master System, Game Gear, PC Engine, WonderSwan, Neo Geo Pocket, PC-98, DOS, MSX, PS1 and more.
 
 **Exception 1 – hidden by default:** NDS, N64, Saturn, Dreamcast and NAOMI/Atomiswave are hidden even with a core, because they are too slow. Remove them from `hide_cores` in `settings.txt` to show them.
+NDS is shown and launched with the DraStic Switch port (`/switch/DrasticDS.nro`, DrasticDS_nx) when it is installed. It runs `.nds`, `.zip` and `.rar`; `.7z` is hidden. After a game you return to the launcher through the DrasticDS screen (quit there).
 
 **Exception 2 – PS2 etc.:** systems without a Switch core (PS2, PS3, 3DS, GameCube/Wii/Wii U, PS Vita, Switch, Xbox, Windows/Android apps) are filtered by folder name (`PS2`, `Sony PlayStation 2`, `3DS`...) and by the emulator named in the list (AetherSX2, NetherSX2, ARMSX2, Citra, Azahar, Dolphin, Yuzu, Vita3K...), so they are not mistaken for PS1 etc. (PS2 `.chd`/`.iso` share extensions with PS1.)
 
 The Android core named in the list is mapped to a Switch core in this order: `cores.txt` `[user]` → `cores.txt` `[auto]` → a Switch core with the same name → the system judged from the core/emulator name → folder name / extension. MAME games use MAME 2003-Plus or MAME 2010, whichever supports the romset.
 
 `/JoyLauncher/cores.txt` format: `android_core=switch_core[,next candidate...]`. A value starting with `/` is an nro path; `none` hides that core's games. Example: `snes9x2005_plus=snes9x`. (The comments in this file are Korean only.)
+
+- It also applies to packs whose list already names a Switch core (`…_libretro_libnx.nro`) and to games recognised by folder name. Use that core name on the left, e.g. FB Alpha 2012 for arcade: `fbneo=fbalpha2012`
+- A core name is `<name>` in `/retroarch/cores/<name>_libretro_libnx.nro`; the full file name also works.
+- If none of the cores you wrote exists, the setting is ignored and the default core is used. A notice appears at start and the launch log shows «cores.txt [user] ignored: core not found».
+- Do not edit `library.cache` by hand. It is rebuilt when cores or settings change, and your edit is lost.
 
 Every launch is logged in `/JoyLauncher/launch_log.txt` (last 20), including the original core and how the Switch core was chosen.
 
@@ -212,10 +218,23 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 | Theme | section 8 |
 | BGM | A opens the BGM window; see "Background music" (dimmed when there are no songs) |
 | Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
+| Homebrew Favorites: add / remove | see "Homebrew Favorites" below (green when some nro are added) |
 | Set as default homebrew menu / Set again / Restore | section 3 ("Set again" appears at the top if another menu took over) |
 | Exit (HOME) | |
 
 ![Options](images/en_03_options.png)
+
+### Homebrew Favorites (ports and other nro games)
+
+Games that come as an nro on the SD card (ports and other homebrew games) can be kept like favorites.
+
+- **Y** options → **"Homebrew Favorites: add / remove"** opens the list of nro files found under `/switch` on the SD card (two folder levels deep).
+- **A** or **−** adds (★, green) or removes (☆), **B** closes; the change applies at once.
+- As soon as one nro is added, a **"Homebrew Favorites"** category appears at the top of the category list (right below Favorites), with a ★ before each name. Names, authors, versions and icons come from the nro itself.
+- **−** in that category removes the nro from Homebrew Favorites (adding is done in the options window).
+- **A** starts it; when it exits you come back to the launcher (when the launcher is the default homebrew menu). In album (applet) mode it is blocked like the games.
+- Theme background name: `hbfav`.
+- The list is saved in `/JoyLauncher/homebrew_favorites.txt`, one nro path per line. A deleted nro only drops out of the category and comes back when the file is restored.
 
 ### Background music (BGM)
 
@@ -247,6 +266,8 @@ The interface is available in Korean and English. **Auto** (default) follows the
 | `auto_update` | `on` / `off` |
 | `language` | `auto` / `ko` / `en` |
 | `bgm`, `bgm_volume`, `bgm_shuffle` | `on`/`off`, `0`-`100`, `on`/`off` |
+
+Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games.
 
 ## 11. Troubleshooting
 

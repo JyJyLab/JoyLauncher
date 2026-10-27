@@ -25,6 +25,8 @@ const char *const kTable[][2] = {
     {"홈브루 메뉴(sphaira / nx-hbmenu 등)를 찾을 수 없습니다", "No homebrew menu (sphaira / nx-hbmenu etc.) found"},
     {"%s 백업(%s)이 없어 되돌릴 수 없습니다", "Cannot restore: %s backup (%s) not found"},
     {"%s 로 되돌렸습니다", "Restored %s"},
+    {"cores.txt [user] 에 적은 코어가 없어 기본 코어로 실행합니다: %s · /retroarch/cores 의 파일 이름을 확인하세요",
+     "Cores in cores.txt [user] were not found, so the default core is used: %s · check the file names in /retroarch/cores"},
     {"sphaira 의 «hbmenu 교체» 설정이 다시 켜져 있어 껐습니다 (Joy Launcher 를 기본 메뉴로 유지)",
      "sphaira's \"replace hbmenu\" option was on again and has been turned off (Joy Launcher stays the default menu)"},
     {"기본 홈브루 메뉴가 nx-hbmenu %s 로 바뀌었습니다 (Atmosphere 업데이트 등). 백업: %s · 옵션(Y)에서 다시 설정할 수 있습니다",
@@ -51,6 +53,12 @@ const char *const kTable[][2] = {
     {"BGM: 켜짐 (On) (%d곡)", "BGM: On (%d songs)"},
     {"BGM: 꺼짐 (Off) (%d곡)", "BGM: Off (%d songs)"},
     {"즐겨찾기", "Favorites"},
+    {"홈브루", "Homebrew"},
+    {"홈브루 즐겨찾기", "Homebrew Favorites"},
+    {"홈브루 즐겨찾기 추가·빼기 (%d개)", "Homebrew Favorites: add / remove (%d)"},
+    {"[A] 또는 [-] 넣기 / 빼기   [B] 닫기   (%d개)", "[A] or [-] Add / remove   [B] Close   (%d)"},
+    {"홈브루 즐겨찾기에서 뺐습니다", "Removed from Homebrew Favorites"},
+    {"SD 의 /switch 에서 nro 를 찾지 못했습니다", "No nro found under /switch on the SD card"},
     {"즐겨찾기에 넣었습니다", "Added to favorites"},
     {"즐겨찾기에서 뺐습니다", "Removed from favorites"},
     {"BGM 설정", "BGM"},
@@ -184,6 +192,7 @@ const char *const kTable[][2] = {
      "The launcher was updated, but replacing the default homebrew menu (/hbmenu.nro) failed. "
      "Try again with \"Update the default homebrew menu\" in Options"},
     // 런처가 정한 기종 이름 (롬팩 메타데이터 없이 폴더로 추정한 카테고리)
+    {"아케이드 (FBA2012)", "Arcade (FBA2012)"},
     {"아케이드 (FBNeo)", "Arcade (FBNeo)"},
     {"아케이드 (MAME)", "Arcade (MAME)"},
     {"드림캐스트", "Dreamcast"},
@@ -209,6 +218,7 @@ const char *const kHowParts[][2] = {
     {"같은 이름 코어", "core with the same name"},
     {"코어 이름으로 기종 판단", "system judged from the core name"},
     {"MAME 롬셋 목록으로 선택", "chosen by the MAME romset list"},
+    {"cores.txt [user] 무시: 코어 없음", "cores.txt [user] ignored: core not found"},
 };
 
 const std::unordered_map<std::string, const char *> &Map() {

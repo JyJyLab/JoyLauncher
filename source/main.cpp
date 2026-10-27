@@ -25,6 +25,7 @@
 #include "bgm.h"
 #include "hbmenu.h"
 #include "i18n.h"
+#include "installed.h"
 #include "pegasus.h"
 #include "updater.h"
 #include "videoframe.h"
@@ -55,7 +56,7 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, Frames, Refresh, Update, Language, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, Frames, Refresh, Update, Language, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
 struct MenuItem {
     std::string label;
     std::string nro;
@@ -84,6 +85,33 @@ static bool gBgmShuffle = false;
 
 // 즐겨찾기: /JoyLauncher/favorites.txt (롬 파일 경로 한 줄씩)
 static std::set<std::string> gFavSet;
+
+// 홈브루 즐겨찾기: 옵션에서 고른 nro (포팅 게임 등) — /JoyLauncher/homebrew_favorites.txt (nro 의 SD 경로 한 줄씩)
+static std::vector<std::string> gHbFav;
+
+static void SaveHbFav() {
+    std::ofstream o(gHome + "/homebrew_favorites.txt");
+    o << "# Joy Launcher homebrew favorites (nro paths on the SD card)\n";
+    for (const auto &p : gHbFav) o << p << "\n";
+}
+
+static void LoadHbFav() {
+    gHbFav.clear();
+    std::string path = gHome + "/homebrew_favorites.txt", old = gHome + "/homebrew_games.txt";
+    bool migrate = !std::ifstream(path).good() && std::ifstream(old).good();  // 0.9.1 시험판의 "홈브루 게임즈" 기록
+    std::ifstream in(migrate ? old : path);
+    std::string line;
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        if (!line.empty() && line[0] != '#' && std::find(gHbFav.begin(), gHbFav.end(), line) == gHbFav.end())
+            gHbFav.push_back(line);
+    }
+    in.close();
+    if (migrate) {
+        SaveHbFav();
+        remove(old.c_str());
+    }
+}
 
 static void LoadFavorites() {
     gFavSet.clear();
@@ -146,6 +174,7 @@ static void BuildMenu() {
     gBgmMenu.push_back({gBgmShuffle ? T("순서: 무작위") : T("순서: 차례대로"), "", MenuAct::BgmOrder});
     if (gBgmOn) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
+    gMenu.push_back({Fmt(T("홈브루 즐겨찾기 추가·빼기 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
     if (hbReplaced) {
     } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
         gMenu.push_back({T("원래 홈브루 메뉴로 되돌리기"), "", MenuAct::RestoreHb});
@@ -487,6 +516,9 @@ struct App {
     int optSel = 0;
     bool bgmPick = false;        // BGM 창 (옵션 창 위에 한 겹 더)
     int bgmSel = 0;
+    bool hbPick = false;         // 홈브루 즐겨찾기 창 (옵션 창 위에 한 겹 더): SD 의 nro 를 골라 넣고 빼기
+    int hbSel = 0;
+    std::vector<Game> hbList;    // 고를 수 있는 nro (/switch 아래 두 단계)
     bool exitAsk = false;        // 맨 위 화면에서 B: 종료 확인
     std::vector<std::string> themeList;  // [0] = 기본
     int themeSel = 0;
@@ -839,7 +871,7 @@ static void RenderGames(App &a) {
         int gi = a.top + i;
         int y = kListY + i * kRowH;
         if (gi == a.sel) Fill(a, kListX - 12, y - 4, 720, kRowH, SelColor());
-        bool star = !c.virt && gFavSet.count(c.games[gi].file);
+        bool star = (!c.virt && gFavSet.count(c.games[gi].file)) || c.shortName == "hbfav";
         DrawText(a, a.fList, star ? "★ " + c.games[gi].title : c.games[gi].title, kListX, y + 4, gi == a.sel ? kWhite : kGrey, 690, 0, 0, 0,
                  gi == a.sel ? kScroll : 0);
     }
@@ -925,6 +957,30 @@ static void RenderThemePick(App &a) {
         DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     DrawText(a, a.fInfo, T("[A] 적용   [B] 닫기   (테마 폴더: /JoyLauncher/themes)"), W / 2, by + bh - 34, kGrey, 0, 1);
+}
+
+// 홈브루 즐겨찾기 창: ★ = 넣음, ☆ = 안 넣음
+static void RenderHbPick(App &a) {
+    int n = (int)a.hbList.size();
+    int rows = std::min(n, (H - 16 - 110) / kRowH);
+    int bw = 980, bh = 110 + rows * kRowH;
+    int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
+    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
+    Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
+    DrawText(a, a.fBig, T("홈브루 즐겨찾기"), W / 2, by + 16, kAccent, 0, 1);
+    int top = std::max(0, std::min(a.hbSel - rows / 2, n - rows));
+    for (int i = 0; i < rows; i++) {
+        int idx = top + i;
+        int y = by + 66 + i * kRowH;
+        bool sel = idx == a.hbSel;
+        if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
+        const Game &g = a.hbList[idx];
+        bool in = std::find(gHbFav.begin(), gHbFav.end(), g.file) != gHbFav.end();
+        std::string label = std::string(in ? "★ " : "☆ ") + g.title + "   " + g.file;
+        DrawText(a, a.fList, label, bx + 32, y + 4, in ? kOn : sel ? kWhite : kGrey, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+    }
+    DrawText(a, a.fInfo, Fmt(T("[A] 또는 [-] 넣기 / 빼기   [B] 닫기   (%d개)"), (int)gHbFav.size()), W / 2, by + bh - 34,
+             kGrey, 0, 1);
 }
 
 static bool Adjustable(MenuAct m) {
@@ -1025,7 +1081,7 @@ static std::vector<std::string> gRoots;
 
 // 카테고리 맨 앞에 "즐겨찾기" (즐겨찾기가 있을 때만). keepPos: 지금 보고 있는 카테고리 번호를 맞춰 줌
 static void RebuildFavorites(App &a, bool keepPos) {
-    bool had = !a.cols.empty() && a.cols[0].virt;
+    bool had = !a.cols.empty() && a.cols[0].virt && a.cols[0].shortName == "favorites";
     if (had) a.cols.erase(a.cols.begin());
     Collection fav;
     fav.name = "즐겨찾기";
@@ -1050,6 +1106,46 @@ static void RebuildFavorites(App &a, bool keepPos) {
     a.catSel = std::max(0, a.catSel + shift);
 }
 
+// "홈브루 즐겨찾기": 옵션에서 고른 nro. 카테고리 목록 맨 위(즐겨찾기 바로 아래), 하나라도 있을 때만.
+// keepPos: 보던 카테고리·커서를 그대로 (그 카테고리가 사라졌으면 카테고리 목록으로)
+static void RebuildHbFavorites(App &a, bool keepPos) {
+    auto key = [&](int i) {
+        return i >= 0 && i < (int)a.cols.size() ? a.cols[i].shortName + "\x1f" + a.cols[i].name : std::string();
+    };
+    std::string colKey = key(a.col), catKey = key(a.catSel);
+    a.cols.erase(std::remove_if(a.cols.begin(), a.cols.end(),
+                                [](const Collection &c) { return c.virt && c.shortName == "hbfav"; }),
+                 a.cols.end());
+    if (!gHbFav.empty()) {
+        Collection hb = BuildHomebrewFavorites(gHbFav, gHome + "/cache");
+        if (!hb.games.empty()) {
+            int pos = !a.cols.empty() && a.cols[0].virt && a.cols[0].shortName == "favorites" ? 1 : 0;
+            a.cols.insert(a.cols.begin() + pos, hb);
+        }
+    }
+    if (!keepPos) return;
+    if (a.cols.empty()) {
+        a.mode = Mode::Categories;
+        a.col = a.catSel = a.sel = a.top = 0;
+        return;
+    }
+    auto find = [&](const std::string &k) {
+        for (int i = 0; i < (int)a.cols.size(); i++)
+            if (key(i) == k) return i;
+        return -1;
+    };
+    int c = find(colKey), s = find(catKey);
+    if (c < 0) {
+        a.mode = Mode::Categories;
+        a.col = std::min(a.col, (int)a.cols.size() - 1);
+        a.sel = a.top = 0;
+    } else {
+        a.col = c;
+    }
+    a.catSel = s >= 0 ? s : std::min(a.catSel, (int)a.cols.size() - 1);
+    a.sel = std::min(a.sel, std::max(0, (int)a.cols[a.col].games.size() - 1));
+}
+
 static void LoadGames(App &a, bool force, std::string &log) {
     std::string cache = gHome + "/library.cache";
     std::string sig = LibrarySignature(gRoots);
@@ -1070,6 +1166,7 @@ static void LoadGames(App &a, bool force, std::string &log) {
     }
     CountFramesPending(a.cols);
     BuildMenu();
+    RebuildHbFavorites(a, false);
     RebuildFavorites(a, false);
 }
 
@@ -1087,6 +1184,7 @@ static void Render(App &a) {
     if (a.optPick) RenderOptions(a);
     if (a.bgmPick) RenderPopup(a, T("BGM 설정"), gBgmMenu, a.bgmSel, 640);
     if (a.themePick) RenderThemePick(a);
+    if (a.hbPick) RenderHbPick(a);
     if (a.exitAsk) RenderExitAsk(a);
     if (a.messageModal) {
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
@@ -1235,8 +1333,22 @@ static void ShowAppletBlock(App &a) {
     a.messageUntil = SDL_GetTicks() + 6000;
 }
 
+// 홈브루 즐겨찾기의 nro: 게임처럼 애플릿 모드에서는 막고, 아니면 그대로 이어 실행
+static bool LaunchNro(App &a, const Game &g) {
+    if (gAppletMode) {  // 게임처럼 애플릿 모드에서는 메모리 부족·복귀 실패가 생길 수 있어 막음
+        ShowAppletBlock(a);
+        LogLaunch(a, g, g.file, T("실행 안 함: 앨범(애플릿) 모드"));
+        return false;
+    }
+    SaveState(a, true);
+    bool ok = ChainLoad(a, g.file, {});
+    LogLaunch(a, g, g.file, ok ? std::string(T("실행 예약됨")) : T("실패: ") + a.message);
+    return ok;
+}
+
 static bool LaunchGame(App &a) {
     const Game &g = a.cols[a.col].games[a.sel];
+    if (g.launch == kLaunchNro) return LaunchNro(a, g);
     std::string nro, args;
     if (!BuildLaunch(g, nro, args)) {
         a.message = T("실행 설정(launch)이 없습니다");
@@ -1262,6 +1374,7 @@ int main(int argc, char **argv) {
     int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1;
     std::string wantTheme, wantLang;
     bool wantPick = false;
+    bool wantHbPick = false;  // 데스크톱 확인용: 홈브루 게임즈 창
     bool wantFrames = false;
 #ifdef __SWITCH__
     romfsInit();
@@ -1327,6 +1440,7 @@ int main(int argc, char **argv) {
         else if (s == "--home" && i + 1 < argc) gHome = argv[++i];
         else if (s == "--theme" && i + 1 < argc) wantTheme = argv[++i];
         else if (s == "--themepick") wantPick = true;
+        else if (s == "--hbpick") wantHbPick = true;
         else if (s == "--frames") wantFrames = true;
     }
     std::string root = gRoot;
@@ -1393,6 +1507,7 @@ int main(int argc, char **argv) {
     }
     LoadCoreConfig(gHome + "/cores.txt");
     LoadFavorites();
+    LoadHbFav();
     gRoots = roots;
     LoadGames(a, false, log);
     printf("%s", log.c_str());
@@ -1417,6 +1532,11 @@ int main(int argc, char **argv) {
         a.themePick = true;
     };
     if (wantPick) openThemePick();
+    if (wantHbPick) {
+        a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;
+        a.hbPick = !a.hbList.empty();
+        if (wantSel >= 0) a.hbSel = std::min(wantSel, (int)a.hbList.size() - 1);
+    }
     if (wantFrames) { gShotMode = false; RunFrameBatch(a); gShotMode = !shot.empty(); }
 
     if (!shot.empty()) {
@@ -1440,6 +1560,12 @@ int main(int argc, char **argv) {
     int stickDir = -1;  // 스틱이 가리키는 방향 버튼 (12~15) 또는 -1
     // 기본 홈브루 메뉴 확인: Joy 로 설정해 뒀는데 Atmosphere 업데이트 등으로 바뀌었는지, sphaira 자동 덮어쓰기가 켜졌는지
     std::string hbNote = HbCheckOnStart();
+    // cores.txt [user] 에 적은 코어가 스위치에 없으면 알림 (그 게임은 기본 코어로 실행)
+    std::string coreNote = UserCoreProblems();
+    if (!coreNote.empty())
+        hbNote += (hbNote.empty() ? "" : "\n") +
+                  Fmt(T("cores.txt [user] 에 적은 코어가 없어 기본 코어로 실행합니다: %s · /retroarch/cores 의 파일 이름을 확인하세요"),
+                      coreNote.c_str());
     if (!hbNote.empty()) {
         BuildMenu();
         a.message = hbNote;
@@ -1613,6 +1739,16 @@ int main(int argc, char **argv) {
             runUpdate(idx);
         } else if (m.act == MenuAct::Language) {
             adjust(m.act, 1);
+        } else if (m.act == MenuAct::HbFav) {
+            a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;
+            if (a.hbList.empty()) {
+                a.message = T("SD 의 /switch 에서 nro 를 찾지 못했습니다");
+                a.messageColor = {60, 70, 120, 240};
+                a.messageUntil = SDL_GetTicks() + 3500;
+            } else {
+                a.hbPick = true;
+                a.hbSel = 0;
+            }
         } else if (m.act == MenuAct::BgmMenu) {
             a.bgmPick = true;
             a.bgmSel = 0;
@@ -1657,6 +1793,24 @@ int main(int argc, char **argv) {
         if (a.exitAsk) {
             if (b == 0) { SaveState(a); ExitHome(); running = false; }
             if (b == 0 || b == 1) a.exitAsk = false;
+            return;
+        }
+        if (a.hbPick) {
+            int n = (int)a.hbList.size();
+            if (b == 13) a.hbSel = (a.hbSel + n - 1) % n;
+            else if (b == 15) a.hbSel = (a.hbSel + 1) % n;
+            else if (b == 0 || b == 11) {  // A 또는 − (즐겨찾기 버튼)
+                const std::string &f = a.hbList[a.hbSel].file;
+                auto it = std::find(gHbFav.begin(), gHbFav.end(), f);
+                if (it != gHbFav.end()) gHbFav.erase(it);
+                else gHbFav.push_back(f);
+                SaveHbFav();
+            } else if (b == 1) {  // 닫을 때 카테고리를 다시 만든다
+                a.hbPick = false;
+                RebuildHbFavorites(a, true);
+                BuildMenu();
+            }
+            a.selChanged = SDL_GetTicks() - 1000;
             return;
         }
         if (a.bgmPick) {
@@ -1742,6 +1896,16 @@ int main(int argc, char **argv) {
             case 1: a.mode = Mode::Categories; a.catSel = a.col; break;
             case 11: {  // −: 즐겨찾기 넣기/빼기
                 std::string file = a.cols[a.col].games[a.sel].file;
+                if (a.cols[a.col].shortName == "hbfav") {  // 홈브루 즐겨찾기에서는 빼기만 (넣기는 옵션 창)
+                    gHbFav.erase(std::remove(gHbFav.begin(), gHbFav.end(), file), gHbFav.end());
+                    SaveHbFav();
+                    RebuildHbFavorites(a, true);
+                    BuildMenu();
+                    a.message = T("홈브루 즐겨찾기에서 뺐습니다");
+                    a.messageColor = {60, 70, 120, 240};
+                    a.messageUntil = SDL_GetTicks() + 1500;
+                    break;
+                }
                 bool add = !gFavSet.count(file);
                 if (add) gFavSet.insert(file);
                 else gFavSet.erase(file);

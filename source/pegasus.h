@@ -35,6 +35,8 @@ struct Collection {
 // 이 코어로 실행되는 게임은 목록에서 뺀다 (코어 이름, 예: "flycast"). 기본: N64·NDS·새턴·드림캐스트/NAOMI 코어
 // /JoyLauncher/cores.txt 읽기·정리 ([auto] 다시 쓰기, [user] 보존). LoadLibrary 전에 호출
 void LoadCoreConfig(const std::string &path);
+// cores.txt [user] 중 스위치에 코어가 하나도 없는 항목 ("키=값, ..."), 없으면 ""
+std::string UserCoreProblems();
 void SetHiddenCores(const std::vector<std::string> &cores);
 std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, std::string &log);
 // ES-DE 폴더(gamelists·downloaded_media) 위치 지정 (roots.txt 의 esde=<경로>). 없으면 롬 폴더 옆 /ES-DE 등을 자동으로 찾음

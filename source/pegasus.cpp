@@ -324,6 +324,9 @@ std::string EsdeEmulatorLaunch(const std::string &label) {
     static const std::vector<std::pair<const char *, const char *>> t = {
         {"ppsspp", "org.ppsspp.ppsspp"},
         {"mame2003plus", "mame2003_plus"}, {"mame2003", "mame2003"}, {"mame2010", "mame2010"}, {"mame2000", "mame2000"},
+        {"fbalpha2012neogeo", "fbalpha2012_neogeo"}, {"fbalpha2012cps1", "fbalpha2012_cps1"},
+        {"fbalpha2012cps2", "fbalpha2012_cps2"}, {"fbalpha2012cps3", "fbalpha2012_cps3"},
+        {"fbalpha2012", "fbalpha2012"}, {"finalburnalpha2012", "fbalpha2012"}, {"fbalpha", "fbalpha"},
         {"finalburnneo", "fbneo"}, {"fbneo", "fbneo"},
         {"pcsxrearmed", "pcsx_rearmed"}, {"beetlepsxhw", "mednafen_psx_hw"}, {"beetlepsx", "mednafen_psx"}, {"swanstation", "swanstation"},
         {"genesisplusgxwide", "genesis_plus_gx_wide"}, {"genesisplusgx", "genesis_plus_gx"}, {"picodrive", "picodrive"},
@@ -363,6 +366,10 @@ bool CoreExists(const std::string &nro) {
 
 std::string Quote(const std::string &nro) { return "\"" + nro + "\" \"{file.path}\""; }
 
+// DraStic 스위치판 (DrasticDS_nx). 롬 경로를 넘기면 바로 그 게임을 실행
+const char *const kDrastic = "/switch/DrasticDS.nro";
+const char *const kDrastic2 = "/switch/drastic/DrasticDS.nro";
+
 // ---------------------------------------------------------------- 기종 표
 struct System {
     const char *name;                 // 자동 인식 시 카테고리 이름
@@ -373,7 +380,8 @@ struct System {
 
 const std::vector<System> &Systems() {
     static const std::vector<System> s = {
-        {"아케이드 (FBNeo)", {"fbneo*", "fba*", "arcade*", "cps1", "cps2", "cps3", "neogeo", "finalburn*"}, {"zip", "7z"}, {"fbneo"}},
+        {"아케이드 (FBA2012)", {"fba2012*", "fbalpha2012*"}, {"zip", "7z"}, {"fbalpha2012", "fbneo"}},
+        {"아케이드 (FBNeo)", {"fbneo*", "fba*", "arcade*", "cps1", "cps2", "cps3", "neogeo", "finalburn*"}, {"zip", "7z"}, {"fbneo", "fbalpha2012"}},
         {"아케이드 (MAME)", {"mame*"}, {"zip", "7z"}, {"mame2003_plus", "mame2003"}},
         {"NAOMI", {"naomi*", "atomiswave*"}, {"zip", "7z", "lst", "dat"}, {"flycast"}},
         {"드림캐스트", {"dc", "dreamcast", "segadreamcast"}, {"cdi", "gdi", "chd", "cue", "m3u"}, {"flycast"}},
@@ -390,7 +398,7 @@ const std::vector<System> &Systems() {
         {"PC엔진", {"pce", "pcengine", "tg16", "turbografx*", "pcecd", "supergrafx", "sgx"}, {"pce", "sgx", "zip", "7z"}, {"mednafen_pce_fast", "mednafen_pce", "geargrafx"}},
         {"원더스완", {"ws", "wsc", "wonderswan*"}, {"ws", "wsc", "pc2", "zip", "7z"}, {"mednafen_wswan"}},
         {"네오지오 포켓", {"ngp", "ngpc", "neogeopocket*"}, {"ngp", "ngc", "zip", "7z"}, {"mednafen_ngp", "race"}},
-        {"NDS", {"nds", "nintendods"}, {"nds"}, {"melonds", "desmume"}},
+        {"NDS", {"nds", "nintendods"}, {"nds", "zip", "7z", "rar"}, {kDrastic, kDrastic2, "melonds", "desmume"}},
         {"N64", {"n64", "nintendo64"}, {"n64", "z64", "v64", "zip", "7z"}, {"mupen64plus_next"}},
         {"새턴", {"ss", "saturn", "segasaturn"}, {}, {"yabause"}},
         {"PC-98", {"pc98", "pc9801"}, {"hdi", "fdi", "d88", "hdm", "nhd"}, {"np2kai"}},
@@ -409,6 +417,8 @@ bool ExcludedFolder(const std::string &key) {
                                              "psvita", "vita", "switch", "ps3", "xbox", "xbox360", "apk", "app", "android",
                                              "win", "windows", "pc"};
     if (ex.count(key)) return true;
+    // CPS2·CPS3(캡콤 아케이드)는 이름 안에 ps2·ps3 가 들어 있어도 제외 대상이 아님
+    if (key.find("cps") != std::string::npos) return false;
     // "Sony PlayStation 2", "Nintendo 3DS" 처럼 이름 안에 들어 있는 경우
     static const char *part[] = {"playstation2", "playstation3", "playstation4", "ps2", "ps3", "ps4", "3ds", "gamecube",
                                  "wiiu", "psvita", "nintendoswitch", "xbox"};
@@ -604,11 +614,38 @@ const CoreMap &BuiltinCoreMap() {
         {"mamearcade", "mame2003_plus,mame2010"},
         {"mame", "mame2003_plus,mame2010"},
         {"org.ppsspp.ppsspp", "/switch/ppsspp/PPSSPP.nro,ppsspp"},
+        {"melonds", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
+        {"desmume", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,desmume,melonds"},
+        {"com.dsemu.drastic", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
+        {"me.magnum.melonds", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
     };
     return m;
 }
 
 CoreMap gUserCores;
+
+// 코어 이름 정리: 경로·파일 이름 꼬리를 떼고 소문자로 ("/retroarch/cores/fbalpha2012_libretro_libnx.nro" -> "fbalpha2012").
+// 코어가 아닌 nro 경로는 소문자 경로 그대로
+std::string NormCoreKey(const std::string &s) {
+    std::string t = Lower(Trim(s));
+    for (const char *suf : {"_libretro_libnx.nro", "_libretro_android.so", "_libretro.so", "_libretro"}) {
+        size_t p = t.find(suf);
+        if (p == std::string::npos) continue;
+        size_t b = t.rfind('/', p);
+        b = b == std::string::npos ? 0 : b + 1;
+        return t.substr(b, p - b);
+    }
+    return t;
+}
+
+// [user] 에 key 가 있으면 그 값, 없으면 nullptr
+const std::string *UserSetting(const std::string &key) {
+    std::string k = NormCoreKey(key);
+    if (k.empty()) return nullptr;
+    for (const auto &kv : gUserCores)
+        if (NormCoreKey(kv.first) == k) return &kv.second;
+    return nullptr;
+}
 
 std::vector<std::string> SplitList(const std::string &v) {
     std::vector<std::string> out;
@@ -629,7 +666,7 @@ std::vector<std::string> SplitList(const std::string &v) {
 std::string ResolveCores(const std::string &list) {
     for (const auto &c : SplitList(list)) {
         if (Lower(c) == "none") return "-";
-        std::string nro = c[0] == '/' ? c : "/retroarch/cores/" + c + "_libretro_libnx.nro";
+        std::string nro = c[0] == '/' ? c : "/retroarch/cores/" + NormCoreKey(c) + "_libretro_libnx.nro";
         if (CoreExists(nro)) return Quote(nro);
     }
     return "";
@@ -637,8 +674,7 @@ std::string ResolveCores(const std::string &list) {
 
 // key 에 대한 설정값 (user 우선). 없으면 ""
 std::string CoreSetting(const std::string &key, bool &fromUser) {
-    for (const auto &kv : gUserCores)
-        if (Lower(kv.first) == Lower(key)) { fromUser = true; return kv.second; }
+    if (const std::string *v = UserSetting(key)) { fromUser = true; return *v; }
     for (const auto &kv : BuiltinCoreMap())
         if (kv.first == key) { fromUser = false; return kv.second; }
     return "";
@@ -684,6 +720,24 @@ std::string TranslateLaunch(const std::string &launch, bool &fromUser) {
     return "";
 }
 
+// 실행 대상(스위치 nro)의 코어 이름으로 [user] 적용. 메타데이터가 이미 스위치 nro 이거나 폴더로 추정한 게임용.
+// 반환 true = 바꿈(hide 면 none). 적힌 코어가 스위치에 하나도 없으면 miss 에 그 값
+bool ApplyUserToTarget(Game &g, bool &hide, std::string &miss) {
+    hide = false;
+    if (gUserCores.empty() || g.launch.empty()) return false;
+    std::string nro;
+    for (const auto &t : Tokenize(g.launch))
+        if (t.find(".nro") != std::string::npos) { nro = t; break; }
+    const std::string *v = UserSetting(nro);
+    if (!v) return false;
+    std::string r = ResolveCores(*v);
+    if (r == "-") { hide = true; return true; }
+    if (r.empty()) { miss = *v; return false; }
+    g.launch = r;
+    g.how = "cores.txt [user]";
+    return true;
+}
+
 // 바이오스 등 게임이 아닌 아케이드 롬
 bool IsBiosName(const std::string &stem) {
     static const std::set<std::string> b = {"neogeo", "pgm", "skns", "qsound", "decocass", "isgsm", "nmk004", "ym2608",
@@ -724,6 +778,13 @@ bool ResolveLaunch(const std::string &dir, const std::string &launch, Game &cur,
     cur.launch = launch.empty() ? "" : TranslateLaunch(launch, userCore);
     if (cur.launch == "-") return false;  // cores.txt 에서 none
     cur.metaCore = launch.empty() ? ident : LaunchCoreName(launch);
+    // [user] 에 적었지만 그 코어가 스위치에 없음 → 아래 기본 판단으로 넘어가고 실행 기록에 남김
+    std::string miss;
+    if (cur.launch.empty() && userCore) {
+        bool dummy = false;
+        miss = CoreSetting(cur.metaCore, dummy);
+        userCore = false;
+    }
     if (cur.launch.empty()) cur.how = "폴더 이름/확장자로 추정";
     else if (launch.find(".nro") != std::string::npos) cur.how = "메타데이터의 nro 그대로";
     else if (userCore) cur.how = "cores.txt [user]";
@@ -745,6 +806,18 @@ bool ResolveLaunch(const std::string &dir, const std::string &launch, Game &cur,
         }
     }
     if (cur.launch.empty()) return false;
+    // 정해진 스위치 코어 이름으로 [user] 한 번 더 (스위치판 팩의 nro·폴더 추정 게임)
+    if (!userCore) {
+        bool hide = false;
+        std::string m;
+        if (ApplyUserToTarget(cur, hide, m)) {
+            if (hide) return false;
+            userCore = true;
+        } else if (miss.empty()) {
+            miss = m;
+        }
+    }
+    if (!miss.empty()) cur.how += " · cores.txt [user] 무시: 코어 없음 (" + miss + ")";
     // MAME 계열: 최신 MAME 용 목록이면 latest 표시를 남겨 롬셋으로 코어 선택
     // (cores.txt [user] 로 직접 정한 코어는 그대로)
     if (!userCore) {
@@ -1032,7 +1105,15 @@ void ScanAuto(const std::string &dir, Library &lib) {
         g.title = Stem(f);
         g.launch = sys >= 0 ? TargetFor(sys) : AutoLaunch(dir, g.file);
         g.how = "메타데이터 없음, 폴더 이름/확장자로 추정";
+        bool hide = false, user = false;
+        std::string miss;
         if (!g.launch.empty()) {
+            user = ApplyUserToTarget(g, hide, miss);
+            if (hide) continue;
+            if (user) g.how = "메타데이터 없음, cores.txt [user]";
+            if (!miss.empty()) g.how += " · cores.txt [user] 무시: 코어 없음 (" + miss + ")";
+        }
+        if (!g.launch.empty() && !user) {
             std::string before = g.launch;
             g.launch = PickMameCore(g.launch, g.file);
             if (g.launch != before) g.how += " + MAME 롬셋 목록으로 선택";
@@ -1129,6 +1210,7 @@ void LoadCoreConfig(const std::string &path) {
     while (!userLines.empty() && Trim(userLines.back()).empty()) userLines.pop_back();
     if (userLines.empty())
         userLines = {"# 예) 슈퍼패미컴을 최신 snes9x 로 실행:  snes9x2005_plus=snes9x",
+                     "# 예) 아케이드를 FB Alpha 2012 로 실행:  fbneo=fbalpha2012",
                      "# 예) 특정 코어의 게임 숨기기:          mednafen_wswan=none"};
     std::ofstream out(path);
     if (!out) return;
@@ -1138,6 +1220,8 @@ void LoadCoreConfig(const std::string &path) {
            "#       스위치 코어 이름은 /retroarch/cores/<이름>_libretro_libnx.nro 의 <이름>\n"
            "#       / 로 시작하면 nro 경로,  none 이면 그 코어의 게임을 목록에서 숨김\n"
            "# 적혀 있지 않은 코어는 같은 이름의 스위치 코어를 찾고, 없으면 폴더 이름·확장자로 기종을 추정합니다.\n"
+           "# [user] 는 목록에 스위치 코어(nro)가 적힌 팩·폴더로 인식한 게임에도 적용됩니다 (예: fbneo=fbalpha2012).\n"
+           "# 적은 코어가 스위치에 없으면 무시하고 기본 코어로 실행하며, 시작할 때 알려 줍니다.\n"
            "\n"
            "[auto]\n"
            "# 런처 기본값입니다. 런처를 실행할 때마다 다시 써지므로 여기는 고치지 마세요.\n";
@@ -1165,6 +1249,12 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     std::vector<Collection> out;
     for (auto &kv : lib.cols) {
         Collection c = kv.second;
+        // DrasticDS 는 .7z 를 못 읽음
+        c.games.erase(std::remove_if(c.games.begin(), c.games.end(),
+                                     [](const Game &g) {
+                                         return Ext(g.file) == "7z" && g.launch.find("/DrasticDS.nro") != std::string::npos;
+                                     }),
+                      c.games.end());
         // 숨길 코어(성능 범위 밖)로 실행되는 게임 빼기
         if (!gHiddenCores.empty()) {
             int before = (int)c.games.size();
@@ -1267,6 +1357,14 @@ std::vector<std::string> SplitTab(const std::string &line) {
 
 void SetEsdeHint(const std::string &path) { gEsdeHint = path; }
 
+// [user] 에 적었지만 스위치에 코어가 하나도 없는 항목 ("키=값, ..."), 없으면 ""
+std::string UserCoreProblems() {
+    std::string out;
+    for (const auto &kv : gUserCores)
+        if (ResolveCores(kv.second).empty()) out += (out.empty() ? "" : ", ") + kv.first + "=" + kv.second;
+    return out;
+}
+
 std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     std::string sig = std::string(kCacheMagic) + " " + __DATE__ + " " + __TIME__ + "\n";
     for (const auto &h : gHiddenCores) sig += "H" + h + "\n";
@@ -1277,6 +1375,8 @@ std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
 #endif
     for (const auto &n : ListDir(coreDir, false)) sig += "C" + n + "\n";
     sig += CoreExists("/switch/ppsspp/PPSSPP.nro") ? "PPSSPP\n" : "";
+    sig += CoreExists(kDrastic) ? "DRASTIC\n" : "";
+    sig += CoreExists(kDrastic2) ? "DRASTIC2\n" : "";
     // ES-DE 폴더와 그 목록들
     FindEsde(rootDirs);
     if (!gEsdeDir.empty()) {
