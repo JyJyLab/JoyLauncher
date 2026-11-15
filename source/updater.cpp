@@ -543,7 +543,11 @@ bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool
     return true;
 }
 
-bool DownloadTheme(const std::string &themesDir, int &files, std::string &err,
+bool ExtractThemeZip(const std::string &zip, const std::string &prefix, const std::string &dest, int &files, std::string &err) {
+    return ExtractPrefix(zip, prefix, dest, files, err);
+}
+
+bool DownloadTheme(const std::string &themesDir, const std::string &pack, int &files, std::string &err,
                    const std::function<bool(long long, long long)> &progress) {
     files = 0;
     UpdateCheckStop();  // 시작할 때의 확인 스레드와 통신이 겹치지 않게
@@ -555,18 +559,18 @@ bool DownloadTheme(const std::string &themesDir, int &files, std::string &err,
     const Asset *pick = nullptr;
     std::string prefix;
     for (const auto &a : assets)
-        if (a.name == "JoyBasic.zip") { pick = &a; prefix = "JoyBasic/"; }
+        if (a.name == pack + ".zip") { pick = &a; prefix = pack + "/"; }
     if (!pick)  // 테마 전용 파일이 없는 릴리스: 런처 zip 에서 테마 부분만
         for (const auto &a : assets)
             if (a.name.rfind("JoyLauncher_", 0) == 0 && a.name.size() > 4 && a.name.compare(a.name.size() - 4, 4, ".zip") == 0) {
                 pick = &a;
-                prefix = "JoyLauncher/themes/JoyBasic/";
+                prefix = "JoyLauncher/themes/" + pack + "/";
             }
-    if (!pick) { err = T("릴리스에 기본 테마가 없습니다"); return false; }
+    if (!pick) { err = T("릴리스에 이 테마가 없습니다"); return false; }
     mkdir(themesDir.c_str(), 0777);
-    std::string tmp = themesDir + "/.JoyBasic.download";
+    std::string tmp = themesDir + "/." + pack + ".download";
     if (!DownloadVerified(*pick, tmp, err, progress)) return false;
-    bool ok = ExtractPrefix(tmp, prefix, themesDir + "/JoyBasic", files, err);
+    bool ok = ExtractPrefix(tmp, prefix, themesDir + "/" + pack, files, err);
     remove(tmp.c_str());
 #ifdef __SWITCH__
     if (FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc")) fsFsCommit(fs);

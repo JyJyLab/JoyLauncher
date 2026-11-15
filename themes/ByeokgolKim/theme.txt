@@ -1,0 +1,84 @@
+# 벽골김씨팩 (ByeokgolKim) — Joy Launcher 테마
+# 벽골김씨 님이 ES-DE 테마 Canvas (Siddy212, CC0) 를 바탕으로 구성한 테마입니다. README.txt 참고
+
+# 테마 선택 창에 보일 이름 / name shown in the theme picker
+name=벽골김씨팩
+name_en=Byeokgol Kim Pack
+
+# dim = 배경 어둡게 (0~255) / darken backgrounds
+dim=160
+
+# <카테고리 또는 롬 폴더 이름>=<그림 파일 이름>  (icons/·logos/ 안, 확장자 생략)
+# <category or rom folder name>=<image file name>  (in icons/ and logos/, no extension)
+
+[카테고리 이름 (응애팩 등)]
+액션-아케이드=arcade
+캐주얼-아케이드=arcade
+비행-아케이드=arcade
+슈팅-아케이드=arcade
+대전-아케이드=neogeo
+Play Station=psx
+
+[런처가 폴더로 추정한 기종 이름]
+아케이드 (FBNeo)=arcade
+아케이드 (MAME)=arcade
+아케이드 (FBA2012)=arcade
+PlayStation=psx
+게임보이=gb
+패미컴=nes
+슈퍼패미컴=snes
+메가드라이브=megadrive
+마스터시스템=mastersystem
+게임기어=gamegear
+PC엔진=pcengine
+원더스완=wswanc
+네오지오 포켓=ngpc
+32X=sega32x
+MSX=msx1
+PC-98=pc98
+
+[롬 폴더 이름]
+FC=nes
+famicom=nes
+SFC=snes
+superfamicom=snes
+supernintendo=snes
+MD=megadrive
+genesis=megadrive
+SMS=mastersystem
+mark3=mastersystem
+GG=gamegear
+PCE=pcengine
+tg16=pcengine
+PCE-CD=pcenginecd
+pcecd=pcenginecd
+WS=wswan
+wonderswan=wswan
+WSC=wswanc
+wonderswancolor=wswanc
+PS1=psx
+ps=psx
+playstation=psx
+MD-32X=sega32x
+32x=sega32x
+MD-CD=segacd
+SEGA-CD=segacd
+megacd=segacd
+PC-98=pc98
+PC98=pc98
+MSX=msx1
+POKE MINI=pokemini
+NEOGEO-CD=neogeo
+neogeocd=neogeo
+gameboy=gb
+gameboycolor=gbc
+gameboyadvance=gba
+neogeopocket=ngp
+neogeopocketcolor=ngpc
+fbneo=arcade
+fba=arcade
+mame=arcade
+cps1=arcade
+cps2=arcade
+cps3=arcade
+msdos=dos

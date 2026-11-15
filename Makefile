@@ -46,7 +46,7 @@ ROMFS		:=	romfs
 
 APP_TITLE   := Joy Launcher
 APP_AUTHOR  := Joy
-APP_VERSION	:=	0.9.2
+APP_VERSION	:=	1.0.0
 
 #---------------------------------------------------------------------------------
 # options for code generation

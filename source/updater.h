@@ -23,10 +23,13 @@ bool FetchLatestRelease(UpdateInfo &info, std::string &err);
 bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool alsoHbmenu, std::string &err,
                         const std::function<bool(long long, long long)> &progress);
 
-// 기본 테마 JoyBasic 을 최신 릴리스에서 받아 themesDir/JoyBasic 에 설치한다.
-// 릴리스의 JoyBasic.zip 을 쓰고, 없으면 런처 zip(JoyLauncher_<버전>.zip) 안의 JoyLauncher/themes/JoyBasic 만 푼다.
+// zip 안의 prefix 폴더 아래 파일을 dest 에 푼다 (테마 내려받기의 풀기 단계, 데스크톱 시험용으로 공개)
+bool ExtractThemeZip(const std::string &zip, const std::string &prefix, const std::string &dest, int &files, std::string &err);
+
+// 테마 팩(pack = 폴더 이름: JoyBasic, RetroPack, ByeokgolKim)을 최신 릴리스에서 받아 themesDir/<pack> 에 설치한다.
+// 릴리스의 <pack>.zip 을 쓰고, 없으면 런처 zip(JoyLauncher_<버전>.zip) 안의 JoyLauncher/themes/<pack> 만 푼다.
 // 기존 파일은 덮어쓰고, 사용자가 따로 넣은 파일은 그대로 둔다. files: 설치한 파일 수
-bool DownloadTheme(const std::string &themesDir, int &files, std::string &err,
+bool DownloadTheme(const std::string &themesDir, const std::string &pack, int &files, std::string &err,
                    const std::function<bool(long long, long long)> &progress);
 
 // 백그라운드 확인: 시작 시 한 번. 상태 0 진행 중/안 함, 1 새 버전 있음, 2 최신, -1 실패

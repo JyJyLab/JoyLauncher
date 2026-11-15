@@ -1,0 +1,114 @@
+# 벽골김씨팩 (ByeokgolKim) — Joy Launcher 화면 구성 (1280x720)
+# 기종 카드 격자 + 목록 판. 설명: docs/테마_레이아웃.md
+[theme]
+font = fonts/regular.ttf
+color.text = #ffffff
+color.dim = #d0d0d8
+color.accent = #ffffff
+
+# ---------------------------------------------------------------- 카테고리 화면: 기종 카드 격자
+[categories.background]
+fallback = backgrounds/default.jpg
+
+[categories.topbar]
+visible = off
+[categories.bottombar]
+visible = off
+[categories.preview]
+visible = off
+
+[categories.title]
+text = {category}
+size = 30
+rect = 240,26,800,0
+
+[categories.count]
+type = text
+text = {games} GAMES
+size = 20
+color = dim
+rect = 240,66,800,0
+align = center
+
+[categories.position]
+type = text
+text = {index} / {count}
+size = 20
+color = dim
+rect = 40,30,0,0
+
+[categories.list]
+style = grid
+rect = 112,112,1056,520
+columns = 5
+rows = 2
+gap = 24,24
+card = ui/card.png
+card_grow = 6
+selector = ui/selector.png
+selector_grow = 3
+selected_scale = 1.06
+size = 22
+color = #303038
+selected_color = #101014
+
+[categories.hint]
+size = 18
+color = dim
+rect = 640,676,0,0
+
+# ---------------------------------------------------------------- 게임 화면: 왼쪽 목록 판 + 오른쪽 사진·정보
+[games.background]
+fallback = backgrounds/default.jpg
+
+[games.topbar]
+visible = off
+[games.bottombar]
+visible = off
+
+# 목록 판 (640x732 그림을 제 크기로. 줄무늬 간격 50.4)
+[games.panel]
+type = image
+file = ui/panel.png
+rect = 0,-6,640,732
+fit = stretch
+z = 20
+
+[games.list]
+rect = 50,84,540,554
+row_height = 50.4
+rows = 11
+size = 24
+text_offset = 20
+color = #505058
+selected_color = #101014
+selection = #00000026
+
+[games.counter]
+rect = 320,42,0,0
+align = center
+color = #606068
+size = 18
+
+# 오른쪽 위: 기종 로고 (없으면 이름 글자)
+[games.title]
+rect = 664,50,572,0
+logo_rect = 730,26,360,84
+
+[games.prev]
+rect = 664,60,0,0
+[games.pager]
+rect = 1016,60,220,0
+[games.battery]
+rect = 1056,14,200,20
+
+[games.media]
+rect = 664,130,572,290
+
+[games.info]
+rect = 664,436,572,214
+
+[games.hint]
+size = 16
+color = dim
+rect = 952,684,0,0

@@ -28,6 +28,7 @@
 #include "hbmenu.h"
 #include "i18n.h"
 #include "installed.h"
+#include "layout.h"
 #include "pegasus.h"
 #include "updater.h"
 #include "videoframe.h"
@@ -72,7 +73,8 @@ static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM 설정" 에서 여
 // 앨범(애플릿)으로 실행됐는지. 애플릿 모드는 쓸 수 있는 메모리가 적어 큰 게임이 느리거나 실행되지 않을 수 있음
 static bool gAppletMode = false;
 static std::string gSelfNro = "/switch/joylauncher/joylauncher.nro";
-static std::string gThemeName;  // 현재 테마 ("" = 기본)
+static std::string gThemeName;  // 현재 테마 폴더 이름 ("" = 기본)
+static std::string ThemeTitle(const std::string &folder);  // 테마의 화면 이름
 static int gFramesPending = 0;   // 영상 장면을 아직 뽑지 않은 게임 수
 static std::string gVideoFrames = "auto";
 static std::string gAutoUpdate = "on";      // on: 시작할 때 깃헙에서 새 버전 확인 (설치는 옵션 창에서)
@@ -161,7 +163,7 @@ static void BuildMenu() {
     gMenu.push_back({gUpdateFound ? Fmt(T("업데이트 설치: v%s (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
                                   : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
                      "", MenuAct::Update});
-    gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : gThemeName.c_str()), "",
+    gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), "",
                      MenuAct::Theme});
     if (BgmCount() == 0)
         gMenu.push_back({T("BGM: 곡 없음  (/JoyLauncher/bgm 에 mp3·ogg 넣기)"), "", MenuAct::BgmNone});
@@ -228,6 +230,7 @@ struct ImageCache {
     SDL_Texture *Load(const std::string &p) {
         if (p.empty()) return nullptr;
         if (SDL_Texture *t = Find(p)) return t;
+        if (map.count(p)) return nullptr;  // 읽기에 실패했던 그림: 다시 읽지 않음
         SDL_Surface *s = IMG_Load(p.c_str());
         SDL_Texture *t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
         if (s) SDL_FreeSurface(s);
@@ -249,6 +252,79 @@ struct ImageCache {
     }
 };
 
+// 큰 그림을 정수 배율로 줄인다 (면적 평균). 표시 크기의 2배 이상일 때만. 원본은 해제하고 새 것을 돌려준다
+static SDL_Surface *ShrinkSurface(SDL_Surface *src, int k) {
+    if (k < 2) return src;
+    SDL_Surface *c = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_RGBA32, 0);
+    if (!c) return src;
+    int nw = c->w / k, nh = c->h / k;
+    SDL_Surface *d = nw > 0 && nh > 0 ? SDL_CreateRGBSurfaceWithFormat(0, nw, nh, 32, SDL_PIXELFORMAT_RGBA32) : nullptr;
+    if (!d) { SDL_FreeSurface(c); return src; }
+    for (int y = 0; y < nh; y++) {
+        Uint8 *out = (Uint8 *)d->pixels + y * d->pitch;
+        for (int x = 0; x < nw; x++) {
+            unsigned r = 0, g = 0, b = 0, al = 0;
+            for (int j = 0; j < k; j++) {
+                const Uint8 *in = (const Uint8 *)c->pixels + (y * k + j) * c->pitch + x * k * 4;
+                for (int i = 0; i < k; i++, in += 4) {
+                    r += in[0] * in[3]; g += in[1] * in[3]; b += in[2] * in[3]; al += in[3];  // 투명한 점의 색이 섞이지 않게
+                }
+            }
+            out[x * 4 + 0] = al ? r / al : 0;
+            out[x * 4 + 1] = al ? g / al : 0;
+            out[x * 4 + 2] = al ? b / al : 0;
+            out[x * 4 + 3] = al / (k * k);
+        }
+    }
+    SDL_FreeSurface(c);
+    SDL_FreeSurface(src);
+    return d;
+}
+
+// 표시 크기에 맞춰 줄여 올리는 그림 캐시 (테마 아이콘·칸 바탕·격자의 박스 사진).
+// 큰 그림을 그대로 올리면 메모리를 많이 쓰고 줄여 그릴 때 거칠게 보인다.
+struct ThumbCache {
+    struct Item { SDL_Texture *t; Uint32 used; };
+    SDL_Renderer *r = nullptr;
+    std::map<std::string, Item> map;
+    size_t cap = 240;
+    Uint32 tick = 0;  // 프레임마다 +1 (가장 오래 안 쓴 것부터 버림)
+    static std::string Key(const std::string &p, int w, int h) { return p + "|" + std::to_string(w) + "x" + std::to_string(h); }
+    // known: 읽은 적이 있는지 (읽기에 실패한 그림도 true, 다시 읽지 않음)
+    SDL_Texture *Find(const std::string &p, int w, int h, bool &known) {
+        auto it = map.find(Key(p, w, h));
+        known = it != map.end();
+        if (!known) return nullptr;
+        it->second.used = tick;
+        return it->second.t;
+    }
+    // w x h 칸에 그릴 그림. cover: 칸을 가득 채우는 용도 (작은 쪽 배율 기준)
+    SDL_Texture *Load(const std::string &p, int w, int h, bool cover) {
+        SDL_Surface *s = IMG_Load(p.c_str());
+        if (s && w > 0 && h > 0) {
+            float kx = s->w / (float)w, ky = s->h / (float)h;
+            s = ShrinkSurface(s, (int)(cover ? std::min(kx, ky) : std::max(kx, ky)));
+        }
+        SDL_Texture *t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
+        if (s) SDL_FreeSurface(s);
+        if (t) SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);  // 줄이거나 늘릴 때 부드럽게
+        if (map.size() >= cap) {
+            auto old = map.begin();
+            for (auto it = map.begin(); it != map.end(); ++it)
+                if (it->second.used < old->second.used) old = it;
+            if (old->second.t) SDL_DestroyTexture(old->second.t);
+            map.erase(old);
+        }
+        map[Key(p, w, h)] = {t, tick};
+        return t;
+    }
+    void Clear() {
+        for (auto &kv : map)
+            if (kv.second.t) SDL_DestroyTexture(kv.second.t);
+        map.clear();
+    }
+};
+
 // ---------------------------------------------------------------- 테마
 // /JoyLauncher/themes/<테마>/
 //   backgrounds/<롬 폴더>.jpg|png    /roms/<롬 폴더> 와 이름이 같은 그림을 그 카테고리 배경으로 (대소문자 무시)
@@ -264,9 +340,14 @@ struct Theme {
     std::map<std::string, std::string> bg, logo;  // 소문자 이름 -> 파일 경로
     std::map<std::string, std::string> alias;     // 소문자 카테고리/폴더 이름 -> 그림 파일 이름 (theme.txt)
     int dim = 150;
-    bool Active() const { return !bg.empty() || !logo.empty(); }  // alias 만 있는 테마는 의미 없음
+    std::string base;                             // 테마 폴더 ("" = 테마 없음)
+    Layout layout;                                // 화면 구성 (layout.txt, 없으면 기본)
+    std::map<std::string, std::map<std::string, std::string>> folders;  // 그 밖의 그림 폴더 (icons 등): 처음 쓸 때 읽음
+    // alias 만 있는 테마는 의미 없음
+    bool Active() const { return !bg.empty() || !logo.empty() || layout.custom; }
 };
 static Theme gTheme;
+static Uint32 gThemeSerial = 0;  // 테마를 바꿀 때마다 +1 (글꼴·그림 캐시 비우기용)
 
 static std::string LowerAscii(std::string s) {
     for (auto &c : s)
@@ -310,48 +391,101 @@ static void IndexImages(const std::string &dir, std::map<std::string, std::strin
 
 static std::vector<std::string> ThemeNames() { return ListSubdirs(gHome + "/themes"); }
 
+// 런처와 함께 배포하는 테마 팩 (릴리스의 <폴더>.zip, 테마 선택 창에서 내려받기)
+struct ThemePack {
+    const char *folder, *ko, *en;
+};
+static const ThemePack kPacks[] = {
+    {"JoyBasic", "기본팩", "Basic Pack"},
+    {"RetroPack", "레트로팩", "Retro Pack"},
+    {"ByeokgolKim", "벽골김씨팩", "Byeokgol Kim Pack"},
+};
+
+// theme.txt 한 줄을 key / value 로 (설명·빈 줄이면 false)
+static bool ThemeTxtLine(std::string line, bool first, std::string &k, std::string &v) {
+    if (first && line.size() >= 3 && (unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB &&
+        (unsigned char)line[2] == 0xBF)
+        line = line.substr(3);  // UTF-8 BOM (메모장 저장)
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+    size_t lead = line.find_first_not_of(" \t");
+    if (lead == std::string::npos || line[lead] == '#' || line[lead] == ';' || line[lead] == '[') return false;
+    line = line.substr(lead);
+    size_t eq = line.find('=');
+    if (eq == std::string::npos) return false;
+    k = line.substr(0, eq);
+    v = line.substr(eq + 1);
+    // 줄 끝 설명: 공백 뒤의 # 또는 ; 부터 끝까지 버림 (예: snes=SFC   # 슈퍼패미컴)
+    for (size_t i = 1; i < v.size(); i++)
+        if ((v[i] == '#' || v[i] == ';') && (v[i - 1] == ' ' || v[i - 1] == '\t')) {
+            v.erase(i);
+            break;
+        }
+    while (!k.empty() && (k.back() == ' ' || k.back() == '\t')) k.pop_back();
+    while (!v.empty() && (v[0] == ' ' || v[0] == '\t')) v.erase(0, 1);
+    while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+    return !k.empty();
+}
+
+// 테마의 화면 이름: theme.txt 의 name (영어 화면이면 name_en 우선) → 함께 배포하는 팩의 이름 → 폴더 이름
+static std::string ThemeTitle(const std::string &folder) {
+    bool en = CurrentLang() == Lang::En;
+    std::string name, nameEn, line, k, v;
+    std::ifstream in(gHome + "/themes/" + folder + "/theme.txt");
+    for (int n = 0; n < 200 && std::getline(in, line); n++) {
+        if (!ThemeTxtLine(line, n == 0, k, v)) continue;
+        std::string lk = LowerAscii(k);
+        if (lk == "name") name = v;
+        else if (lk == "name_en") nameEn = v;
+    }
+    if (en && !nameEn.empty()) return nameEn;
+    if (!name.empty()) return name;
+    for (const auto &p : kPacks)
+        if (folder == p.folder) return en ? p.en : p.ko;
+    return folder;
+}
+
 static void LoadTheme(const std::string &name) {
     gTheme = Theme();
+    LayoutDefault(gTheme.layout);
+    gThemeSerial++;
     gThemeName.clear();
     if (name.empty()) return;
     std::string base = gHome + "/themes/" + name;
     if (!IsDirPath(base)) return;
     gTheme.name = gThemeName = name;
+    gTheme.base = base;
+    LayoutLoad(gTheme.layout, base + "/layout.txt");
+    // layout.txt 의 문제는 테마 폴더의 layout_errors.txt 에 적어 둔다 (문제가 없으면 지움)
+    if (gTheme.layout.custom) {
+        std::string ep = base + "/layout_errors.txt";
+        if (gTheme.layout.problems.empty()) {
+            remove(ep.c_str());
+        } else {
+            std::ofstream eo(ep, std::ios::binary);
+            eo << "layout.txt problems (line: what)\r\n";
+            for (const auto &pr : gTheme.layout.problems) eo << pr << "\r\n";
+        }
+    }
     for (const char *d : {"backgrounds", "Background_image1", "Resource/Background_image1"}) IndexImages(base + "/" + d, gTheme.bg);
     for (const char *d : {"logos", "Logo1", "Resource/Logo1"}) IndexImages(base + "/" + d, gTheme.logo);
     std::ifstream in(base + "/theme.txt");
-    std::string line;
+    std::string line, k, v;
     bool first = true;
     while (std::getline(in, line)) {
-        if (first && line.size() >= 3 && (unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB &&
-            (unsigned char)line[2] == 0xBF)
-            line = line.substr(3);  // UTF-8 BOM (메모장 저장)
+        bool ok = ThemeTxtLine(line, first, k, v);
         first = false;
-        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
-        size_t lead = line.find_first_not_of(" \t");
-        if (lead == std::string::npos || line[lead] == '#' || line[lead] == ';' || line[lead] == '[') continue;
-        line = line.substr(lead);
-        size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string k = line.substr(0, eq), v = line.substr(eq + 1);
-        // 줄 끝 설명: 공백 뒤의 # 또는 ; 부터 끝까지 버림 (예: snes=SFC   # 슈퍼패미컴)
-        for (size_t i = 1; i < v.size(); i++)
-            if ((v[i] == '#' || v[i] == ';') && (v[i - 1] == ' ' || v[i - 1] == '\t')) {
-                v.erase(i);
-                break;
-            }
-        while (!k.empty() && (k.back() == ' ' || k.back() == '\t')) k.pop_back();
-        while (!v.empty() && (v[0] == ' ' || v[0] == '\t')) v.erase(0, 1);
-        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
-        if (LowerAscii(k) == "dim") gTheme.dim = std::max(0, std::min(255, atoi(v.c_str())));
-        else if (!k.empty() && !v.empty()) {
+        if (!ok) continue;
+        std::string lk = LowerAscii(k);
+        if (lk == "dim") gTheme.dim = std::max(0, std::min(255, atoi(v.c_str())));
+        else if (lk == "name" || lk == "name_en") continue;  // 화면 이름 (ThemeTitle)
+        else if (!v.empty()) {
             // 확장자를 적었으면 떼고 이름만 (backgrounds 는 jpg/png, logos 는 png 를 각각 찾음)
             size_t dot = v.find_last_of('.');
             if (dot != std::string::npos) {
                 std::string ext = LowerAscii(v.substr(dot + 1));
                 if (ext == "jpg" || ext == "jpeg" || ext == "png") v = v.substr(0, dot);
             }
-            gTheme.alias[LowerAscii(k)] = LowerAscii(v);
+            gTheme.alias[lk] = LowerAscii(v);
         }
     }
 }
@@ -500,6 +634,7 @@ static void MakeUserFolders() {
                "  theme.txt                            dim=0~255 (배경 어둡게), <카테고리 이름>=<그림 파일 이름>\r\n"
                "배경이 없는 카테고리는 테마를 끈 화면으로 보입니다.\r\n"
                "폴더·파일 이름은 영문(ASCII)을 권장합니다. Y 옵션 > 테마 설정에서 고릅니다.\r\n"
+               "  layout.txt                           화면 구성 바꾸기 (격자, 위치, 글꼴·색): 테마_레이아웃.md\r\n"
                "자세한 방법: 테마_만들기.md (릴리스 zip) / github.com/JyJyLab/JoyLauncher/blob/main/docs/테마_만들기.md\r\n"
                "\r\n"
                "[English]\r\n"
@@ -511,6 +646,7 @@ static void MakeUserFolders() {
                "  theme.txt                          dim=0-255 (darken backgrounds), <category name>=<image file name>\r\n"
                "Categories without a background look like the no-theme screen.\r\n"
                "Use ASCII folder and file names. Pick a theme in Y Options > Theme.\r\n"
+               "  layout.txt                         change the screen layout (grids, positions, fonts, colors): theme-layout-en.md\r\n"
                "Details: theme-guide-en.md (release zip) / github.com/JyJyLab/JoyLauncher/blob/main/docs/theme-guide-en.md\r\n");
     WriteGuide(gHome + "/bgm",
                "Joy Launcher BGM 폴더 / BGM folder\r\n"
@@ -534,6 +670,7 @@ struct App {
     TextCache text;
     ImageCache images;
     ImageCache backs;            // 테마 배경 (작은 캐시)
+    ThumbCache thumbs;           // 표시 크기로 줄인 그림 (테마 아이콘·격자 칸)
     std::string lastBack;        // 새 배경을 읽기 전까지 보여줄 직전 배경
     bool themePick = false;      // 테마 선택 창
     bool optPick = false;        // 옵션 창 (Y): 홈브루 메뉴·RetroArch·PPSSPP·새로 고침·테마 등
@@ -544,7 +681,8 @@ struct App {
     int hbSel = 0;
     std::vector<Game> hbList;    // 고를 수 있는 nro (/switch 아래 두 단계)
     bool exitAsk = false;        // 맨 위 화면에서 B: 종료 확인
-    std::vector<std::string> themeList;  // [0] = 기본
+    std::vector<std::string> themeList;  // [0] = 기본, 그다음 테마 폴더 이름, 끝에 내려받기 항목
+    std::vector<std::string> themeTitles;  // themeList 와 같은 순서의 화면 이름
     int themeSel = 0;
     std::vector<Collection> cols;
     Mode mode = Mode::Categories;
@@ -661,7 +799,7 @@ static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
     return d;
 }
 
-static const int kListX = 40, kListY = 96, kRowH = 42, kRows = 13;
+static const int kRowH = 42, kRows = 13;
 
 // 화면 가득 채우기 (비율 유지, 넘치는 부분은 잘라냄)
 static void DrawCover(App &a, SDL_Texture *t) {
@@ -699,15 +837,15 @@ static void ReadBattery() {
 }
 
 // 오른쪽 끝을 right 에 맞춰 «76% [■■■ ]» 를 그리고, 차지한 왼쪽 x 를 돌려준다
-static int DrawBattery(App &a, int right, int y) {
+static int DrawBattery(App &a, int right, int y, SDL_Color base = kWhite) {
     ReadBattery();
     if (gBattery.percent < 0) return right;
     const int bw = 40, bh = 20, nub = 4;
     int bx = right - nub - bw, by = y;
     bool low = gBattery.percent <= 15 && !gBattery.charging;
-    SDL_Color fill = low ? SDL_Color{235, 60, 60, 255} : gBattery.charging ? SDL_Color{80, 220, 120, 255} : kWhite;
+    SDL_Color fill = low ? SDL_Color{235, 60, 60, 255} : gBattery.charging ? SDL_Color{80, 220, 120, 255} : base;
     // 테두리 (모서리를 깎아 둥글게)
-    SDL_SetRenderDrawColor(a.r, kWhite.r, kWhite.g, kWhite.b, 255);
+    SDL_SetRenderDrawColor(a.r, base.r, base.g, base.b, 255);
     SDL_Rect edges[] = {{bx + 2, by, bw - 4, 2}, {bx + 2, by + bh - 2, bw - 4, 2}, {bx, by + 2, 2, bh - 4},
                         {bx + bw - 2, by + 2, 2, bh - 4}, {bx + 1, by + 1, 1, 1}, {bx + bw - 2, by + 1, 1, 1},
                         {bx + 1, by + bh - 2, 1, 1}, {bx + bw - 2, by + bh - 2, 1, 1},
@@ -728,7 +866,7 @@ static int DrawBattery(App &a, int right, int y) {
     }
     char txt[16];
     snprintf(txt, sizeof txt, "%d%%", gBattery.percent);
-    SDL_Texture *t = a.text.Get(a.fInfo, txt, low ? fill : kWhite);
+    SDL_Texture *t = a.text.Get(a.fInfo, txt, low ? fill : base);
     int tw = 0, th = 0;
     if (t) SDL_QueryTexture(t, nullptr, nullptr, &tw, &th);
     int tx = bx - 8 - tw;
@@ -847,65 +985,462 @@ static void CountFramesPending(const std::vector<Collection> &cols) {
 
 static SDL_Color SelColor() { return Themed() ? SDL_Color{70, 70, 110, 210} : kSel; }
 
-static void RenderCategories(App &a) {
-    const Collection *cc = a.catSel < (int)a.cols.size() ? &a.cols[a.catSel] : nullptr;
-    Frame(a, "Joy Launcher", T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼ 선택"), cc);
-    int total = (int)a.cols.size();
-    for (int i = 0; i < kRows && a.catTop + i < total; i++) {
-        int idx = a.catTop + i;
-        int y = kListY + i * kRowH;
-        bool sel = idx == a.catSel;
-        if (sel) Fill(a, kListX - 12, y - 4, 720, kRowH, SelColor());
-        if (idx < (int)a.cols.size()) {
-            const Collection &c = a.cols[idx];
-            DrawText(a, a.fList, T(c.name), kListX, y + 4, sel ? kWhite : kGrey, 560, 0, 0, 0, sel ? kScroll : 0);
-            char n[32];
-            snprintf(n, sizeof(n), "%d", (int)c.games.size());
-            DrawText(a, a.fInfo, n, kListX + 690, y + 8, kGrey, 0, 2);
+// ---------------------------------------------------------------- 화면 구성 그리기 (layout.txt)
+// 화면은 요소(그림·글자·목록 …)의 모음이다. 기본 구성은 layout.cpp 에 있고, 테마의 layout.txt 가 덮어쓴다.
+
+// 색 이름 → 실제 색. bar·selection 은 배경 그림이 깔렸을 때 반투명 (테마가 값을 정하면 그 값)
+static SDL_Color LC(const LColor &c) {
+    if (c.name.empty()) return {c.r, c.g, c.b, c.a};
+    auto it = gTheme.layout.colors.find(c.name);
+    if (it != gTheme.layout.colors.end()) return {it->second.r, it->second.g, it->second.b, it->second.a};
+    if (c.name == "dim") return kGrey;
+    if (c.name == "accent") return kAccent;
+    if (c.name == "selection") return SelColor();
+    if (c.name == "bar") return {kDark.r, kDark.g, kDark.b, (Uint8)(gBackDrawn ? 200 : 255)};
+    return kWhite;  // text, selected, 모르는 이름
+}
+
+// 테마 폴더 기준 파일 경로 (폴더 밖으로 나가는 경로는 무시)
+static std::string ThemeFile(const std::string &rel) {
+    if (rel.empty() || gTheme.base.empty() || rel[0] == '/' || rel[0] == '\\' || rel.find("..") != std::string::npos ||
+        rel.find(':') != std::string::npos)
+        return "";
+    return gTheme.base + "/" + rel;
+}
+
+// backgrounds·logos 밖의 그림 폴더 (icons 등): 처음 쓸 때 읽어 둔다
+static const std::map<std::string, std::string> &ThemeFolder(const std::string &folder) {
+    std::string key = LowerAscii(folder);
+    auto it = gTheme.folders.find(key);
+    if (it != gTheme.folders.end()) return it->second;
+    auto &m = gTheme.folders[key];
+    std::string dir = ThemeFile(folder);
+    if (!dir.empty()) IndexImages(dir, m);
+    return m;
+}
+
+// 글꼴: 내장 나눔고딕 + 테마 글꼴(layout.txt 의 font / font_bold). 크기별로 열어 둔다.
+struct FontSet {
+    std::vector<char> reg, bold;       // 테마 글꼴 파일 내용 (없으면 빔)
+    std::map<int, TTF_Font *> fonts;   // 크기*4 + 굵게*2 + 테마
+    std::map<std::string, bool> covers[2];  // 테마 글꼴에 그 글의 글자가 다 있는지 (일반 / 굵게)
+    Uint32 serial = 0xffffffffu;
+};
+static FontSet gFonts;
+
+// 테마가 바뀌었으면 글꼴·글자·작은 그림 캐시를 비우고 테마 글꼴을 읽는다
+static void FontsSync(App &a) {
+    if (gFonts.serial == gThemeSerial) return;
+    gFonts.serial = gThemeSerial;
+    a.text.Clear();
+    a.thumbs.Clear();
+    for (auto &kv : gFonts.fonts)
+        if (kv.second) TTF_CloseFont(kv.second);
+    gFonts.fonts.clear();
+    gFonts.covers[0].clear();
+    gFonts.covers[1].clear();
+    gFonts.reg.clear();
+    gFonts.bold.clear();
+    std::string fr = ThemeFile(gTheme.layout.font), fb = ThemeFile(gTheme.layout.fontBold);
+    if (!fr.empty() && !ReadAll(fr.c_str(), gFonts.reg)) gFonts.reg.clear();
+    if (!fb.empty() && !ReadAll(fb.c_str(), gFonts.bold)) gFonts.bold.clear();
+    if (gFonts.bold.empty()) gFonts.bold = gFonts.reg;  // 굵은 글꼴을 안 정했으면 일반 글꼴로
+}
+
+static TTF_Font *FontRaw(bool bold, int size, bool theme) {
+    int key = size * 4 + (bold ? 2 : 0) + (theme ? 1 : 0);
+    auto it = gFonts.fonts.find(key);
+    if (it != gFonts.fonts.end()) return it->second;
+    std::vector<char> &buf = theme ? (bold ? gFonts.bold : gFonts.reg) : (bold ? gFontBold : gFontReg);
+    TTF_Font *f = buf.empty() ? nullptr : OpenFontMem(buf, size);
+    gFonts.fonts[key] = f;
+    return f;
+}
+
+// s 를 그릴 글꼴. 테마 글꼴에 없는 글자(한글 등)가 섞인 글은 내장 글꼴로 그린다.
+static TTF_Font *FontFor(bool bold, int size, const std::string &s) {
+    if (!(bold ? gFonts.bold : gFonts.reg).empty()) {
+        if (TTF_Font *f = FontRaw(bold, size, true)) {
+            auto &memo = gFonts.covers[bold ? 1 : 0];
+            auto it = memo.find(s);
+            bool ok;
+            if (it != memo.end()) {
+                ok = it->second;
+            } else {
+                ok = true;
+                const unsigned char *p = (const unsigned char *)s.c_str();
+                while (*p && ok) {
+                    Uint32 cp = *p;
+                    int extra = cp >= 0xF0 ? 3 : cp >= 0xE0 ? 2 : cp >= 0xC0 ? 1 : 0;
+                    if (extra) cp &= 0x3F >> extra;
+                    p++;
+                    for (int i = 0; i < extra && *p; i++) cp = (cp << 6) | (*p++ & 0x3F);
+                    if (cp > 0x20 && !TTF_GlyphIsProvided32(f, cp)) ok = false;
+                }
+                if (memo.size() > 4000) memo.clear();
+                memo[s] = ok;
+            }
+            if (ok) return f;
         }
     }
-    // 오른쪽: 선택 카테고리의 게임 박스아트 미리보기 (2x2)
-    if (a.catSel < (int)a.cols.size()) {
-        const Collection &c = a.cols[a.catSel];
-        int px = 800, k = 0;
-        for (size_t g = 0; g < c.games.size() && k < 4; g++) {
-            if (c.games[g].boxart.empty()) continue;
-            SDL_Texture *t = (SDL_GetTicks() - a.selChanged > 120) ? a.images.Load(c.games[g].boxart)
-                                                                   : a.images.Find(c.games[g].boxart);
-            if (!t) continue;
-            DrawImage(a, t, px + (k % 2) * 225, 96 + (k / 2) * 260, 215, 250);
-            k++;
-        }
+    return FontRaw(bold, size, false);
+}
+
+// 이번 프레임에 디스크에서 새로 읽을 수 있는 작은 그림 수 (격자를 처음 그릴 때 끊기지 않게 나눠 읽음)
+static int gLoadBudget = 1;
+
+static SDL_Texture *Thumb(App &a, const std::string &path, int w, int h, bool cover, bool now) {
+    if (path.empty()) return nullptr;
+    bool known = false;
+    SDL_Texture *t = a.thumbs.Find(path, w, h, known);
+    if (known) return t;
+    if (!now && gLoadBudget <= 0) return nullptr;
+    if (!now) gLoadBudget--;
+    return a.thumbs.Load(path, w, h, cover);
+}
+
+// 칸에 맞춰 그리기. fit: 0 비율 유지(안에 맞춤) / 1 비율 유지(가득, 넘치면 자름) / 2 늘림
+static void DrawFit(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit, int align = 1, int valign = 1) {
+    int bw, bh;
+    SDL_QueryTexture(t, nullptr, nullptr, &bw, &bh);
+    if (w <= 0 || h <= 0) {  // 크기를 안 정했으면 그림 크기 그대로
+        SDL_Rect d = {x, y, bw, bh};
+        SDL_RenderCopy(a.r, t, nullptr, &d);
+        return;
+    }
+    if (fit == 2) {
+        SDL_Rect d = {x, y, w, h};
+        SDL_RenderCopy(a.r, t, nullptr, &d);
+    } else if (fit == 1) {
+        float s = std::max(w / (float)bw, h / (float)bh);
+        int sw = (int)(w / s), sh = (int)(h / s);
+        SDL_Rect src = {(bw - sw) / 2, (bh - sh) / 2, sw, sh};
+        SDL_Rect d = {x, y, w, h};
+        SDL_RenderCopy(a.r, t, &src, &d);
+    } else {
+        float s = std::min(w / (float)bw, h / (float)bh);
+        int dw = (int)(bw * s), dh = (int)(bh * s);
+        SDL_Rect d = {x + (align == 0 ? 0 : align == 2 ? w - dw : (int)(w - bw * s) / 2),
+                      y + (valign == 0 ? 0 : valign == 2 ? h - dh : (int)(h - bh * s) / 2), dw, dh};
+        SDL_RenderCopy(a.r, t, nullptr, &d);
     }
 }
 
-static void RenderGames(App &a) {
-    const Collection &c = a.cols[a.col];
-    Frame(a, T(c.name), T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션"), &c, true);
-    char idx[64];
-    snprintf(idx, sizeof(idx), "%d / %d", a.col + 1, (int)a.cols.size());
-    DrawText(a, a.fInfo, "◀ L", 30, 26, kGrey);
-    // 오른쪽 위는 배터리. «n / 13  R▶» 는 그 왼쪽
-    int rx = gBatteryLeft - 28;
-    DrawText(a, a.fInfo, "R ▶", rx, 26, kGrey, 0, 2);
-    DrawText(a, a.fInfo, idx, rx - 80, 26, kGrey, 0, 2);
-
-    int n = (int)c.games.size();
-    for (int i = 0; i < kRows && a.top + i < n; i++) {
-        int gi = a.top + i;
-        int y = kListY + i * kRowH;
-        if (gi == a.sel) Fill(a, kListX - 12, y - 4, 720, kRowH, SelColor());
-        bool star = (!c.virt && gFavSet.count(c.games[gi].file)) || c.shortName == "hbfav";
-        DrawText(a, a.fList, star ? "★ " + c.games[gi].title : c.games[gi].title, kListX, y + 4, gi == a.sel ? kWhite : kGrey, 690, 0, 0, 0,
-                 gi == a.sel ? kScroll : 0);
+// 화면에 보일 카테고리 이름: layout.txt 의 [names] (카테고리 이름 → shortname → 롬 폴더 순), 없으면 원래 이름
+static std::string CatName(const Collection &c) {
+    const auto &names = gTheme.layout.names;
+    if (!names.empty()) {
+        auto it = names.find(LowerAscii(c.name));
+        if (it == names.end() && !c.shortName.empty()) it = names.find(LowerAscii(c.shortName));
+        if (it == names.end() && c.folders.size() == 1) it = names.find(LowerAscii(c.folders[0]));
+        if (it != names.end()) return it->second;
     }
-    char cnt[64];
-    snprintf(cnt, sizeof(cnt), "%d / %d", a.sel + 1, n);
-    DrawText(a, a.fInfo, cnt, kListX, H - 40, kGrey);
+    return T(c.name);
+}
 
-    const Game &g = c.games[a.sel];
-    int px = 800, pw = 440;
-    // 이동이 잠시 멈춘 뒤에만 디스크에서 읽고, 캐시에 있으면 바로 표시
+struct DrawCtx {
+    bool games = false;
+    const Collection *col = nullptr;  // 커서가 있는(또는 열린) 카테고리
+    const Game *game = nullptr;       // 선택된 게임 (게임 화면)
+    int index = 0, count = 0;         // 목록의 선택 위치(1부터) / 전체
+    std::string hint;
+};
+
+static std::string GameLongTitle(const Game &g) {
+    // 롬 모음에 따라 developer 칸에 긴 제목을 적어 두기도 한다 (목록 제목으로 시작하면 긴 제목으로 보고 그것을 표시)
+    bool devIsTitle = !g.developer.empty() && g.developer.rfind(g.title, 0) == 0;
+    return devIsTitle ? g.developer : g.title;
+}
+
+static std::string GameMeta(const Game &g) {
+    bool devIsTitle = !g.developer.empty() && g.developer.rfind(g.title, 0) == 0;
+    std::string meta;
+    if (!g.developer.empty() && !devIsTitle) meta += g.developer;
+    if (!g.release.empty()) meta += (meta.empty() ? "" : " · ") + g.release.substr(0, 4);
+    if (!g.players.empty()) meta += (meta.empty() ? "" : " · ") + Fmt(T("%s인"), g.players.c_str());
+    return meta;
+}
+
+static std::string GameDescription(App &a, const Game &g) {
+    if (g.description.empty() || SDL_GetTicks() - a.selChanged <= 120) return "";
+    // 너무 긴 설명은 잘라 둔다 (UTF-8 글자 중간에서 자르지 않게)
+    size_t cut = std::min<size_t>(g.description.size(), 3000);
+    while (cut < g.description.size() && cut > 0 && ((unsigned char)g.description[cut] & 0xC0) == 0x80) cut--;
+    return g.description.substr(0, cut);
+}
+
+// 글자 틀의 {자리표} 채우기. 모르는 자리표는 그대로 둔다
+static std::string Expand(App &a, const std::string &tpl, const DrawCtx &c) {
+    if (tpl.find('{') == std::string::npos) return tpl;
+    std::string out;
+    for (size_t i = 0; i < tpl.size();) {
+        size_t close = tpl[i] == '{' ? tpl.find('}', i) : std::string::npos;
+        if (close == std::string::npos) { out += tpl[i++]; continue; }
+        std::string k = tpl.substr(i + 1, close - i - 1), v;
+        bool known = true;
+        const Game *g = c.game;
+        if (k == "app") v = "Joy Launcher";
+        else if (k == "version") v = CurrentVersion();
+        else if (k == "applet") v = gAppletMode ? T("애플릿 모드") : "";
+        else if (k == "hint") v = c.hint;
+        else if (k == "clock") {
+            time_t now = time(nullptr);
+            char buf[16];
+            strftime(buf, sizeof(buf), "%H:%M", localtime(&now));
+            v = buf;
+        }
+        else if (k == "category") v = c.col ? CatName(*c.col) : "";
+        else if (k == "games") v = c.col ? std::to_string(c.col->games.size()) : "";
+        else if (k == "index") v = std::to_string(c.index);
+        else if (k == "count") v = std::to_string(c.count);
+        else if (k == "category_index") v = std::to_string((c.games ? a.col : a.catSel) + 1);
+        else if (k == "category_count") v = std::to_string(a.cols.size());
+        else if (k == "title") v = g ? g->title : "";
+        else if (k == "longtitle") v = g ? GameLongTitle(*g) : "";
+        else if (k == "developer") v = g ? g->developer : "";
+        else if (k == "release") v = g ? g->release : "";
+        else if (k == "year") v = g ? g->release.substr(0, std::min<size_t>(4, g->release.size())) : "";
+        else if (k == "players") v = g ? g->players : "";
+        else if (k == "genre") v = g ? g->genre : "";
+        else if (k == "meta") v = g ? GameMeta(*g) : "";
+        else if (k == "description") v = g ? GameDescription(a, *g) : "";
+        else known = false;
+        if (known) out += v;
+        else out += tpl.substr(i, close - i + 1);
+        i = close + 1;
+    }
+    // 자리표가 모두 비어 글자가 공백뿐이면 그리지 않는다
+    if (out.find_first_not_of(" \t") == std::string::npos) return "";
+    return out;
+}
+
+static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
+    if (e.source == "background") {
+        // 카테고리(플랫폼)별 배경. 그 카테고리 배경이 없으면 fallback 그림, 그것도 없으면 배경 없이
+        std::string bg = ThemeFind(gTheme.bg, c.col);
+        if (bg.empty()) bg = ThemeFile(e.fallback);
+        SDL_Texture *t = nullptr;
+        if (!bg.empty()) {
+            t = a.backs.Find(bg);
+            // 빠르게 넘길 때는 디스크에서 읽지 않고 직전 배경 유지
+            if (!t && SDL_GetTicks() - a.selChanged > 150) t = a.backs.Load(bg);
+            if (t) a.lastBack = bg;
+            else if (!a.lastBack.empty()) t = a.backs.Find(a.lastBack);
+        } else {
+            a.lastBack.clear();
+        }
+        if (t) {
+            DrawFit(a, t, e.x, e.y, e.w, e.h, e.fit);
+            int dim = e.dim >= 0 ? e.dim : gTheme.dim;
+            if (dim > 0) Fill(a, e.x, e.y, e.w, e.h, {0, 0, 0, (Uint8)dim});
+        }
+        gBackDrawn = t != nullptr;
+        return;
+    }
+    std::string path;
+    bool gameImg = false;
+    if (e.source == "logo") path = c.col ? ThemeFind(gTheme.logo, c.col) : "";
+    else if (e.source == "icon") path = c.col ? ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), c.col) : "";
+    else if (e.source == "boxart") { path = c.game ? c.game->boxart : ""; gameImg = true; }
+    else if (e.source == "screenshot") { path = c.game ? GameShot(*c.game, SDL_GetTicks() - a.selChanged > 250) : ""; gameImg = true; }
+    else path = ThemeFile(e.file);
+    if (path.empty()) { path = ThemeFile(e.fallback); gameImg = false; }
+    if (path.empty()) return;
+    SDL_Texture *t;
+    if (gameImg) {
+        // 이동이 잠시 멈춘 뒤에만 디스크에서 읽고, 캐시에 있으면 바로 표시
+        t = a.images.Find(path);
+        if (!t && SDL_GetTicks() - a.selChanged > 120) t = a.images.Load(path);
+    } else {
+        t = Thumb(a, path, e.w, e.h, e.fit != 0, true);
+    }
+    if (!t) return;
+    if (e.alpha < 255) SDL_SetTextureAlphaMod(t, (Uint8)e.alpha);
+    if (e.hasTint) {
+        SDL_Color tc = LC(e.tint);
+        SDL_SetTextureColorMod(t, tc.r, tc.g, tc.b);
+    }
+    DrawFit(a, t, e.x, e.y, e.w, e.h, e.fit, e.align, e.valign);
+    if (e.alpha < 255) SDL_SetTextureAlphaMod(t, 255);
+    if (e.hasTint) SDL_SetTextureColorMod(t, 255, 255, 255);
+    if (e.dim > 0) Fill(a, e.x, e.y, e.w, e.h, {0, 0, 0, (Uint8)e.dim});
+}
+
+static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
+    if (e.logo && c.col) {
+        std::string logo = ThemeFind(gTheme.logo, c.col);
+        SDL_Texture *lt = logo.empty() ? nullptr : a.images.Load(logo);
+        if (lt) { DrawImage(a, lt, e.lx, e.ly, e.lw, e.lh); return; }
+    }
+    std::string s = Expand(a, e.text, c);
+    if (s.empty()) return;
+    TTF_Font *f = FontFor(e.bold, e.size, s);
+    if (!f) return;
+    SDL_Color col = LC(e.color);
+    if (e.wrap && e.w > 0) {
+        DrawText(a, f, s, e.x, e.y, col, e.w, 0, e.w, e.h, e.scroll ? kScrollDesc : 0);
+        return;
+    }
+    int ax = e.x + (e.align == 1 ? e.w / 2 : e.align == 2 ? e.w : 0), y = e.y;
+    if (e.h > 0 && e.valign) {
+        int th = TTF_FontHeight(f);
+        y += e.valign == 1 ? (e.h - th) / 2 : e.h - th;
+    }
+    DrawText(a, f, s, ax, y, col, e.w, e.align, 0, 0, e.scroll ? kScroll : 0);
+}
+
+// 목록의 열·줄 수
+static void ListGeom(const Elem &e, int &cols, int &rows) {
+    if (e.style == 1) {
+        cols = std::max(1, e.columns);
+        int cw = std::max(1, (e.w - e.gapX * (cols - 1)) / cols);
+        rows = e.rows > 0 ? e.rows : std::max(1, (e.h + e.gapY) / (cw + e.gapY));  // 줄 수를 안 정했으면 정사각형 칸으로
+    } else {
+        cols = 1;
+        rows = e.rows > 0 ? e.rows : std::max(1, (int)(e.h / std::max(1.0f, e.rowH) + 0.01f));
+    }
+}
+
+// 카테고리·게임 화면의 목록 모양 (목록 요소가 없으면 기본 13줄)
+static void ScreenGeom(bool games, int &cols, int &rows) {
+    const Elem *l = (games ? gTheme.layout.games : gTheme.layout.categories).List();
+    if (!l) { cols = 1; rows = kRows; return; }
+    ListGeom(*l, cols, rows);
+}
+
+static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
+    int cols, rows;
+    ListGeom(e, cols, rows);
+    int n = c.games ? (c.col ? (int)c.col->games.size() : 0) : (int)a.cols.size();
+    int top = c.games ? a.top : a.catTop, sel = c.games ? a.sel : a.catSel;
+    SDL_Color colN = LC(e.color), colS = LC(e.selColor);
+    auto starred = [&](int idx) {
+        return c.games && ((!c.col->virt && gFavSet.count(c.col->games[idx].file)) || c.col->shortName == "hbfav");
+    };
+    if (e.style == 0) {
+        bool showCount = e.count && !c.games;
+        bool themeFont = !(e.bold ? gFonts.bold : gFonts.reg).empty();
+        for (int i = 0; i < rows && top + i < n; i++) {
+            int idx = top + i, ry = e.y + (int)(i * e.rowH + 0.5f), rh = e.y + (int)((i + 1) * e.rowH + 0.5f) - ry;
+            bool s = idx == sel;
+            if (s) {
+                SDL_Texture *st = e.selector.empty() ? nullptr : Thumb(a, ThemeFile(e.selector), e.w, (int)e.rowH, true, true);
+                int g = e.selectorGrow;
+                if (st) DrawFit(a, st, e.x - g, ry - g, e.w + g * 2, rh + g * 2, 2);
+                else Fill(a, e.x, ry, e.w, rh, LC(e.selection));
+            }
+            std::string label = c.games ? c.col->games[idx].title : CatName(a.cols[idx]);
+            int maxW = e.w - e.textX - (showCount ? 148 : 18), dx = 0;
+            if (starred(idx)) {
+                if (!themeFont) {
+                    label = "★ " + label;
+                } else {  // 테마 글꼴에 ★ 이 없어도 제목은 테마 글꼴로: 별만 따로 그린다
+                    TTF_Font *sf = FontFor(e.bold, e.size, "★ ");
+                    int sw = 0;
+                    if (sf && e.align == 0) {
+                        TTF_SizeUTF8(sf, "★ ", &sw, nullptr);
+                        int sy = e.textY >= 0 ? e.textY : (rh - TTF_FontHeight(sf)) / 2;
+                        DrawText(a, sf, "★ ", e.x + e.textX, ry + sy, s ? colS : colN);
+                        dx = sw;
+                    } else {
+                        label = "★ " + label;
+                    }
+                }
+            }
+            TTF_Font *f = FontFor(e.bold, e.size, label);
+            if (!f) continue;
+            int ty = e.textY >= 0 ? e.textY : (rh - TTF_FontHeight(f)) / 2;
+            int tx = e.align == 1 ? e.x + e.w / 2 : e.align == 2 ? e.x + e.w - e.textX : e.x + e.textX + dx;
+            DrawText(a, f, label, tx, ry + ty, s ? colS : colN, maxW - dx, e.align, 0, 0, s ? kScroll : 0);
+            if (showCount) {
+                char num[32];
+                snprintf(num, sizeof(num), "%d", (int)a.cols[idx].games.size());
+                if (TTF_Font *fc = FontFor(false, e.countSize, num)) {
+                    int cy = e.countY >= 0 ? e.countY : (rh - TTF_FontHeight(fc)) / 2;
+                    DrawText(a, fc, num, e.x + e.w - e.countX, ry + cy, LC(e.countColor), 0, 2);
+                }
+            }
+        }
+        return;
+    }
+    // 격자
+    int cw = std::max(1, (e.w - e.gapX * (cols - 1)) / cols), ch = std::max(1, (e.h - e.gapY * (rows - 1)) / rows);
+    std::string kind = e.image.empty() ? (c.games ? "boxart" : "icon") : e.image;
+    int iw = std::max(1, cw - e.pad[0] - e.pad[2]), ih = std::max(1, ch - e.pad[1] - e.pad[3] - (e.label == 1 ? e.labelH : 0));
+    auto cellPath = [&](int idx) -> std::string {
+        if (c.games) return kind == "boxart" ? c.col->games[idx].boxart : "";
+        const Collection &cc = a.cols[idx];
+        if (kind == "icon") return ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), &cc);
+        if (kind == "logo") return ThemeFind(gTheme.logo, &cc);
+        if (kind == "boxart")
+            for (const auto &g : cc.games)
+                if (!g.boxart.empty()) return g.boxart;
+        return "";
+    };
+    auto cell = [&](int idx, bool s) {
+        int k = idx - top;
+        SDL_Rect rc = {e.x + (k % cols) * (cw + e.gapX), e.y + (k / cols) * (ch + e.gapY), cw, ch};
+        float sc = s ? e.selScale : 1.0f;
+        if (sc != 1.0f) {
+            int nw = (int)(cw * sc), nh = (int)(ch * sc);
+            rc = {rc.x - (nw - cw) / 2, rc.y - (nh - ch) / 2, nw, nh};
+        }
+        auto px = [&](int v) { return (int)(v * sc); };
+        if (s && e.selector.empty()) Fill(a, rc.x - 4, rc.y - 4, rc.w + 8, rc.h + 8, LC(e.selection));
+        if (e.hasCardColor) Fill(a, rc.x, rc.y, rc.w, rc.h, LC(e.cardColor));
+        if (!e.card.empty())
+            if (SDL_Texture *ct = Thumb(a, ThemeFile(e.card), cw + e.cardGrow * 2, ch + e.cardGrow * 2, true, true)) {
+                int g = px(e.cardGrow);
+                DrawFit(a, ct, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
+            }
+        std::string path = cellPath(idx), name;
+        if (c.games) name = starred(idx) ? "★ " + c.col->games[idx].title : c.col->games[idx].title;
+        else name = CatName(a.cols[idx]);
+        SDL_Rect in = {rc.x + px(e.pad[0]), rc.y + px(e.pad[1]), rc.w - px(e.pad[0] + e.pad[2]), rc.h - px(e.pad[1] + e.pad[3])};
+        int lh = e.label == 1 ? px(e.labelH) : 0;
+        SDL_Texture *t = path.empty() ? nullptr : Thumb(a, path, iw, ih, false, false);
+        if (t && in.w > 0 && in.h - lh > 0) DrawFit(a, t, in.x, in.y, in.w, in.h - lh, 0);
+        if (e.label == 1 || (e.label == 0 && path.empty())) {
+            if (TTF_Font *f = FontFor(e.bold, e.size, name)) {
+                int th = TTF_FontHeight(f);
+                int ty = e.label == 1 ? in.y + in.h - lh + (lh - th) / 2 : in.y + (in.h - th) / 2;
+                DrawText(a, f, name, in.x + in.w / 2, ty, s ? colS : colN, in.w, 1, 0, 0, s ? kScroll : 0);
+            }
+        }
+        if (s && !e.selector.empty())
+            if (SDL_Texture *st = Thumb(a, ThemeFile(e.selector), cw + e.selectorGrow * 2, ch + e.selectorGrow * 2, true, true)) {
+                int g = px(e.selectorGrow);
+                DrawFit(a, st, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
+            }
+    };
+    int end = std::min(n, top + cols * rows);
+    for (int idx = top; idx < end; idx++)
+        if (idx != sel) cell(idx, false);
+    if (sel >= top && sel < end) cell(sel, true);  // 선택된 칸은 맨 위에 (확대했을 때 옆 칸을 덮음)
+    // 보이는 칸을 다 읽었으면 다음·이전 쪽 그림을 미리 읽어 둔다 (넘길 때 바로 보이게)
+    for (int idx = end; idx < std::min(n, end + cols * rows) && gLoadBudget > 0; idx++) Thumb(a, cellPath(idx), iw, ih, false, false);
+    for (int idx = top - 1; idx >= std::max(0, top - cols * rows) && gLoadBudget > 0; idx--) Thumb(a, cellPath(idx), iw, ih, false, false);
+}
+
+// 카테고리 화면: 커서가 있는 카테고리의 게임 박스 사진 미리보기
+static void DrawElemPreview(App &a, const Elem &e, const DrawCtx &c) {
+    if (!c.col) return;
+    int cols = std::max(1, e.columns), rows = std::max(1, e.rows);
+    int cw = (e.w - e.gapX * (cols - 1)) / cols, ch = (e.h - e.gapY * (rows - 1)) / rows, k = 0;
+    for (size_t g = 0; g < c.col->games.size() && k < cols * rows; g++) {
+        const std::string &box = c.col->games[g].boxart;
+        if (box.empty()) continue;
+        SDL_Texture *t = (SDL_GetTicks() - a.selChanged > 120) ? a.images.Load(box) : a.images.Find(box);
+        if (!t) continue;
+        DrawImage(a, t, e.x + (k % cols) * (cw + e.gapX), e.y + (k / cols) * (ch + e.gapY), cw, ch);
+        k++;
+    }
+}
+
+// 게임 화면: 화면 사진(또는 영상 장면)을 크게, 박스 사진은 오른쪽 아래에 작게 겹쳐서. 화면 사진이 없으면 박스 사진만
+static void DrawElemMedia(App &a, const Elem &e, const DrawCtx &c) {
+    if (!c.game) return;
+    const Game &g = *c.game;
     bool settled = SDL_GetTicks() - a.selChanged > 120;
     auto img = [&](const std::string &p) -> SDL_Texture * {
         if (p.empty()) return nullptr;
@@ -915,16 +1450,15 @@ static void RenderGames(App &a) {
     };
     std::string shotPath = GameShot(g, SDL_GetTicks() - a.selChanged > 250);
     if (!shotPath.empty()) {
-        // 게임 화면 사진(또는 영상 장면)을 크게, 박스 사진은 오른쪽 아래에 작게 겹쳐서
         SDL_Texture *shot = img(shotPath);
-        SDL_Rect area = {px, 92, pw, 300};
-        if (shot) area = DrawImage(a, shot, px, 92, pw, 300);
-        else if (!Themed()) Fill(a, px, 92, pw, 300, {44, 44, 56, 255});
-        SDL_Texture *box = g.boxart != shotPath ? img(g.boxart) : nullptr;
+        SDL_Rect area = {e.x, e.y, e.w, e.h};
+        if (shot) area = DrawImage(a, shot, e.x, e.y, e.w, e.h);
+        else if (!Themed()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
+        SDL_Texture *box = e.overlay && g.boxart != shotPath ? img(g.boxart) : nullptr;
         if (box) {
             int bw, bh;
             SDL_QueryTexture(box, nullptr, nullptr, &bw, &bh);
-            float sc = std::min(130.0f / bw, 150.0f / bh);
+            float sc = std::min(e.w * 130.0f / 440 / bw, e.h * 150.0f / 300 / bh);
             int dw = (int)(bw * sc), dh = (int)(bh * sc);
             SDL_Rect d = {area.x + area.w - dw - 8, area.y + area.h - dh - 8, dw, dh};
             Fill(a, d.x - 3, d.y - 3, dw + 6, dh + 6, {0, 0, 0, 160});
@@ -932,30 +1466,108 @@ static void RenderGames(App &a) {
         }
     } else {
         SDL_Texture *box = img(g.boxart);
-        if (box) DrawImage(a, box, px, 92, pw, 300);
-        else if (!Themed()) Fill(a, px, 92, pw, 300, {44, 44, 56, 255});
-    }
-
-    int y = 404;
-    // 제목 줄: 롬 모음에 따라 developer 칸에 긴 제목을 적어 두기도 한다 (목록 제목으로 시작하면 긴 제목으로 보고 그것을 표시)
-    bool devIsTitle = !g.developer.empty() && g.developer.rfind(g.title, 0) == 0;
-    DrawText(a, a.fList, devIsTitle ? g.developer : g.title, px, y, kWhite, pw, 0, 0, 0, kScroll);
-    y += 38;
-    std::string meta;
-    if (!g.developer.empty() && !devIsTitle) meta += g.developer;
-    if (!g.release.empty()) meta += (meta.empty() ? "" : " · ") + g.release.substr(0, 4);
-    if (!g.players.empty()) meta += (meta.empty() ? "" : " · ") + Fmt(T("%s인"), g.players.c_str());
-    if (!meta.empty()) { DrawText(a, a.fInfo, meta, px, y, kGrey, pw); y += 32; }
-    if (!g.genre.empty()) { DrawText(a, a.fInfo, g.genre, px, y, kGrey, pw); y += 32; }
-    if (!g.description.empty() && SDL_GetTicks() - a.selChanged > 120) {
-        // 너무 긴 설명은 잘라 둔다 (UTF-8 글자 중간에서 자르지 않게)
-        size_t cut = std::min<size_t>(g.description.size(), 3000);
-        while (cut < g.description.size() && cut > 0 && ((unsigned char)g.description[cut] & 0xC0) == 0x80) cut--;
-        DrawText(a, a.fDesc, g.description.substr(0, cut), px, y + 4, kGrey, pw, 0, pw, H - 60 - (y + 4), kScrollDesc);
+        if (box) DrawImage(a, box, e.x, e.y, e.w, e.h);
+        else if (!Themed()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
     }
 }
 
-static const char *kThemeDownload = "\x01download";  // 테마 목록 끝의 "기본 테마 내려받기" 항목
+// 게임 화면: 제목·제작사·장르·설명을 위에서부터 차례로
+static void DrawElemInfo(App &a, const Elem &e, const DrawCtx &c) {
+    if (!c.game) return;
+    const Game &g = *c.game;
+    SDL_Color body = LC(e.color);
+    int y = e.y;
+    std::string title = GameLongTitle(g);
+    if (TTF_Font *f = FontFor(false, e.titleSize, title)) DrawText(a, f, title, e.x, y, LC(e.titleColor), e.w, 0, 0, 0, kScroll);
+    y += e.titleSize + 11;
+    std::string meta = GameMeta(g);
+    if (!meta.empty()) {
+        if (TTF_Font *f = FontFor(false, e.size, meta)) DrawText(a, f, meta, e.x, y, body, e.w);
+        y += e.size + 10;
+    }
+    if (!g.genre.empty()) {
+        if (TTF_Font *f = FontFor(false, e.size, g.genre)) DrawText(a, f, g.genre, e.x, y, body, e.w);
+        y += e.size + 10;
+    }
+    std::string desc = GameDescription(a, g);
+    if (!desc.empty() && e.y + e.h - (y + 4) > 0)
+        if (TTF_Font *f = FontFor(false, e.descSize, desc))
+            DrawText(a, f, desc, e.x, y + 4, body, e.w, 0, e.w, e.y + e.h - (y + 4), kScrollDesc);
+}
+
+// 게임 화면: «n / 13   R ▶» (자리를 안 정하면 배터리 표시 왼쪽)
+static void DrawElemPager(App &a, const Elem &e, const DrawCtx &c) {
+    char idx[64];
+    snprintf(idx, sizeof(idx), "%d / %d", (c.games ? a.col : a.catSel) + 1, (int)a.cols.size());
+    int rx = e.hasRect ? e.x + e.w : gBatteryLeft - 28, y = e.hasRect ? e.y : 26;
+    SDL_Color col = LC(e.color);
+    if (TTF_Font *f = FontFor(e.bold, e.size, "R ▶")) DrawText(a, f, "R ▶", rx, y, col, 0, 2);
+    if (TTF_Font *f = FontFor(e.bold, e.size, idx)) DrawText(a, f, idx, rx - 80 * e.size / 22, y, col, 0, 2);
+}
+
+static void RenderScreen(App &a, const Screen &sc, const DrawCtx &c) {
+    FontsSync(a);
+    const Layout &l = gTheme.layout;
+    if (l.hasClear) SDL_SetRenderDrawColor(a.r, l.clear.r, l.clear.g, l.clear.b, 255);
+    else SDL_SetRenderDrawColor(a.r, 30, 30, 38, 255);
+    SDL_RenderClear(a.r);
+    gBackDrawn = false;
+    gLoadBudget = gShotMode ? 100000 : 1;
+    a.thumbs.tick++;
+    for (const Elem &e : sc.elems) {
+        if (!e.visible) continue;
+        switch (e.type) {
+        case ElemType::Rect: Fill(a, e.x, e.y, e.w, e.h, LC(e.color)); break;
+        case ElemType::Image: DrawElemImage(a, e, c); break;
+        case ElemType::Text: DrawElemText(a, e, c); break;
+        case ElemType::List: DrawElemList(a, e, c); break;
+        case ElemType::Preview: DrawElemPreview(a, e, c); break;
+        case ElemType::Media: DrawElemMedia(a, e, c); break;
+        case ElemType::Info: DrawElemInfo(a, e, c); break;
+        case ElemType::Battery: gBatteryLeft = DrawBattery(a, e.x + e.w, e.y, LC(e.color)); break;
+        case ElemType::Pager: DrawElemPager(a, e, c); break;
+        }
+    }
+}
+
+static void RenderCategories(App &a) {
+    DrawCtx c;
+    c.col = a.catSel < (int)a.cols.size() ? &a.cols[a.catSel] : nullptr;
+    c.index = a.catSel + 1;
+    c.count = (int)a.cols.size();
+    int cols, rows;
+    ScreenGeom(false, cols, rows);
+    c.hint = cols > 1 ? T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼◀▶ 선택")
+                      : T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼ 선택");
+    RenderScreen(a, gTheme.layout.categories, c);
+}
+
+static void RenderGames(App &a) {
+    const Collection &col = a.cols[a.col];
+    DrawCtx c;
+    c.games = true;
+    c.col = &col;
+    c.game = col.games.empty() ? nullptr : &col.games[a.sel];
+    c.index = a.sel + 1;
+    c.count = (int)col.games.size();
+    int cols, rows;
+    ScreenGeom(true, cols, rows);
+    c.hint = cols > 1 ? T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ▲▼◀▶ 선택  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션")
+                      : T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션");
+    RenderScreen(a, gTheme.layout.games, c);
+}
+
+// 테마 목록 끝의 "<팩> 내려받기" 항목: 이 글 뒤에 팩 폴더 이름이 붙는다
+static const char *kThemeDownload = "\x01download:";
+static bool IsThemeDownload(const std::string &item) { return item.rfind(kThemeDownload, 0) == 0; }
+static const ThemePack *ThemeDownloadPack(const std::string &item) {
+    if (!IsThemeDownload(item)) return nullptr;
+    std::string folder = item.substr(strlen(kThemeDownload));
+    for (const auto &p : kPacks)
+        if (folder == p.folder) return &p;
+    return nullptr;
+}
+static const char *PackName(const ThemePack &p) { return CurrentLang() == Lang::En ? p.en : p.ko; }
 
 static void RenderThemePick(App &a) {
     int n = (int)a.themeList.size();
@@ -971,10 +1583,11 @@ static void RenderThemePick(App &a) {
         int y = by + 66 + i * kRowH;
         bool sel = idx == a.themeSel;
         if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
-        bool dl = a.themeList[idx] == kThemeDownload;
-        std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : a.themeList[idx];
+        const ThemePack *pack = ThemeDownloadPack(a.themeList[idx]);
+        bool dl = pack != nullptr;
+        std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : idx < (int)a.themeTitles.size() ? a.themeTitles[idx] : a.themeList[idx];
         if (dl)
-            label = IsDirPath(gHome + "/themes/JoyBasic") ? T("기본 테마 JoyBasic 다시 받기 (최신으로)") : T("기본 테마 JoyBasic 내려받기");
+            label = Fmt(IsDirPath(gHome + "/themes/" + pack->folder) ? T("%s 다시 받기 (최신으로)") : T("%s 내려받기"), PackName(*pack));
         bool cur = !dl && ((idx == 0 && gThemeName.empty()) || (idx > 0 && a.themeList[idx] == gThemeName));
         if (cur) label += T("  (사용 중)");
         SDL_Color c = dl ? kAccent : sel ? kWhite : kGrey;
@@ -1183,6 +1796,9 @@ static void LoadGames(App &a, bool force, std::string &log) {
             DrawText(a, a.fInfo, T("처음 한 번만 오래 걸립니다. 이후에는 저장된 목록을 바로 씁니다."), W / 2, 360, kGrey, 0, 1);
             SDL_RenderPresent(a.r);
         }
+        // 그림 캐시 비우기: 읽기에 실패했던 그림(새로 넣은 파일일 수 있음)도 다시 읽게
+        a.images.Clear();
+        a.thumbs.Clear();
         Uint32 t0 = SDL_GetTicks();
         a.cols = LoadLibrary(gRoots, log);
         SaveLibraryCache(cache, sig, a.cols);
@@ -1233,12 +1849,45 @@ static void Clamp(App &a) {
     int total = (int)a.cols.size();
     a.catSel = std::max(0, std::min(a.catSel, total - 1));
     a.optSel = std::max(0, std::min(a.optSel, (int)gMenu.size() - 1));
-    if (a.catSel < a.catTop) a.catTop = a.catSel;
-    if (a.catSel >= a.catTop + kRows) a.catTop = a.catSel - kRows + 1;
+    // 목록 맨 위 항목(top)은 열 수의 배수 (격자는 줄 단위로 넘김)
+    auto keep = [](int sel, int &top, bool games) {
+        int cols, rows;
+        ScreenGeom(games, cols, rows);
+        top = std::max(0, top) / cols * cols;
+        if (sel < top) top = sel / cols * cols;
+        if (sel >= top + cols * rows) top = (sel / cols - rows + 1) * cols;
+    };
+    keep(a.catSel, a.catTop, false);
     int n = (int)a.cols[a.col].games.size();
     a.sel = std::max(0, std::min(a.sel, n - 1));
-    if (a.sel < a.top) a.top = a.sel;
-    if (a.sel >= a.top + kRows) a.top = a.sel - kRows + 1;
+    keep(a.sel, a.top, true);
+}
+
+// 테마의 layout.txt 에 문제가 있으면 알림 (자세한 내용은 테마 폴더의 layout_errors.txt)
+static void LayoutNotice(App &a) {
+    if (gTheme.layout.problems.empty()) return;
+    a.message = Fmt(T("테마 layout.txt 에 문제가 %d건 있습니다\n테마 폴더의 layout_errors.txt 를 확인하세요"), (int)gTheme.layout.problems.size());
+    a.messageColor = {120, 40, 40, 240};
+    a.messageUntil = SDL_GetTicks() + 5000;
+}
+
+// 선택이 화면 가운데쯤 오도록 하는 맨 위 항목
+static int CenterTop(int sel, bool games) {
+    int cols, rows;
+    ScreenGeom(games, cols, rows);
+    return std::max(0, sel / cols - rows / 2) * cols;
+}
+
+// 방향키로 옮긴 선택. 한 줄 목록: ▲▼ 한 칸, ◀▶ 한 쪽. 격자: ▲▼ 한 줄, ◀▶ 한 칸 (끝에서는 그대로)
+static int MoveSel(int sel, int n, bool games, int b) {
+    int cols, rows;
+    ScreenGeom(games, cols, rows);
+    if (cols <= 1) return sel + (b == 13 ? -1 : b == 15 ? 1 : b == 12 ? -rows : rows);
+    if (b == 12) return sel - 1;
+    if (b == 14) return sel + 1;
+    if (b == 13) return sel >= cols ? sel - cols : sel;
+    if (sel + cols < n) return sel + cols;
+    return sel / cols < (n - 1) / cols ? n - 1 : sel;  // 아랫줄이 짧으면 그 줄의 마지막 칸으로
 }
 
 // 화면 위치 저장. resume: 게임(또는 메뉴의 프로그램)을 실행하러 나갈 때만 true
@@ -1275,8 +1924,8 @@ static bool LoadState(App &a, bool always = false) {
         int cs = atoi(cat.c_str());
         if (cs >= 0 && cs < (int)a.cols.size()) a.catSel = cs;
     }
-    a.top = std::max(0, a.sel - kRows / 2);
-    a.catTop = std::max(0, a.catSel - kRows / 2);
+    a.top = CenterTop(a.sel, true);
+    a.catTop = CenterTop(a.catSel, false);
     return true;
 }
 
@@ -1432,10 +2081,19 @@ int main(int argc, char **argv) {
                    err.c_str());
             return ok ? 0 : 1;
         }
-        else if (s == "--theme-download") {  // --home 의 themes 에 기본 테마 받기 시험
+#ifndef __SWITCH__
+        else if (s == "--theme-unzip" && i + 3 < argc) {  // 테마 zip 풀기 시험: --theme-unzip <zip> <zip 안 폴더/> <풀 곳>
             int files = 0;
             std::string err;
-            bool ok = DownloadTheme(gHome + "/themes", files, err, [](long long, long long) { return true; });
+            bool ok = ExtractThemeZip(argv[i + 1], argv[i + 2], argv[i + 3], files, err);
+            printf("unzip ok=%d files=%d err=%s\n", ok, files, err.c_str());
+            return ok ? 0 : 1;
+        }
+#endif
+        else if (s == "--theme-download") {  // --home 의 themes 에 테마 팩 받기 시험: --theme-download [폴더] (기본 JoyBasic)
+            int files = 0;
+            std::string err, pack = i + 1 < argc && argv[i + 1][0] != '-' ? argv[++i] : "JoyBasic";
+            bool ok = DownloadTheme(gHome + "/themes", pack, files, err, [](long long, long long) { return true; });
             printf("theme ok=%d files=%d err=%s\n", ok, files, err.c_str());
             UpdaterShutdown();
             return ok ? 0 : 1;
@@ -1482,6 +2140,7 @@ int main(int argc, char **argv) {
     a.images.r = a.r;
     a.backs.r = a.r;
     a.backs.cap = 4;
+    a.thumbs.r = a.r;
     if (!ReadAll(kFont, gFontReg) || !ReadAll(kFontBold, gFontBold)) { printf("font read failed\n"); return 1; }
     a.fTitle = OpenFontMem(gFontBold, 34);
     a.fBig = OpenFontMem(gFontBold, 30);
@@ -1541,16 +2200,34 @@ int main(int argc, char **argv) {
     if (wantCol >= 0 && wantCol < (int)a.cols.size()) { a.col = a.catSel = wantCol; a.sel = 0; a.top = 0; }
     if (wantCat >= 0 && wantCat < (int)a.cols.size()) {
         a.catSel = wantCat;
-        a.catTop = std::max(0, a.catSel - kRows / 2);
+        a.catTop = CenterTop(a.catSel, false);
     }
     if (wantOpt >= 0) { a.optPick = true; a.optSel = wantOpt; }
     if (wantSel >= 0) a.sel = wantSel;
     if (wantMode >= 0) a.mode = wantMode ? Mode::Games : Mode::Categories;
     Clamp(a);
+    LayoutNotice(a);
     auto openThemePick = [&]() {
         a.themeList = ThemeNames();
+        // 함께 배포하는 팩(기본팩·레트로팩·벽골김씨팩)을 앞에, 나머지는 이름순
+        std::stable_sort(a.themeList.begin(), a.themeList.end(), [](const std::string &x, const std::string &y) {
+            auto rank = [](const std::string &f) {
+                int i = 0;
+                for (const auto &p : kPacks) {
+                    if (f == p.folder) return i;
+                    i++;
+                }
+                return i;
+            };
+            return rank(x) < rank(y);
+        });
         a.themeList.insert(a.themeList.begin(), "");
-        a.themeList.push_back(kThemeDownload);
+        a.themeTitles.clear();
+        for (const auto &f : a.themeList) a.themeTitles.push_back(f.empty() ? "" : ThemeTitle(f));
+        for (const auto &p : kPacks) {
+            a.themeList.push_back(std::string(kThemeDownload) + p.folder);
+            a.themeTitles.push_back("");
+        }
         a.themeSel = 0;
         for (size_t i = 1; i < a.themeList.size(); i++)
             if (a.themeList[i] == gThemeName) a.themeSel = (int)i;
@@ -1568,6 +2245,25 @@ int main(int argc, char **argv) {
 #ifndef __SWITCH__
         // 실행을 먼저 시도한 뒤의 화면 (애플릿 모드 경고 등 확인용)
         if (getenv("JOY_SHOT_LAUNCH") && wantSel >= 0 && a.mode == Mode::Games) { LaunchGame(a); wantSel = -1; }
+        // 방향키 이동 시험: JOY_SHOT_NAV="15,14,0" (12 ◀ 13 ▲ 14 ▶ 15 ▼, 0 열기, 1 뒤로) — 이동한 뒤의 화면을 찍음
+        if (const char *nav = getenv("JOY_SHOT_NAV")) {
+            std::stringstream ns(nav);
+            for (std::string tok; std::getline(ns, tok, ',');) {
+                int b = atoi(tok.c_str());
+                if (b >= 12 && b <= 15) {
+                    if (a.mode == Mode::Categories) a.catSel = MoveSel(a.catSel, (int)a.cols.size(), false, b);
+                    else a.sel = MoveSel(a.sel, (int)a.cols[a.col].games.size(), true, b);
+                } else if (b == 0 && a.mode == Mode::Categories) {
+                    if (a.col != a.catSel) { a.col = a.catSel; a.sel = a.top = 0; }
+                    a.mode = Mode::Games;
+                } else if (b == 1) {
+                    a.mode = Mode::Categories;
+                    a.catSel = a.col;
+                }
+                Clamp(a);
+                printf("NAV %d -> catSel=%d catTop=%d sel=%d top=%d\n", b, a.catSel, a.catTop, a.sel, a.top);
+            }
+        }
 #endif
         a.selChanged = SDL_GetTicks() - 1000;
         Render(a);
@@ -1670,8 +2366,8 @@ int main(int argc, char **argv) {
         a.messageColor = {60, 70, 120, 240};
         a.messageUntil = a.confirmUntil;
     };
-    // 테마 선택 창의 "기본 테마 JoyBasic 내려받기": 최신 릴리스에서 받아 /JoyLauncher/themes/JoyBasic 에 풀기
-    auto runThemeDownload = [&]() {
+    // 테마 선택 창의 "<팩> 내려받기": 최신 릴리스에서 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기
+    auto runThemeDownload = [&](const ThemePack &pack) {
         Uint32 lastDraw = 0;
         auto progress = [&](long long got, long long total) {
             bool cancel = false;
@@ -1685,8 +2381,8 @@ int main(int argc, char **argv) {
                 lastDraw = SDL_GetTicks();
                 Render(a);
                 Fill(a, 240, 280, 800, 150, {28, 28, 40, 245});
-                DrawText(a, a.fList, Fmt(T("기본 테마 내려받는 중  %.1f / %.1f MB"), got / 1048576.0, total / 1048576.0), W / 2, 300,
-                         kWhite, 760, 1);
+                DrawText(a, a.fList, Fmt(T("%s 내려받는 중  %.1f / %.1f MB"), PackName(pack), got / 1048576.0, total / 1048576.0),
+                         W / 2, 300, kWhite, 760, 1);
                 Fill(a, 280, 350, 720, 14, {60, 60, 80, 255});
                 if (total > 0) Fill(a, 280, 350, (int)(720.0 * got / total), 14, kAccent);
                 DrawText(a, a.fInfo, T("[B] 취소"), W / 2, 380, kGrey, 760, 1);
@@ -1697,20 +2393,25 @@ int main(int argc, char **argv) {
         showBusy(T("최신 릴리스 확인 중..."));
         int files = 0;
         std::string err;
-        bool ok = DownloadTheme(gHome + "/themes", files, err, progress);
+        bool ok = DownloadTheme(gHome + "/themes", pack.folder, files, err, progress);
         if (!ok) {
-            modal(T("기본 테마 내려받기 실패: ") + err, false);
+            modal(T("테마 내려받기 실패: ") + err, false);
             return;
         }
-        // 새 그림으로 다시 읽기 (지금 JoyBasic 을 쓰고 있었으면 바로 반영)
+        // 새 그림으로 다시 읽기 (지금 그 테마를 쓰고 있었으면 바로 반영)
         a.backs.Clear();
         a.images.Clear();
         a.lastBack.clear();
-        if (gThemeName == "JoyBasic") LoadTheme("JoyBasic");
+        if (gThemeName == pack.folder) {
+            LoadTheme(pack.folder);
+            a.top = CenterTop(a.sel, true);
+            a.catTop = CenterTop(a.catSel, false);
+            Clamp(a);
+        }
         openThemePick();
         for (size_t i = 0; i < a.themeList.size(); i++)
-            if (a.themeList[i] == "JoyBasic") a.themeSel = (int)i;
-        a.message = Fmt(T("JoyBasic 을 받았습니다 (파일 %d개) · A 를 누르면 적용합니다"), files);
+            if (a.themeList[i] == pack.folder) a.themeSel = (int)i;
+        a.message = Fmt(T("%s: 받았습니다 (파일 %d개) · A 를 누르면 적용합니다"), PackName(pack), files);
         a.messageColor = {40, 100, 60, 240};
         a.messageUntil = SDL_GetTicks() + 4000;
     };
@@ -1851,8 +2552,8 @@ int main(int argc, char **argv) {
             int n = (int)a.themeList.size();
             if (b == 13) a.themeSel = (a.themeSel + n - 1) % n;
             else if (b == 15) a.themeSel = (a.themeSel + 1) % n;
-            else if (b == 0 && a.themeList[a.themeSel] == kThemeDownload) {
-                runThemeDownload();
+            else if (b == 0 && IsThemeDownload(a.themeList[a.themeSel])) {
+                if (const ThemePack *p = ThemeDownloadPack(a.themeList[a.themeSel])) runThemeDownload(*p);
             } else if (b == 0) {
                 LoadTheme(a.themeList[a.themeSel]);
                 SaveSettings();
@@ -1860,6 +2561,10 @@ int main(int argc, char **argv) {
                 a.lastBack.clear();
                 a.themePick = false;
                 BuildMenu();
+                a.top = CenterTop(a.sel, true);
+                a.catTop = CenterTop(a.catSel, false);
+                Clamp(a);
+                LayoutNotice(a);
             } else if (b == 1) a.themePick = false;
             a.selChanged = SDL_GetTicks() - 1000;
             return;
@@ -1896,10 +2601,7 @@ int main(int argc, char **argv) {
         int ncol = (int)a.cols.size();
         if (a.mode == Mode::Categories) {
             switch (b) {
-            case 13: a.catSel--; break;
-            case 15: a.catSel++; break;
-            case 12: a.catSel -= kRows; break;
-            case 14: a.catSel += kRows; break;
+            case 12: case 13: case 14: case 15: a.catSel = MoveSel(a.catSel, ncol, false, b); break;
             case 0:
                 if (a.catSel < ncol) {
                     if (a.col != a.catSel) { a.col = a.catSel; a.sel = a.top = 0; }
@@ -1911,10 +2613,9 @@ int main(int argc, char **argv) {
             }
         } else {
             switch (b) {
-            case 13: a.sel--; break;
-            case 15: a.sel++; break;
-            case 12: a.sel -= kRows; break;
-            case 14: a.sel += kRows; break;
+            case 12: case 13: case 14: case 15:
+                a.sel = MoveSel(a.sel, (int)a.cols[a.col].games.size(), true, b);
+                break;
             case 6: a.col = (a.col + ncol - 1) % ncol; a.catSel = a.col; a.sel = a.top = 0; break;
             case 7: a.col = (a.col + 1) % ncol; a.catSel = a.col; a.sel = a.top = 0; break;
             case 0: if (LaunchGame(a)) running = false; break;

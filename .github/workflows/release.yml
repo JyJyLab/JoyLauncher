@@ -30,11 +30,13 @@ jobs:
           mkdir -p pkg/switch/joylauncher
           cp joylauncher.nro pkg/switch/joylauncher/
           mkdir -p pkg/JoyLauncher/themes
-          cp -r themes/JoyBasic pkg/JoyLauncher/themes/
+          cp -r themes/JoyBasic themes/RetroPack themes/ByeokgolKim pkg/JoyLauncher/themes/   # 기본팩·레트로팩·벽골김씨팩
           cp docs/설명서.md OFL.txt LICENSE pkg/
           cp docs/manual-en.md pkg/Manual_en.md
           cp docs/테마_만들기.md docs/theme-guide-en.md pkg/   # 테마 추가·제작 설명서 (한·영)
-          (cd themes && zip -qr -X ../JoyBasic.zip JoyBasic)   # 런처의 테마 선택 창에서 받는 기본 테마
+          cp docs/테마_레이아웃.md docs/theme-layout-en.md pkg/   # 테마 화면 구성 설명서 (한·영)
+          # 런처의 테마 선택 창에서 받는 테마 팩 (팩마다 zip 하나)
+          (cd themes && for t in JoyBasic RetroPack ByeokgolKim; do zip -qr -X "../$t.zip" "$t"; done)
           (cd pkg && zip -qr -UN=UTF8 "../JoyLauncher_${VER}.zip" .)
           echo "VER=$VER" >> "$GITHUB_ENV"
       - name: Release notes
@@ -50,3 +52,5 @@ jobs:
             joylauncher.nro.sha256
             JoyLauncher_${{ env.VER }}.zip
             JoyBasic.zip
+            RetroPack.zip
+            ByeokgolKim.zip

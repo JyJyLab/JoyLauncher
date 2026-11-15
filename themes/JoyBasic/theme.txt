@@ -2,6 +2,10 @@
 # JoyBasic — Joy Launcher default theme (self-made, free to use and modify)
 # 배경은 색 그라디언트, 로고는 나눔고딕 Bold 글자로 만들었습니다 (tools/make_joybasic.py).
 
+# 테마 선택 창에 보일 이름 / name shown in the theme picker
+name=기본팩
+name_en=Basic Pack
+
 # dim = 배경 어둡게 (0~255) / darken backgrounds
 dim=40
 

@@ -5,6 +5,8 @@ Back to the manual: `manual-en.md` (in the release zip: `Manual_en.md`) · 한�
 A theme is a set of pictures that changes the **background** of each category (system) and the **logo** above the game list.
 Put one folder into `/JoyLauncher/themes/` on the SD card and you have one more theme. No reinstall or code change is needed.
 
+> **To change the screen layout too** (system card grid, positions of the list and pictures, fonts and colors, your own pictures): **[Theme layout guide (layout.txt)](theme-layout-en.md)** — from v1.0.0
+
 ---
 
 ## 1. What a theme changes
@@ -31,7 +33,7 @@ Put one folder into `/JoyLauncher/themes/` on the SD card and you have one more 
 
 ```
 /JoyLauncher/themes/
-├─ JoyBasic/                 default theme (the one you can download)
+├─ JoyBasic/                 Basic Pack (RetroPack = Retro Pack, ByeokgolKim = Byeokgol Kim Pack)
 └─ MyTheme/                  new theme (folder name = name in the theme picker)
    ├─ backgrounds/
    │  ├─ GBA.jpg             category background
@@ -202,10 +204,11 @@ Picture folders of Pegasus themes can be put into a theme folder as they are.
 
 If the same name exists in several folders, the leftmost folder in the table wins. When picture names differ from your category or ROM folder names, map them in `theme.txt`.
 
-## 9. Customizing JoyBasic
+## 9. Customizing the included packs, naming a theme
 
-- **"Download default theme JoyBasic again"** in the theme picker replaces JoyBasic's stock pictures with new ones (pictures you added stay).
-- To change stock pictures, **copy the `JoyBasic` folder under another name (e.g. `JoyBasicMy`)** and edit the copy.
+- **"Download <pack name> again"** in the theme picker replaces the stock pictures of Basic Pack (`JoyBasic`), Retro Pack (`RetroPack`) or Byeokgol Kim Pack (`ByeokgolKim`) with new ones (pictures you added stay).
+- To change stock pictures, **copy the folder under another name (e.g. `JoyBasicMy`)** and edit the copy.
+- The name shown in the theme picker comes from `name=My Theme` in `theme.txt` (`name_en=` for the English interface); without it the folder name is shown. (from v1.0.0)
 - JoyBasic can be regenerated with `tools/make_joybasic.py` (Python + Pillow) in the repository — a starting point for a theme with your own colors or text.
 
 ## 10. Troubleshooting
