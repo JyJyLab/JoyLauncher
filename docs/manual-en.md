@@ -36,6 +36,8 @@ switch/joylauncher/joylauncher.nro   the launcher
 JoyLauncher/themes/JoyBasic/         free default theme (section 8)
 설명서.md                             Korean manual
 Manual_en.md                         this manual
+theme-guide-en.md                    how to add/make themes (section 8)
+테마_만들기.md                        theme guide (Korean)
 OFL.txt                              license of the built-in font (NanumGothic)
 LICENSE                              launcher license (GPL-3.0)
 ```
@@ -164,12 +166,15 @@ The game list is saved in `/JoyLauncher/library.cache` for a fast start, and re-
 
 ## 8. Themes
 
-Themes live in `/JoyLauncher/themes/<theme name>/`:
+Themes live in `/JoyLauncher/themes/<theme name>/`.
+
+> How to make or add your own theme in detail: **[Theme guide](theme-guide-en.md)** (`theme-guide-en.md` in the release zip)
+
 
 ```
 backgrounds/<name>.jpg(png)   category background
 logos/<name>.png              logo shown instead of the game list title (optional)
-backgrounds/default.jpg       default background (optional)
+backgrounds/default.jpg       background of the "No games found" screen (optional)
 theme.txt                     dim=0-255 (darken backgrounds) and name mapping
 ```
 

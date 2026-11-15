@@ -26,6 +26,8 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 
 Manual: [docs/manual-en.md](docs/manual-en.md)
 
+Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md)
+
 ## Building
 - Switch: devkitPro (devkitA64, libnx) + portlibs `switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-sdl2_mixer switch-ffmpeg switch-curl switch-dav1d` → `make`
 - Desktop test build (Linux): `make -f Makefile.linux` (SDL2, SDL2_mixer, FFmpeg, libcurl dev packages)

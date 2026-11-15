@@ -26,6 +26,8 @@
 
 자세한 사용법: [docs/설명서.md](docs/설명서.md) · English: [docs/manual-en.md](docs/manual-en.md)
 
+나만의 테마 추가·제작: [docs/테마_만들기.md](docs/테마_만들기.md) · English: [docs/theme-guide-en.md](docs/theme-guide-en.md)
+
 ## 빌드
 - 스위치: devkitPro (devkitA64, libnx) + portlibs `switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-sdl2_mixer switch-ffmpeg switch-curl switch-dav1d` → `make`
 - 데스크톱 테스트(리눅스): `make -f Makefile.linux` (SDL2, SDL2_mixer, FFmpeg, libcurl 개발 패키지)
