@@ -68,7 +68,7 @@ const char *const kTable[][2] = {
     {"순서: 차례대로", "Order: In order"},
     {"순서: 무작위", "Order: Shuffle"},
     {"다음 곡", "Next song"},
-    {"%s 다시 받기 (최신으로)", "Download %s again (latest)"},
+    {"%s 다시 받기 (최신으로)", "Download %s again"},
     {"%s 내려받기", "Download %s"},
     {"  (사용 중)", "  (in use)"},
     {"%s 내려받는 중  %.1f / %.1f MB", "Downloading %s  %.1f / %.1f MB"},

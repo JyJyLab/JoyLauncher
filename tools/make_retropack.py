@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""레트로팩(RetroPack) 만들기: 응애팩 페가수스 테마 그림에서 스위치 런처에 쓰는 기종만 발췌.
+"""레트로테마(RetroPack) 만들기: 응애팩 페가수스 테마 그림에서 스위치 런처에 쓰는 기종만 발췌.
 
     python3 tools/make_retropack.py <Resource 폴더> [themes/RetroPack]
 
 <Resource 폴더> = 응애팩의 pegasus-frontend/themes/Resource (Background_image1, Logo1 이 있는 곳).
-- 그림 이름은 기본팩(JoyBasic)과 같은 이름만 고른다 (한자 이름·번호 붙은 중복·다른 기기용 그림 제외).
+- 그림 이름은 기본테마(JoyBasic)와 같은 이름만 고른다 (한자 이름·번호 붙은 중복·다른 기기용 그림 제외).
 - 배경은 1280x720 JPG, 로고는 높이 120 이하 PNG 로 줄인다.
-- theme.txt 는 기본팩의 이름 연결을 그대로 쓰되, 이 팩에 없는 그림으로 가는 줄은 뺀다.
+- theme.txt 는 기본테마의 이름 연결을 그대로 쓰되, 이 팩에 없는 그림으로 가는 줄은 뺀다.
 """
 import os
 import re
@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 JOYBASIC = os.path.join(HERE, "..", "themes", "JoyBasic")
 RENAME = {"액션-아케이드": "arcade_action", "캐주얼-아케이드": "arcade_casual", "비행-아케이드": "arcade_flying",
           "대전-아케이드": "arcade_fighting", "슈팅-아케이드": "arcade_shooting", "전체게임": "default"}
-# 기본팩에는 있고 이 팩에는 없는 그림 → 대신 쓸 그림
+# 기본테마에는 있고 이 팩에는 없는 그림 → 대신 쓸 그림
 SUBST = {"arcade": "arcade_action"}
 
 
@@ -58,13 +58,13 @@ def main():
         nl += 1
 
     lines = [
-        "# 레트로팩 (RetroPack) — Joy Launcher 테마",
+        "# 레트로테마 (RetroPack) — Joy Launcher 테마",
         "# 응애팩(안드로이드 페가수스 롬 모음)의 테마 그림에서 발췌했습니다. 그림의 권리는 각 권리자에게 있습니다.",
         "# Excerpt of the theme pictures of the Eungae pack (Android Pegasus collection). Pictures belong to their owners.",
         "",
         "# 테마 선택 창에 보일 이름 / name shown in the theme picker",
-        "name=레트로팩",
-        "name_en=Retro Pack",
+        "name=레트로테마",
+        "name_en=Retro Theme",
         "",
         "# dim = 배경 어둡게 (0~255) / darken backgrounds",
         "dim=150",

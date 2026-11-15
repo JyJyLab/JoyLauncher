@@ -297,7 +297,7 @@ One per screen. `style` picks the look.
 
 ## 9. Example: card grid + list panel
 
-A grid of system cards and a game screen with a list panel on the left. The included **Byeokgol Kim Pack** (`themes/ByeokgolKim`) is built this way — its `layout.txt` is a good file to experiment with. For your own theme you supply the pictures.
+A grid of system cards and a game screen with a list panel on the left. The included **WallStreetKim's Theme** (`themes/ByeokgolKim`) is built this way — its `layout.txt` is a good file to experiment with. For your own theme you supply the pictures.
 
 ```
 MyTheme/

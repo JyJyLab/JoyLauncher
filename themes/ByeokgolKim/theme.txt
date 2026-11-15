@@ -1,9 +1,9 @@
-# 벽골김씨팩 (ByeokgolKim) — Joy Launcher 테마
+# 벽골김씨테마 (ByeokgolKim) — Joy Launcher 테마
 # 벽골김씨 님이 ES-DE 테마 Canvas (Siddy212, CC0) 를 바탕으로 구성한 테마입니다. README.txt 참고
 
 # 테마 선택 창에 보일 이름 / name shown in the theme picker
-name=벽골김씨팩
-name_en=Byeokgol Kim Pack
+name=벽골김씨테마
+name_en=WallStreetKim's Theme
 
 # dim = 배경 어둡게 (0~255) / darken backgrounds
 dim=160
@@ -16,7 +16,7 @@ dim=160
 캐주얼-아케이드=arcade
 비행-아케이드=arcade
 슈팅-아케이드=arcade
-대전-아케이드=neogeo
+대전-아케이드=arcade
 Play Station=psx
 
 [런처가 폴더로 추정한 기종 이름]

@@ -1,4 +1,4 @@
-# 벽골김씨팩 (ByeokgolKim) — Joy Launcher 화면 구성 (1280x720)
+# 벽골김씨테마 (ByeokgolKim) — Joy Launcher 화면 구성 (1280x720)
 # 기종 카드 격자 + 목록 판. 설명: docs/테마_레이아웃.md
 [theme]
 font = fonts/regular.ttf

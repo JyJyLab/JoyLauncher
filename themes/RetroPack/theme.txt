@@ -1,10 +1,10 @@
-# 레트로팩 (RetroPack) — Joy Launcher 테마
+# 레트로테마 (RetroPack) — Joy Launcher 테마
 # 응애팩(안드로이드 페가수스 롬 모음)의 테마 그림에서 발췌했습니다. 그림의 권리는 각 권리자에게 있습니다.
 # Excerpt of the theme pictures of the Eungae pack (Android Pegasus collection). Pictures belong to their owners.
 
 # 테마 선택 창에 보일 이름 / name shown in the theme picker
-name=레트로팩
-name_en=Retro Pack
+name=레트로테마
+name_en=Retro Theme
 
 # dim = 배경 어둡게 (0~255) / darken backgrounds
 dim=150

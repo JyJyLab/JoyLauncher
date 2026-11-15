@@ -30,7 +30,7 @@ jobs:
           mkdir -p pkg/switch/joylauncher
           cp joylauncher.nro pkg/switch/joylauncher/
           mkdir -p pkg/JoyLauncher/themes
-          cp -r themes/JoyBasic themes/RetroPack themes/ByeokgolKim pkg/JoyLauncher/themes/   # 기본팩·레트로팩·벽골김씨팩
+          cp -r themes/JoyBasic themes/RetroPack themes/ByeokgolKim pkg/JoyLauncher/themes/   # 기본테마·레트로테마·벽골김씨테마
           cp docs/설명서.md OFL.txt LICENSE pkg/
           cp docs/manual-en.md pkg/Manual_en.md
           cp docs/테마_만들기.md docs/theme-guide-en.md pkg/   # 테마 추가·제작 설명서 (한·영)

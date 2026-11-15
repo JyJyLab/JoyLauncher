@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""벽골김씨팩(ByeokgolKim) 그림 준비: 원본 CanvasPC 테마 폴더의 그림을 런처에 맞는 크기로 옮긴다.
+"""벽골김씨테마(ByeokgolKim) 그림 준비: 원본 CanvasPC 테마 폴더의 그림을 런처에 맞는 크기로 옮긴다.
 
     python3 tools/make_byeokgolkim.py <CanvasPC 폴더> [themes/ByeokgolKim]
 

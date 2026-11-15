@@ -394,11 +394,12 @@ static std::vector<std::string> ThemeNames() { return ListSubdirs(gHome + "/them
 // 런처와 함께 배포하는 테마 팩 (릴리스의 <폴더>.zip, 테마 선택 창에서 내려받기)
 struct ThemePack {
     const char *folder, *ko, *en;
+    const char *oldKo, *oldEn;  // 1.0.0 의 이름: SD 에 남은 예전 theme.txt 의 name 을 지금 이름으로 보여 준다
 };
 static const ThemePack kPacks[] = {
-    {"JoyBasic", "기본팩", "Basic Pack"},
-    {"RetroPack", "레트로팩", "Retro Pack"},
-    {"ByeokgolKim", "벽골김씨팩", "Byeokgol Kim Pack"},
+    {"JoyBasic", "기본테마", "Basic Theme", "기본팩", "Basic Pack"},
+    {"RetroPack", "레트로테마", "Retro Theme", "레트로팩", "Retro Pack"},
+    {"ByeokgolKim", "벽골김씨테마", "WallStreetKim's Theme", "벽골김씨팩", "Byeokgol Kim Pack"},
 };
 
 // theme.txt 한 줄을 key / value 로 (설명·빈 줄이면 false)
@@ -437,10 +438,14 @@ static std::string ThemeTitle(const std::string &folder) {
         if (lk == "name") name = v;
         else if (lk == "name_en") nameEn = v;
     }
+    const ThemePack *pack = nullptr;
+    for (const auto &p : kPacks)
+        if (folder == p.folder) pack = &p;
+    if (pack && name == pack->oldKo) name = pack->ko;
+    if (pack && nameEn == pack->oldEn) nameEn = pack->en;
     if (en && !nameEn.empty()) return nameEn;
     if (!name.empty()) return name;
-    for (const auto &p : kPacks)
-        if (folder == p.folder) return en ? p.en : p.ko;
+    if (pack) return en ? pack->en : pack->ko;
     return folder;
 }
 
@@ -2209,7 +2214,7 @@ int main(int argc, char **argv) {
     LayoutNotice(a);
     auto openThemePick = [&]() {
         a.themeList = ThemeNames();
-        // 함께 배포하는 팩(기본팩·레트로팩·벽골김씨팩)을 앞에, 나머지는 이름순
+        // 함께 배포하는 팩(기본테마·레트로테마·벽골김씨테마)을 앞에, 나머지는 이름순
         std::stable_sort(a.themeList.begin(), a.themeList.end(), [](const std::string &x, const std::string &y) {
             auto rank = [](const std::string &f) {
                 int i = 0;

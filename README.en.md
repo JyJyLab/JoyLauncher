@@ -10,7 +10,7 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Converts the Android launch settings of Pegasus lists (RetroArch cores, PPSSPP app) for the Switch (mapping rules in `/JoyLauncher/cores.txt`)
 - Finds ROMs in per-system folders even without a list file; reads ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) — formats can be mixed per folder
 - Box art and screenshots; grabs a frame from the preview video when there is no screenshot
-- Per-category background themes with three theme packs included (**Basic Pack, Retro Pack, Byeokgol Kim Pack**), launch log, cached game list (fast start)
+- Per-category background themes with three theme packs included (**Basic Theme, Retro Theme, WallStreetKim's Theme**), launch log, cached game list (fast start)
 - NDS games run with the DraStic Switch port (`/switch/DrasticDS.nro`) when it is installed
 - Homebrew Favorites: nro games picked in the options (ports and others) gathered at the top of the category list
 - Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
@@ -31,7 +31,7 @@ Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md) · Chang
 ## Building
 - Switch: devkitPro (devkitA64, libnx) + portlibs `switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-sdl2_mixer switch-ffmpeg switch-curl switch-dav1d` → `make`
 - Desktop test build (Linux): `make -f Makefile.linux` (SDL2, SDL2_mixer, FFmpeg, libcurl dev packages)
-- Theme packs: Basic Pack `python3 tools/make_joybasic.py` (Pillow) → `themes/JoyBasic` · Retro Pack `tools/make_retropack.py <Eungae theme Resource folder>` → `themes/RetroPack` · Byeokgol Kim Pack pictures `tools/make_byeokgolkim.py <source folder>` → `themes/ByeokgolKim`
+- Theme packs: Basic Theme `python3 tools/make_joybasic.py` (Pillow) → `themes/JoyBasic` · Retro Theme `tools/make_retropack.py <Eungae theme Resource folder>` → `themes/RetroPack` · WallStreetKim's Theme pictures `tools/make_byeokgolkim.py <source folder>` → `themes/ByeokgolKim`
 - Release: pushing a `vX.Y.Z` tag makes GitHub Actions build and publish a release (`joylauncher.nro`, `.sha256`, zip). The launcher's updater uses the latest release.
 
 ## Contributors
@@ -45,4 +45,4 @@ Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md) · Chang
 - NanumGothic font: SIL Open Font License 1.1 (`OFL.txt`)
 - stb_image_write: Public Domain / MIT
 - No ROMs or BIOS files are included.
-- Theme packs: **Basic Pack** (`themes/JoyBasic`) is self-made and free to use and modify. **Retro Pack** (`themes/RetroPack`) is an excerpt of the Eungae pack theme pictures; **Byeokgol Kim Pack** (`themes/ByeokgolKim`) was arranged by Byeokgol Kim from the ES-DE theme Canvas (Siddy212, CC0 1.0) and uses the font Cafe24 Ohsquare air. Console photos, logos and trademarks in those two packs belong to their owners and are separate from the launcher's GPL. (See `README.txt` in each folder)
+- Theme packs: **Basic Theme** (`themes/JoyBasic`) is self-made and free to use and modify. **Retro Theme** (`themes/RetroPack`) is an excerpt of the Eungae pack theme pictures; **WallStreetKim's Theme** (`themes/ByeokgolKim`) was arranged by WallStreetKim from the ES-DE theme Canvas (Siddy212, CC0 1.0) and uses the font Cafe24 Ohsquare air. Console photos, logos and trademarks in those two packs belong to their owners and are separate from the launcher's GPL. (See `README.txt` in each folder)
