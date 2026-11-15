@@ -3,6 +3,6 @@ APP_VERSION := $(shell sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' Make
 PKGS = sdl2 SDL2_ttf SDL2_image SDL2_mixer zlib libavformat libavcodec libswscale libavutil libcurl
 CXXFLAGS = -O2 -Wall -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(shell pkg-config --cflags $(PKGS))
 LIBS = $(shell pkg-config --libs $(PKGS))
-SRCS = source/main.cpp source/pegasus.cpp source/hbmenu.cpp source/videoframe.cpp source/updater.cpp source/i18n.cpp source/bgm.cpp source/installed.cpp
+SRCS = source/main.cpp source/pegasus.cpp source/hbmenu.cpp source/videoframe.cpp source/updater.cpp source/i18n.cpp source/bgm.cpp source/installed.cpp source/debuglog.cpp
 joylauncher_desktop: $(SRCS) $(wildcard source/*.h) Makefile
 	g++ $(CXXFLAGS) -o $@ $(SRCS) $(LIBS)

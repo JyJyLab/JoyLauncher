@@ -73,6 +73,7 @@ The current homebrew menu (`/hbmenu.nro`) is handled by type (judged from the pr
 | `themes/` | themes + guide `README.txt` (section 8) |
 | `bgm/` | background music + guide `README.txt` (section 9) |
 | `state.txt`, `launch_log.txt` | created when you launch a game |
+| `debug_log.txt`, `debug_state.txt` | created when the launcher starts (diagnostic log, section 11) |
 
 ### How to start the launcher
 
@@ -272,7 +273,7 @@ The interface is available in Korean and English. **Auto** (default) follows the
 | `language` | `auto` / `ko` / `en` |
 | `bgm`, `bgm_volume`, `bgm_shuffle` | `on`/`off`, `0`-`100`, `on`/`off` |
 
-Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games.
+Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games, `debug_log.txt` the diagnostic log (start, launch, exit, crash; moved to `debug_log_old.txt` above 512 KB, with `debug_state.txt` as its helper; section 11).
 
 ## 11. Troubleshooting
 
@@ -282,6 +283,7 @@ Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to 
 - **No images/descriptions for an ES-DE pack**: check that `/ES-DE/gamelists` and `/ES-DE/downloaded_media` were copied and that the ROM folder names match the ES-DE system names (section 4).
 - **"Games can't be started in album (applet) mode"**: the launcher was opened from the Album. Open it in title mode, e.g. by holding R while starting an installed game (section 3).
 - **BGM items are dimmed**: there are no mp3/ogg files in `/JoyLauncher/bgm/`. Add some and restart.
+- **An error closes the software when starting another app or returning to the launcher**: read the last entries of `/JoyLauncher/debug_log.txt`, or attach it to a bug report. It records threads and memory left by the previous app ("LEFTOVER"), the crashing thread and address ("CRASH"), and a summary of Atmosphère's error reports (`/atmosphere/crash_reports` etc.).
 
 ---
 

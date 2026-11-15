@@ -14,6 +14,7 @@
 #include <dirent.h>
 #include <strings.h>
 #include <fstream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <set>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "bgm.h"
+#include "debuglog.h"
 #include "hbmenu.h"
 #include "i18n.h"
 #include "installed.h"
@@ -332,9 +334,16 @@ static void LoadTheme(const std::string &name) {
         size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
         std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+        // 줄 끝 설명: 공백 뒤의 # 또는 ; 부터 끝까지 버림 (예: snes=SFC   # 슈퍼패미컴)
+        for (size_t i = 1; i < v.size(); i++)
+            if ((v[i] == '#' || v[i] == ';') && (v[i - 1] == ' ' || v[i - 1] == '\t')) {
+                v.erase(i);
+                break;
+            }
         while (!k.empty() && (k.back() == ' ' || k.back() == '\t')) k.pop_back();
         while (!v.empty() && (v[0] == ' ' || v[0] == '\t')) v.erase(0, 1);
-        if (k == "dim") gTheme.dim = std::max(0, std::min(255, atoi(v.c_str())));
+        while (!v.empty() && (v.back() == ' ' || v.back() == '\t')) v.pop_back();
+        if (LowerAscii(k) == "dim") gTheme.dim = std::max(0, std::min(255, atoi(v.c_str())));
         else if (!k.empty() && !v.empty()) {
             // 확장자를 적었으면 떼고 이름만 (backgrounds 는 jpg/png, logos 는 png 를 각각 찾음)
             size_t dot = v.find_last_of('.');
@@ -457,12 +466,21 @@ static void LoadSettings() {
     if (!found) SaveSettings();  // 처음 실행: 기본 설정 파일 만들기
 }
 
-// 첫 실행 때 사용자가 파일을 넣는 폴더와 안내 파일 (이미 있으면 그대로)
+// 사용자가 파일을 넣는 폴더와 안내 파일. 안내 파일이 없으면 만들고,
+// 런처가 만든 옛 안내(첫 줄이 같음)면 새 내용으로 바꾼다. 사용자가 첫 줄을 고친 파일은 그대로 둔다.
 static void WriteGuide(const std::string &dir, const char *text) {
     mkdir(dir.c_str(), 0777);
     std::string p = dir + "/README.txt";
-    struct stat st;
-    if (stat(p.c_str(), &st) == 0) return;
+    {
+        std::ifstream in(p, std::ios::binary);
+        if (in) {
+            std::string cur((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::string want(text);
+            if (cur == want) return;
+            size_t nl = want.find('\n');
+            if (nl == std::string::npos || cur.compare(0, nl + 1, want, 0, nl + 1) != 0) return;
+        }
+    }
     std::ofstream o(p, std::ios::binary);
     o << text;
 }
@@ -476,18 +494,24 @@ static void MakeUserFolders() {
                "[한국어]\r\n"
                "테마 하나 = 이 안의 폴더 하나입니다. 예) themes/MyTheme/\r\n"
                "  backgrounds/<롬 폴더 이름>.jpg|png   카테고리 배경 (예: backgrounds/GBA.jpg -> /roms/GBA)\r\n"
-               "  backgrounds/default.jpg              카테고리 화면·배경이 없는 카테고리용\r\n"
+               "  backgrounds/favorites.jpg            즐겨찾기 카테고리 배경 (홈브루 즐겨찾기는 hbfav)\r\n"
+               "  backgrounds/default.jpg              \"게임 목록이 없습니다\" 화면 배경\r\n"
                "  logos/<롬 폴더 이름>.png             게임 목록 제목 대신 표시할 로고 (선택)\r\n"
                "  theme.txt                            dim=0~255 (배경 어둡게), <카테고리 이름>=<그림 파일 이름>\r\n"
+               "배경이 없는 카테고리는 테마를 끈 화면으로 보입니다.\r\n"
                "폴더·파일 이름은 영문(ASCII)을 권장합니다. Y 옵션 > 테마 설정에서 고릅니다.\r\n"
+               "자세한 방법: 테마_만들기.md (릴리스 zip) / github.com/JyJyLab/JoyLauncher/blob/main/docs/테마_만들기.md\r\n"
                "\r\n"
                "[English]\r\n"
                "One theme = one folder in here, e.g. themes/MyTheme/\r\n"
                "  backgrounds/<rom folder>.jpg|png   category background (e.g. backgrounds/GBA.jpg -> /roms/GBA)\r\n"
-               "  backgrounds/default.jpg            category screen and categories without a background\r\n"
+               "  backgrounds/favorites.jpg          Favorites category background (Homebrew Favorites: hbfav)\r\n"
+               "  backgrounds/default.jpg            background of the \"No games found\" screen\r\n"
                "  logos/<rom folder>.png             logo shown instead of the game list title (optional)\r\n"
                "  theme.txt                          dim=0-255 (darken backgrounds), <category name>=<image file name>\r\n"
-               "Use ASCII folder and file names. Pick a theme in Y Options > Theme.\r\n");
+               "Categories without a background look like the no-theme screen.\r\n"
+               "Use ASCII folder and file names. Pick a theme in Y Options > Theme.\r\n"
+               "Details: theme-guide-en.md (release zip) / github.com/JyJyLab/JoyLauncher/blob/main/docs/theme-guide-en.md\r\n");
     WriteGuide(gHome + "/bgm",
                "Joy Launcher BGM 폴더 / BGM folder\r\n"
                "\r\n"
@@ -1274,6 +1298,7 @@ static bool ChainLoad(App &a, std::string nro, const std::vector<std::string> &a
         return false;
     }
     __nx_applet_exit_mode = 0;  // hbloader 로 돌아가 예약한 nro 실행
+    DebugLogLaunch(nro.c_str(), argv.c_str());
 #else
     printf("LAUNCH nro=%s\n", nro.c_str());
     for (const auto &s : args) printf("ARG %s\n", s.c_str());

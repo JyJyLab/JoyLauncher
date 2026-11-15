@@ -172,7 +172,8 @@ genesis=MD
 - One line maps **both background and logo**. Without a logo picture only the background changes.
 - If the mapped picture does not exist, the line is skipped and the next step (section 5) is tried.
 - Spaces around `=` and at the end of a line are ignored.
-- **Put comments on their own line.** With `snes=SFC  # note`, the `# note` becomes part of the picture name and the mapping fails.
+- A comment may follow a value: `snes=SFC   # Super Famicom` (`#` or `;` **after a space**). **v0.9.1 and older** read such a comment as part of the picture name, so put comments on their own line if the theme must also work there.
+- `dim` is case-insensitive (`DIM=60` works)
 - Save as **UTF-8** (Windows Notepad: "Save as → Encoding UTF-8"; a BOM is fine).
 - If the same name appears twice, the lower line wins.
 
