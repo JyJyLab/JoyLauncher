@@ -34,6 +34,12 @@ Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md) · Chang
 - Theme packs: Basic Pack `python3 tools/make_joybasic.py` (Pillow) → `themes/JoyBasic` · Retro Pack `tools/make_retropack.py <Eungae theme Resource folder>` → `themes/RetroPack` · Byeokgol Kim Pack pictures `tools/make_byeokgolkim.py <source folder>` → `themes/ByeokgolKim`
 - Release: pushing a `vX.Y.Z` tag makes GitHub Actions build and publish a release (`joylauncher.nro`, `.sha256`, zip). The launcher's updater uses the latest release.
 
+## Contributors
+
+| Contributor | Contribution |
+|---|---|
+| **월스트리트킴** (Wall Street Kim, Retro Game Gallery) | 30% |
+
 ## License
 - Joy Launcher: GPL-3.0 (`LICENSE`) — it statically links FFmpeg built with GPL options
 - NanumGothic font: SIL Open Font License 1.1 (`OFL.txt`)

@@ -37,6 +37,12 @@
 - 테마 팩: 기본팩 `python3 tools/make_joybasic.py` (Pillow) → `themes/JoyBasic` · 레트로팩 `tools/make_retropack.py <응애팩 테마 Resource 폴더>` → `themes/RetroPack` · 벽골김씨팩 그림 `tools/make_byeokgolkim.py <원본 폴더>` → `themes/ByeokgolKim`
 - 릴리스: `vX.Y.Z` 태그를 올리면 GitHub Actions 가 빌드해 릴리스(`joylauncher.nro`, `.sha256`, zip)를 만듭니다. 런처의 자동 업데이트는 최신 릴리스를 사용합니다.
 
+## 기여자
+
+| 기여자 | 기여도 |
+|---|---|
+| **월스트리트킴** (레트로게임 갤러리) | 30% |
+
 ## 라이선스
 - Joy Launcher: GPL-3.0 (`LICENSE`) — GPL 로 빌드된 FFmpeg 를 정적 링크하므로
 - 나눔고딕 글꼴: SIL Open Font License 1.1 (`OFL.txt`)
