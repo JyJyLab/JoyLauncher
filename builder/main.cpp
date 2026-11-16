@@ -1411,6 +1411,9 @@ struct FtpState {
     std::vector<std::string> log;
     std::atomic<int> done{0}, total{0};
     std::atomic<bool> running{false};
+    std::vector<std::string> remote;  // 스위치에 있는 테마 (목록 읽은 결과)
+    bool remoteRead = false;
+    std::string delAsk;                // 지울지 묻는 테마
 };
 static FtpState gFtp;
 static void FtpLog(const std::string &s) {
@@ -1503,9 +1506,55 @@ static void FtpSendTheme() {
         gFtp.running = false;
     }).detach();
 }
+static std::string FtpBase() {
+    std::string base = gFtp.base;
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    return base;
+}
+// 스위치의 테마 목록 읽기 / 테마 지우기 (del 이 비어 있으면 목록만)
+static void FtpRemoteJob(const std::string &del) {
+    if (gFtp.running) return;
+    SaveFtpSettings();
+    gFtp.running = true;
+    gFtp.total = 0;
+    gFtp.done = 0;
+    std::string host = gFtp.host, user = gFtp.user, pass = gFtp.pass, base = FtpBase();
+    int port = gFtp.port;
+    std::thread([host, port, user, pass, base, del]() {
+        Ftp f;
+        std::string err;
+        FtpLog("연결: " + host + ":" + std::to_string(port));
+        if (!f.Login(host, port, user, pass, err)) {
+            FtpLog("실패: " + err);
+            gFtp.running = false;
+            return;
+        }
+        if (!del.empty()) {
+            int n = f.RemoveTree(base + "/themes/" + del, err);
+            if (n < 0) FtpLog("지우기 실패: " + err);
+            else FtpLog("스위치에서 지움: " + del + " (" + std::to_string(n) + "개)");
+        }
+        std::vector<std::pair<std::string, bool>> ents;
+        std::vector<std::string> names;
+        if (f.List(base + "/themes", ents, err)) {
+            for (const auto &e : ents)
+                if (e.second) names.push_back(e.first);
+            std::sort(names.begin(), names.end());
+            FtpLog("스위치 테마 " + std::to_string(names.size()) + "개");
+        } else
+            FtpLog("목록 실패: " + err);
+        f.Cmd("QUIT");
+        {
+            std::lock_guard<std::mutex> l(gFtp.m);
+            gFtp.remote = names;
+            gFtp.remoteRead = true;
+        }
+        gFtp.running = false;
+    }).detach();
+}
 static void FtpWindow(bool open) {
     if (open) ImGui::OpenPopup("스위치로 보내기");
-    ImGui::SetNextWindowSize(ImVec2(720, 520), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(720, 640), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("스위치로 보내기")) {
         ImGui::TextWrapped("스위치에서 ftpd(또는 sys-ftpd)를 켜고 화면에 보이는 주소·포트를 적으세요. 테마 폴더만 /JoyLauncher/themes/%s 로 보냅니다 (런처·설정은 건드리지 않음).",
                            B.theme.c_str());
@@ -1532,6 +1581,49 @@ static void FtpWindow(bool open) {
         ImGui::ProgressBar(tot ? dn / (float)tot : 0.0f, ImVec2(-90, 0), (std::to_string(dn) + " / " + std::to_string(tot)).c_str());
         ImGui::SameLine();
         if (ImGui::Button("닫기")) ImGui::CloseCurrentPopup();
+        // 스위치에 있는 테마 (목록·지우기)
+        ImGui::SeparatorText("스위치에 있는 테마");
+        ImGui::BeginDisabled(gFtp.running);
+        if (ImGui::Button("목록 읽기")) FtpRemoteJob("");
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextDisabled("테마가 너무 많으면 여기서 지움 (스위치 테마 선택 창의 [X] 와 같음)");
+        {
+            std::vector<std::string> rem;
+            bool rd;
+            {
+                std::lock_guard<std::mutex> l(gFtp.m);
+                rem = gFtp.remote;
+                rd = gFtp.remoteRead;
+            }
+            ImGui::BeginChild("ftpremote", ImVec2(0, 130), true);
+            if (!rd) ImGui::TextDisabled("[목록 읽기] 를 누르면 스위치의 /JoyLauncher/themes 를 보여 줌");
+            else if (rem.empty()) ImGui::TextDisabled("(테마 없음)");
+            for (const auto &n : rem) {
+                ImGui::PushID(n.c_str());
+                ImGui::BeginDisabled(gFtp.running);
+                if (ImGui::SmallButton("지우기")) gFtp.delAsk = n;
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                ImGui::TextUnformatted(n.c_str());
+                if (n == B.theme) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(지금 만드는 테마)");
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+        }
+        if (!gFtp.delAsk.empty()) {
+            ImGui::TextColored(ImVec4(1, 0.6f, 0.4f, 1), "스위치에서 '%s' 테마를 지울까요? (되돌릴 수 없음)", gFtp.delAsk.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("지우기##yes")) {
+                FtpRemoteJob(gFtp.delAsk);
+                gFtp.delAsk.clear();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("취소##no")) gFtp.delAsk.clear();
+        }
         ImGui::BeginChild("ftplog", ImVec2(0, 0), true);
         {
             std::lock_guard<std::mutex> l(gFtp.m);
@@ -2610,7 +2702,7 @@ int main(int argc, char **argv) {
     std::error_code ec;
     fs::current_path(P(ExeDir(argv[0])), ec);
     std::string shot;
-    std::string openName, selArg, newArg, ftpHost;
+    std::string openName, selArg, newArg, ftpHost, ftpDel;
     int ftpPort = 0, wizArg = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -2623,6 +2715,7 @@ int main(int argc, char **argv) {
         else if (a == "--wizard" && i + 1 < argc) wizArg = atoi(argv[++i]);  // 시험: 마법사 단계
         else if (a == "--empty") B.newEmpty = true;
         else if (a == "--ftp-test" && i + 2 < argc) { ftpHost = argv[++i]; ftpPort = atoi(argv[++i]); }  // 시험: 테마를 FTP 로 보내고 끝
+        else if (a == "--ftp-del" && i + 1 < argc) ftpDel = argv[++i];  // 시험: --ftp-test 와 함께, 스위치 테마 지우고 목록
         else if (a == "--new" && i + 2 < argc) { newArg = argv[++i]; B.newTemplate = argv[++i]; }  // 시험: --new 이름 견본
     }
     fs::create_directories(P(B.home + "/themes"), ec);
@@ -2667,8 +2760,10 @@ int main(int argc, char **argv) {
     if (!ftpHost.empty()) {
         gFtp.host = ftpHost;
         gFtp.port = ftpPort;
-        FtpSendTheme();
+        if (ftpDel.empty()) FtpSendTheme();
+        else FtpRemoteJob(ftpDel == "-" ? "" : ftpDel);
         while (gFtp.running) SDL_Delay(50);
+        for (const auto &n : gFtp.remote) printf("remote: %s\n", n.c_str());
         for (const auto &l : gFtp.log) printf("%s\n", l.c_str());
         return 0;
     }

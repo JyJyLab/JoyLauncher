@@ -136,6 +136,86 @@ struct Ftp {
         return atoll(last.c_str() + 4);
     }
     void Mkd(const std::string &path) { Cmd("MKD " + path); }
+    bool Dele(const std::string &path) { return Cmd("DELE " + path) / 100 == 2; }
+    bool Rmd(const std::string &path) { return Cmd("RMD " + path) / 100 == 2; }
+    // 폴더 안 목록 (이름, 폴더 여부). MLSD → 안 되면 LIST (유닉스 형식)
+    bool List(const std::string &path, std::vector<std::pair<std::string, bool>> &out, std::string &err) {
+        out.clear();
+        for (int pass = 0; pass < 2; pass++) {
+            sock_t d = Pasv(err);
+            if (d == INVALID_SOCKET) return false;
+            int r = Cmd((pass == 0 ? "MLSD " : "LIST ") + path);
+            if (r != 150 && r != 125) {
+                CLOSESOCK(d);
+                if (pass == 0) continue;
+                err = "목록 거부: " + last;
+                return false;
+            }
+            std::string data;
+            char tmp[4096];
+            int n;
+            while ((n = recv(d, tmp, sizeof(tmp), 0)) > 0) data.append(tmp, n);
+            CLOSESOCK(d);
+            r = Reply();
+            if (r / 100 != 2) { err = "목록 실패: " + last; return false; }
+            size_t a = 0;
+            while (a < data.size()) {
+                size_t e = data.find('\n', a);
+                if (e == std::string::npos) e = data.size();
+                std::string line = data.substr(a, e - a);
+                a = e + 1;
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                if (line.empty()) continue;
+                std::string name;
+                bool dir = false;
+                if (pass == 0) {
+                    size_t sp = line.find(' ');
+                    if (sp == std::string::npos) continue;
+                    name = line.substr(sp + 1);
+                    std::string facts = line.substr(0, sp);
+                    for (auto &ch : facts) ch = (char)tolower((unsigned char)ch);
+                    if (facts.find("type=cdir") != std::string::npos || facts.find("type=pdir") != std::string::npos) continue;
+                    dir = facts.find("type=dir") != std::string::npos;
+                } else {
+                    // drwxr-xr-x 1 u g 0 Jan 1 00:00 name  (이름 앞 필드 8개)
+                    size_t p = 0;
+                    int f = 0;
+                    while (f < 8 && p < line.size()) {
+                        while (p < line.size() && line[p] != ' ') p++;
+                        while (p < line.size() && line[p] == ' ') p++;
+                        f++;
+                    }
+                    if (p >= line.size()) continue;
+                    name = line.substr(p);
+                    dir = line[0] == 'd';
+                }
+                if (name == "." || name == ".." || name.empty()) continue;
+                out.push_back({name, dir});
+            }
+            return true;
+        }
+        return false;
+    }
+    // 폴더 통째로 지우기. 지운 개수 반환, 실패하면 -1
+    int RemoveTree(const std::string &path, std::string &err, int depth = 0) {
+        if (depth > 16) { err = "폴더가 너무 깊음"; return -1; }
+        std::vector<std::pair<std::string, bool>> ents;
+        if (!List(path, ents, err)) return -1;
+        int cnt = 0;
+        for (const auto &e : ents) {
+            std::string p = path + "/" + e.first;
+            if (e.second) {
+                int r = RemoveTree(p, err, depth + 1);
+                if (r < 0) return -1;
+                cnt += r;
+            } else {
+                if (!Dele(p)) { err = "지우기 실패: " + p + " " + last; return -1; }
+                cnt++;
+            }
+        }
+        if (!Rmd(path)) { err = "폴더 지우기 실패: " + path + " " + last; return -1; }
+        return cnt + 1;
+    }
     bool Stor(const std::string &path, const std::string &data, std::string &err) {
         sock_t d = Pasv(err);
         if (d == INVALID_SOCKET) return false;

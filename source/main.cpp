@@ -31,6 +31,7 @@
 #include "bgm.h"
 #include "debuglog.h"
 #include "esde.h"
+#include "ftpserver.h"
 #include "hbmenu.h"
 #include "i18n.h"
 #include "installed.h"
@@ -65,7 +66,7 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, Frames, Refresh, Update, Language, Effects, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
 struct MenuItem {
     std::string label;
     std::string nro;
@@ -210,6 +211,7 @@ static void BuildMenu() {
                      "", MenuAct::Update});
     gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), "",
                      MenuAct::Theme});
+    gMenu.push_back({T("PC에서 테마 받기 (FTP)"), "", MenuAct::FtpRecv});
     if (BgmCount() == 0)
         gMenu.push_back({T("BGM: 곡 없음  (/JoyLauncher/bgm 에 mp3·ogg 넣기)"), "", MenuAct::BgmNone});
     else if (gBgmOn)
@@ -950,6 +952,7 @@ struct App {
     std::vector<std::string> themeTitles;  // themeList 와 같은 순서의 화면 이름
     int themeSel = 0;
     int themeDelAsk = -1;        // 테마 선택 창: 지울지 묻는 중인 줄 (-1 = 아님)
+    bool ftpOpen = false;        // PC에서 테마 받기 (FTP) 화면
     std::vector<Collection> cols;
     Mode mode = Mode::Categories;
     int catSel = 0, catTop = 0;  // 카테고리 화면 선택 (cols + 메뉴)
@@ -2384,6 +2387,8 @@ static void RenderGames(App &a) {
 // 테마 목록 끝의 "<팩> 내려받기" 항목: 이 글 뒤에 팩 폴더 이름이 붙는다
 static const char *kThemeDownload = "\x01download:";
 static bool IsThemeDownload(const std::string &item) { return item.rfind(kThemeDownload, 0) == 0; }
+static const char *kThemeFtp = "\x01ftp";  // 테마 선택 창 맨 아래: PC에서 받기
+static bool IsThemeSpecial(const std::string &item) { return !item.empty() && item[0] == '\x01'; }
 static const ThemePack *ThemeDownloadPack(const std::string &item) {
     if (!IsThemeDownload(item)) return nullptr;
     std::string folder = item.substr(strlen(kThemeDownload));
@@ -2412,6 +2417,10 @@ static void RenderThemePick(App &a) {
         std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : idx < (int)a.themeTitles.size() ? a.themeTitles[idx] : a.themeList[idx];
         if (dl)
             label = Fmt(IsDirPath(gHome + "/themes/" + pack->folder) ? T("%s 다시 받기 (최신으로)") : T("%s 내려받기"), PackName(*pack));
+        if (a.themeList[idx] == kThemeFtp) {
+            label = T("PC에서 테마 받기 (FTP)");
+            dl = true;
+        }
         bool cur = !dl && ((idx == 0 && gThemeName.empty()) || (idx > 0 && a.themeList[idx] == gThemeName));
         if (cur) label += T("  (사용 중)");
         SDL_Color c = dl ? kAccent : sel ? kWhite : kGrey;
@@ -2481,6 +2490,27 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
 
 // 옵션 창 (Y)
 static void RenderOptions(App &a) { RenderPopup(a, T("옵션"), gMenu, a.optSel, 820); }
+
+// PC에서 테마 받기 (FTP): 주소·포트, 받은 것
+static void RenderFtp(App &a) {
+    FtpServerStatus st = FtpServerGet();
+    int bw = 900, bh = 520, bx = (W - bw) / 2, by = (H - bh) / 2;
+    Fill(a, 0, 0, W, H, {0, 0, 0, 150});
+    Fill(a, bx, by, bw, bh, {28, 28, 40, 248});
+    DrawText(a, a.fBig, T("PC에서 테마 받기 (FTP)"), W / 2, by + 18, kAccent, 0, 1);
+    if (!st.running) {
+        DrawText(a, a.fList, T("FTP 를 열지 못했습니다: ") + st.error, W / 2, by + 120, kWhite, bw - 60, 1);
+    } else {
+        std::string addr = "ftp://" + st.ip + ":" + std::to_string(st.port);
+        DrawText(a, a.fTitle, addr, W / 2, by + 78, kWhite, bw - 40, 1);
+        DrawText(a, a.fInfo, T("테마 빌더 → 파일 → 스위치로 보내기 에 위 주소·포트를 적으세요 (사용자·비밀번호 비움)"), W / 2, by + 132, kGrey, bw - 40, 1);
+        DrawText(a, a.fInfo, st.client ? T("PC 연결됨") : T("PC 를 기다리는 중…"), bx + 30, by + 176, st.client ? kOn : kGrey);
+        DrawText(a, a.fInfo, Fmt(T("받은 파일 %d개 · 지운 것 %d개"), st.files, st.removed), bx + bw - 30, by + 176, kWhite, 0, 2);
+        int y = by + 214, from = std::max(0, (int)st.log.size() - 9);
+        for (int i = from; i < (int)st.log.size(); i++, y += 30) DrawText(a, a.fDesc, st.log[i], bx + 30, y, kGrey, bw - 60);
+    }
+    DrawText(a, a.fInfo, T("[B] 닫기 (받은 테마를 다시 읽음) · 이 화면이 열린 동안만 FTP 가 열립니다"), W / 2, by + bh - 40, kGrey, bw - 40, 1);
+}
 
 // 종료 확인
 static void RenderExitAsk(App &a) {
@@ -2665,6 +2695,7 @@ static void Render(App &a) {
     if (a.themePick) RenderThemePick(a);
     if (a.hbPick) RenderHbPick(a);
     if (a.exitAsk) RenderExitAsk(a);
+    if (a.ftpOpen) RenderFtp(a);
     if (a.messageModal) {
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
         Fill(a, 240, 280, 800, 140, a.messageColor);
@@ -2975,6 +3006,7 @@ int main(int argc, char **argv) {
     bool wantPick = false;
     bool wantHbPick = false;  // 데스크톱 확인용: 홈브루 게임즈 창
     bool wantFrames = false;
+    bool wantFtp = false;
 #ifdef __SWITCH__
     romfsInit();
     std::string root = kRoot;
@@ -3049,6 +3081,7 @@ int main(int argc, char **argv) {
         else if (s == "--theme" && i + 1 < argc) wantTheme = argv[++i];
         else if (s == "--themepick") wantPick = true;
         else if (s == "--demo") gDemo = true;
+        else if (s == "--ftp") wantFtp = true;  // 시험: FTP 받기 화면을 열고 시작
         else if (s == "--hbpick") wantHbPick = true;
         else if (s == "--frames") wantFrames = true;
     }
@@ -3168,12 +3201,53 @@ int main(int argc, char **argv) {
             a.themeList.push_back(std::string(kThemeDownload) + p.folder);
             a.themeTitles.push_back("");
         }
+        a.themeList.push_back(kThemeFtp);
+        a.themeTitles.push_back("");
         a.themeSel = 0;
         for (size_t i = 1; i < a.themeList.size(); i++)
             if (a.themeList[i] == gThemeName) a.themeSel = (int)i;
         a.themePick = true;
     };
+    auto openFtp = [&]() {
+        std::string err;
+        a.ftpOpen = true;
+        a.optPick = false;
+        a.themePick = false;
+        if (!FtpServerStart(gHome, 5000, err)) {
+            a.ftpOpen = false;
+            a.message = T("FTP 를 열지 못했습니다: ") + err;
+            a.messageColor = {120, 40, 40, 240};
+            a.messageModal = true;
+        }
+    };
+    auto closeFtp = [&]() {
+        FtpServerStatus st = FtpServerGet();
+        FtpServerStop();
+        a.ftpOpen = false;
+        if (st.files || st.removed) {
+            // 받은 테마·내 카테고리 다시 읽기
+            std::string keep = gThemeName;
+            LoadTheme(IsDirPath(gHome + "/themes/" + keep) ? keep : "");
+            if (gThemeName != keep) SaveSettings();
+            a.backs.Clear();
+            a.lastBack.clear();
+            a.images.Clear();
+            a.thumbs.Clear();
+            LoadUserImages();
+            SaveState(a);
+            std::string log;
+            LoadGames(a, false, log);
+            LoadState(a, true);
+            BuildMenu();
+            Clamp(a);
+            LayoutNotice(a);
+            a.message = Fmt(T("FTP: 받은 파일 %d개 · 지운 것 %d개 — 테마를 다시 읽었습니다"), st.files, st.removed);
+            a.messageColor = {40, 100, 60, 240};
+            a.messageUntil = SDL_GetTicks() + 3500;
+        }
+    };
     if (wantPick) openThemePick();
+    if (wantFtp) openFtp();
     if (wantHbPick) {
         a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;
         a.hbPick = !a.hbList.empty();
@@ -3393,7 +3467,9 @@ int main(int argc, char **argv) {
     auto runMenu = [&](int idx) {
         if (idx < 0 || idx >= (int)gMenu.size()) return;
         const MenuItem m = gMenu[idx];
-        if (m.act == MenuAct::Theme) {
+        if (m.act == MenuAct::FtpRecv) {
+            openFtp();
+        } else if (m.act == MenuAct::Theme) {
             a.optPick = false;
             openThemePick();
         } else if (m.act == MenuAct::Frames) {
@@ -3460,6 +3536,10 @@ int main(int argc, char **argv) {
         }
     };
     auto act = [&](int b) {
+        if (a.ftpOpen) {  // FTP 화면: B 로 닫기만
+            if (b == 1) closeFtp();
+            return;
+        }
         if (a.messageModal) {  // 알림: B(또는 A)로 닫고, 그 외 입력은 무시
             if (b == 1 || b == 0) {
                 a.messageModal = false;
@@ -3519,7 +3599,7 @@ int main(int argc, char **argv) {
                 openThemePick();
                 int lastTheme = 0;  // 내려받기 줄이 아닌 마지막 줄
                 for (int i = 0; i < (int)a.themeList.size(); i++)
-                    if (!IsThemeDownload(a.themeList[i])) lastTheme = i;
+                    if (!IsThemeSpecial(a.themeList[i])) lastTheme = i;
                 a.themeSel = std::min(keep, lastTheme);
                 a.message = ok ? Fmt(T("테마를 지웠습니다: %s"), (title.empty() ? folder : title).c_str())
                                : Fmt(T("테마를 다 지우지 못했습니다: %s"), folder.c_str());
@@ -3531,7 +3611,11 @@ int main(int argc, char **argv) {
         }
         if (a.themePick) {
             int n = (int)a.themeList.size();
-            if ((b == 2 || b == 11) && a.themeSel > 0 && !IsThemeDownload(a.themeList[a.themeSel])) {  // X / −: 테마 지우기 (묻고)
+            if (b == 0 && a.themeList[a.themeSel] == kThemeFtp) {
+                openFtp();
+                return;
+            }
+            if ((b == 2 || b == 11) && a.themeSel > 0 && !IsThemeSpecial(a.themeList[a.themeSel])) {  // X / −: 테마 지우기 (묻고)
                 a.themeDelAsk = a.themeSel;
                 return;
             }
@@ -3808,6 +3892,7 @@ int main(int argc, char **argv) {
     appletUnhook(&hookCookie);
     if (psmOk) psmExit();
 #endif
+    FtpServerStop();
     ImgLoaderStop();
     FrameWorkerStop();
     UpdaterShutdown();
