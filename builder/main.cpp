@@ -1587,12 +1587,40 @@ static void AssetsPanel() {
         AssetsChanged();
         Status(std::to_string(n) + "개 넣음 (" + B.bulkSet + " → " + kKindKo(B.assetKind) + ")");
     };
-    if (ImGui::Button("이 세트로 전부 채우기")) bulk(false);
-    ImGui::SameLine();
-    if (ImGui::Button("없는 것만 채우기")) bulk(true);
-    ImGui::SameLine();
-    ImGui::Checkbox("주요 기종만", &coreOnly);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("스위치 런처에서 쓰는 35개 기종만 (용량 절약). 끄면 세트의 모든 기종");
+    // 한 기종만 보는 중(지금 카테고리)이면: 이 세트의 그림을 그 기종에만 넣기
+    bool single = !B.assetFilter.empty() && B.assetFilter == CurrentSystemId();
+    if (single) {
+        static bool allKinds = true;
+        std::string id = B.assetFilter;
+        std::string lbl = "이 세트를 '" + id + "' 에 적용";
+        if (ImGui::Button(lbl.c_str())) {
+            PushUndo();
+            int n = 0;
+            std::string kinds;
+            for (const auto &kv : B.lib[B.bulkSet]) {
+                if (kv.first == "fonts" || kv.first == "ui") continue;
+                if (!allKinds && kv.first != B.assetKind) continue;
+                auto it = kv.second.find(id);
+                if (it == kv.second.end()) continue;
+                if (AssignAsset(kv.first, id, it->second)) {
+                    n++;
+                    kinds += std::string(kinds.empty() ? "" : "·") + kKindKo(kv.first);
+                }
+            }
+            AssetsChanged();
+            Status(n ? id + " ← " + B.bulkSet + " (" + kinds + ")" : B.bulkSet + " 세트에 " + id + " 그림이 없음");
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("배경·로고·아이콘 모두", &allKinds);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("끄면 지금 보는 종류(%s)만", kKindKo(B.assetKind));
+    } else {
+        if (ImGui::Button("이 세트로 전부 채우기")) bulk(false);
+        ImGui::SameLine();
+        if (ImGui::Button("없는 것만 채우기")) bulk(true);
+        ImGui::SameLine();
+        ImGui::Checkbox("주요 기종만", &coreOnly);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("스위치 런처에서 쓰는 35개 기종만 (용량 절약). 끄면 세트의 모든 기종");
+    }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(160);
     ImGui::InputTextWithHint("##flt", "기종 찾기", &B.assetFilter);
@@ -2435,7 +2463,10 @@ static void Frame() {
         ImGui::EndMainMenuBar();
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) RunDemo();
-    if (ImGui::IsKeyPressed(ImGuiKey_F2)) B.winCats = !B.winCats;
+    if (ImGui::IsKeyPressed(ImGuiKey_F2)) {
+        B.winCats = !B.winCats;
+        if (B.winCats) { B.assetFilter = CurrentSystemId(); B.tabReq = "assets"; }  // 지금 카테고리만 보며 열기
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_F3)) B.winTheme = !B.winTheme;
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) B.sel.clear();
     if (!io.WantTextInput && io.KeyCtrl) {
