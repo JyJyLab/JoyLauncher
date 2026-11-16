@@ -2603,7 +2603,7 @@ int main(int argc, char **argv) {
     signal(SIGCHLD, SIG_IGN);  // 데모 창이 끝나면 좀비로 남지 않게
 #endif
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
-    SDL_Init(SDL_INIT_VIDEO);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER);  // 패드로 미리보기 조작
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
     TTF_Init();
     // 실행 파일 폴더 기준 상대 경로로 일함 (윈도우 한글 경로 문제 피하기)
@@ -2673,6 +2673,25 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!selArg.empty()) B.sel = selArg;
+    // 패드: 미리보기(편집 중인 테마)를 스위치처럼 조작. 스위치 버튼 번호와 같은 뜻으로 바꿔 씀
+    for (int i = 0; i < SDL_NumJoysticks(); i++)
+        if (SDL_IsGameController(i)) SDL_GameControllerOpen(i);
+    int padHeld = -1, padStick = -1;
+    Uint32 padNext = 0;
+    bool padZL = false, padZR = false;
+    auto padAct = [&](int b) {
+        if (B.wizard) return;
+        switch (b) {
+        case 0: if (!B.games) { JoyNav(0); B.games = true; } break;   // A: 카테고리 열기
+        case 1: if (B.games) { JoyNav(1); B.games = false; } break;   // B: 카테고리 화면으로
+        case 6: JoyNav(20); break;                                     // L / R: 카테고리 이동
+        case 7: JoyNav(21); break;
+        case 8: B.games = true; JoyNav(22); break;                     // ZL / ZR: 보기
+        case 9: B.games = true; JoyNav(23); break;
+        case 11: if (B.games) JoyNav(30); break;                       // −: 즐겨찾기
+        case 12: case 13: case 14: case 15: JoyNav(b); break;
+        }
+    };
     if (openName.empty() && newArg.empty()) B.wizard = 1;
     if (wizArg) B.wizard = wizArg;
     bool running = true;
@@ -2682,6 +2701,56 @@ int main(int argc, char **argv) {
         while (SDL_PollEvent(&ev)) {
             ImGui_ImplSDL2_ProcessEvent(&ev);
             if (ev.type == SDL_QUIT) running = false;
+            if (ev.type == SDL_CONTROLLERDEVICEADDED) {
+                if (SDL_GameController *gc = SDL_GameControllerOpen(ev.cdevice.which))
+                    Status(std::string("패드 연결됨: ") + (SDL_GameControllerName(gc) ? SDL_GameControllerName(gc) : "?") +
+                           " — A 열기 · B 뒤로 · 십자키·스틱 이동 · L/R 카테고리 · ZL/ZR 보기 · − 즐겨찾기");
+            }
+            if (ev.type == SDL_CONTROLLERBUTTONDOWN || ev.type == SDL_CONTROLLERBUTTONUP) {
+                int b = -1;
+                switch (ev.cbutton.button) {
+                case SDL_CONTROLLER_BUTTON_A: b = 0; break;
+                case SDL_CONTROLLER_BUTTON_B: b = 1; break;
+                case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: b = 6; break;
+                case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: b = 7; break;
+                case SDL_CONTROLLER_BUTTON_BACK: b = 11; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT: b = 12; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_UP: b = 13; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: b = 14; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN: b = 15; break;
+                }
+                if (b >= 0 && ev.type == SDL_CONTROLLERBUTTONDOWN) {
+                    padAct(b);
+                    padHeld = b;
+                    padNext = SDL_GetTicks() + 400;
+                } else if (b >= 0 && padHeld == b) {
+                    padHeld = -1;
+                }
+            }
+            if (ev.type == SDL_CONTROLLERAXISMOTION) {
+                int v = ev.caxis.value;
+                if (ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                    bool &st = ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? padZL : padZR;
+                    bool on = v > 16000;
+                    if (on && !st) padAct(ev.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? 8 : 9);
+                    st = on;
+                } else if (SDL_GameController *gc = SDL_GameControllerFromInstanceID(ev.caxis.which)) {
+                    int x = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+                    int dir = -1;
+                    if (std::abs(y) >= std::abs(x) && std::abs(y) > 16000) dir = y < 0 ? 13 : 15;
+                    else if (std::abs(x) > 16000) dir = x < 0 ? 12 : 14;
+                    if (dir != padStick) {
+                        padStick = dir;
+                        if (dir >= 0) {
+                            padAct(dir);
+                            padHeld = dir;
+                            padNext = SDL_GetTicks() + 400;
+                        } else if (padHeld >= 12 && padHeld <= 15) {
+                            padHeld = -1;
+                        }
+                    }
+                }
+            }
             if (ev.type == SDL_DROPFILE) {
                 std::string path = ev.drop.file;
                 SDL_free(ev.drop.file);
@@ -2716,6 +2785,11 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+        }
+        // 패드 방향 누르고 있으면 반복
+        if (padHeld >= 12 && padHeld <= 15 && SDL_GetTicks() >= padNext) {
+            padAct(padHeld);
+            padNext = SDL_GetTicks() + 70;
         }
         // 미리보기 그리기 (지난 프레임에 바꾼 화면 구성을 여기서 반영)
         FlushApply();

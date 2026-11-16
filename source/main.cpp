@@ -3054,7 +3054,11 @@ int main(int argc, char **argv) {
     }
     std::string root = gRoot;
 #endif
+#ifdef __SWITCH__
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
+#else
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);  // PC 패드 (테마 빌더 데모)
+#endif
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
     TTF_Init();
     SDL_Window *win = SDL_CreateWindow(gDemo ? "Joy Launcher 데모 :  Enter/Space=A  Esc=B  T=X  Y=Y  Q/W=L/R  Z/X=ZL/ZR  F=-  방향키" : "Joy Launcher",
@@ -3210,7 +3214,16 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    for (int i = 0; i < SDL_NumJoysticks(); i++) SDL_JoystickOpen(i);
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+#ifndef __SWITCH__
+        if (SDL_IsGameController(i)) { SDL_GameControllerOpen(i); continue; }
+#endif
+        SDL_JoystickOpen(i);
+    }
+#ifndef __SWITCH__
+    int padStickDir = -1;
+    bool padZL = false, padZR = false;
+#endif
     bool running = true;
     int held = -1;
     Uint32 nextRepeat = 0;
@@ -3669,6 +3682,65 @@ int main(int argc, char **argv) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
+#ifndef __SWITCH__
+            // PC 패드 (Xbox·플스·스위치 프로 콘트롤러 등, SDL 게임 콘트롤러): 스위치 버튼 번호로 바꿔 같은 조작
+            if (e.type == SDL_CONTROLLERDEVICEADDED) { SDL_GameControllerOpen(e.cdevice.which); continue; }
+            if (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP) {
+                int b = -1;
+                switch (e.cbutton.button) {
+                case SDL_CONTROLLER_BUTTON_A: b = 0; break;
+                case SDL_CONTROLLER_BUTTON_B: b = 1; break;
+                case SDL_CONTROLLER_BUTTON_X: b = 2; break;
+                case SDL_CONTROLLER_BUTTON_Y: b = 3; break;
+                case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: b = 6; break;
+                case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: b = 7; break;
+                case SDL_CONTROLLER_BUTTON_START: b = 10; break;
+                case SDL_CONTROLLER_BUTTON_BACK: b = 11; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT: b = 12; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_UP: b = 13; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: b = 14; break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN: b = 15; break;
+                }
+                if (b >= 0 && e.type == SDL_CONTROLLERBUTTONDOWN) {
+                    act(b);
+                    held = b;
+                    nextRepeat = SDL_GetTicks() + 400;
+                } else if (b >= 0 && held == b) {
+                    held = -1;
+                }
+                continue;
+            }
+            if (e.type == SDL_CONTROLLERAXISMOTION) {
+                int v = e.caxis.value;
+                if (e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                    bool &st = e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? padZL : padZR;
+                    bool on = v > 16000;
+                    if (on && !st) act(e.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? 8 : 9);
+                    st = on;
+                } else if (SDL_GameController *gc = SDL_GameControllerFromInstanceID(e.caxis.which)) {
+                    int x = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(gc, SDL_CONTROLLER_AXIS_LEFTY);
+                    const int dead = 16000;
+                    int dir = -1;
+                    if (std::abs(y) >= std::abs(x) && std::abs(y) > dead) dir = y < 0 ? 13 : 15;
+                    else if (std::abs(x) > dead) dir = x < 0 ? 12 : 14;
+                    if (dir != padStickDir) {
+                        padStickDir = dir;
+                        if (dir >= 0) {
+                            act(dir);
+                            held = dir;
+                            nextRepeat = SDL_GetTicks() + 400;
+                        } else if (held >= 12 && held <= 15) {
+                            held = -1;
+                        }
+                    }
+                }
+                continue;
+            }
+            // 게임 콘트롤러로 연 장치의 날 조이스틱 이벤트는 무시 (위에서 처리, 번호가 스위치와 다름)
+            if ((e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP) && SDL_GameControllerFromInstanceID(e.jbutton.which)) continue;
+            if (e.type == SDL_JOYAXISMOTION && SDL_GameControllerFromInstanceID(e.jaxis.which)) continue;
+            if (e.type == SDL_JOYHATMOTION && SDL_GameControllerFromInstanceID(e.jhat.which)) continue;
+#endif
             // 스위치 SDL 은 스틱을 축 이벤트와 함께 버튼 16~23 으로도 보낸다. 스틱은 아래 축 처리로만 다루고
             // 버튼 쪽은 무시 (그러지 않으면 누르고 있는 방향(held)을 덮어써 연속 이동이 끊김)
             if ((e.type == SDL_JOYBUTTONDOWN || e.type == SDL_JOYBUTTONUP) && e.jbutton.button >= 16) continue;
