@@ -3,6 +3,8 @@
 
     python3 tools/build_library.py <출력 폴더> <응애팩 Resource 폴더> <CanvasPC 폴더> <Horizon 폴더> <Iconic 폴더>
 
+끝에 tools/make_extra_art.py 로 빠진 default·favorites·hbfav·아케이드 세분류 그림을 세트 모양대로 만들어 넣는다.
+
 세트: JoyBasic(기본테마), Retro(응애팩), Canvas(벽골김씨테마 원본), Horizon, Iconic
 - 이름은 source/esde.cpp 의 기종 이름 표로 바꾼다 (FC -> nes, 액션-아케이드 -> arcade_action …)
 - 크기: 배경 1280x720 이하(JPG), 로고 640x200 이하, 아이콘·게임기 그림 512 이하 (빌더가 넣을 때와 같은 기준)
@@ -87,7 +89,9 @@ def copy_fonts(out, set_, d):
             shutil.copy(os.path.join(d, f), os.path.join(out, set_, "fonts", f))
 
 
-def main():
+def main()
+import subprocess
+subprocess.run([sys.executable, os.path.join(HERE, "make_extra_art.py"), sys.argv[1], os.path.join(HERE, "fonts", "Montserrat-Variable.ttf")], check=True):
     out, eungae, canvas, horizon, iconic = sys.argv[1:6]
     jb = os.path.join(ROOT, "themes", "JoyBasic")
     for k in ("backgrounds", "logos", "icons"):
@@ -114,3 +118,5 @@ def main():
 
 
 main()
+import subprocess
+subprocess.run([sys.executable, os.path.join(HERE, "make_extra_art.py"), sys.argv[1], os.path.join(HERE, "fonts", "Montserrat-Variable.ttf")], check=True)
