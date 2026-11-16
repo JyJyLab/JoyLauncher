@@ -2024,7 +2024,7 @@ static void WizardWindow() {
     for (const auto &s : styles)
         if (s.id == B.newTemplate) cur = &s;
     ImGui::SetWindowFontScale(1.5f);
-    ImGui::Text(B.wizard == 1 ? "① 테마 스타일을 고르세요" : "② 그림과 요소를 어떻게 시작할까요?");
+    ImGui::Text(B.wizard == 1 ? "1단계 · 테마 스타일을 고르세요" : "2단계 · 그림과 요소를 어떻게 시작할까요?");
     ImGui::SetWindowFontScale(1.0f);
     ImGui::TextDisabled(B.wizard == 1 ? "고른 스타일의 화면 구성·글꼴·색으로 시작합니다. 나중에 모두 바꿀 수 있습니다."
                                       : "스타일: %s", cur ? cur->name.c_str() : "");
