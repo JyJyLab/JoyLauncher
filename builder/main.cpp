@@ -133,7 +133,20 @@ static void Thumb(const std::string &path, float box) {
 }
 
 // ---------------------------------------------------------------- 문서 <-> 런처
-static void Apply() { JoySetLayoutText(B.doc.Str()); }
+// 화면 구성 반영은 다음 프레임 처음에 (그리는 도중에 다시 읽으면 레이어·속성 창이 들고 있는 요소가 사라져 꺼짐)
+static bool gApplyPending = false, gReloadPending = false;
+static void Apply() { gApplyPending = true; }
+static void FlushApply() {
+    if (gReloadPending) {
+        JoyLoadTheme(B.theme);
+        gReloadPending = false;
+        gApplyPending = true;
+    }
+    if (gApplyPending) {
+        JoySetLayoutText(B.doc.Str());
+        gApplyPending = false;
+    }
+}
 static void SaveFiles() {
     if (B.theme.empty()) return;
     WriteFile(ThemeDir() + "/layout.txt", B.doc.Str());
@@ -157,7 +170,7 @@ static void Undo() {
     B.ttxt.Parse(B.undo.back().second);
     B.undo.pop_back();
     Changed();
-    JoyLoadTheme(B.theme), Apply();
+    gReloadPending = true;
 }
 static void Redo() {
     if (B.redo.empty()) return;
@@ -166,7 +179,7 @@ static void Redo() {
     B.ttxt.Parse(B.redo.back().second);
     B.redo.pop_back();
     Changed();
-    JoyLoadTheme(B.theme), Apply();
+    gReloadPending = true;
 }
 static void OpenTheme(const std::string &name) {
     B.theme = name;
@@ -179,7 +192,9 @@ static void OpenTheme(const std::string &name) {
     B.redo.clear();
     B.sel.clear();
     JoyLoadTheme(name);
-    Apply();
+    gReloadPending = false;
+    JoySetLayoutText(B.doc.Str());
+    gApplyPending = false;
     B.sizeAt = 0;
     Status("열림: " + name);
 }
@@ -187,8 +202,7 @@ static void OpenTheme(const std::string &name) {
 static void JoyReloadCategoriesSafe();
 static void AssetsChanged() {
     if (B.assetUser) JoyReloadCategoriesSafe();
-    JoyLoadTheme(B.theme);
-    Apply();
+    gReloadPending = true;
     B.sizeAt = 0;
 }
 
@@ -2583,7 +2597,8 @@ int main(int argc, char **argv) {
                 }
             }
         }
-        // 미리보기 그리기
+        // 미리보기 그리기 (지난 프레임에 바꾼 화면 구성을 여기서 반영)
+        FlushApply();
         SDL_SetRenderTarget(B.r, B.preview);
         JoyRender(B.games);
         SDL_SetRenderTarget(B.r, nullptr);
