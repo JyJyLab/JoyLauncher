@@ -75,6 +75,7 @@ static std::vector<MenuItem> gMenu;
 static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM 설정" 에서 여는 BGM 창
 // 앨범(애플릿)으로 실행됐는지. 애플릿 모드는 쓸 수 있는 메모리가 적어 큰 게임이 느리거나 실행되지 않을 수 있음
 static bool gAppletMode = false;
+static bool gDemo = false;  // 테마 빌더의 데모 창 (--demo): 게임·홈브루 실행 대신 알림, 업데이트 확인 안 함
 static std::string gSelfNro = "/switch/joylauncher/joylauncher.nro";
 static std::string gThemeName;  // 현재 테마 폴더 이름 ("" = 기본)
 static std::string ThemeTitle(const std::string &folder);  // 테마의 화면 이름
@@ -2833,6 +2834,13 @@ static bool ChainLoad(App &a, std::string nro, const std::vector<std::string> &a
 #else
     printf("LAUNCH nro=%s\n", nro.c_str());
     for (const auto &s : args) printf("ARG %s\n", s.c_str());
+    if (gDemo) {  // 테마 빌더 데모: 실행하지 않고 알림만, 런처는 계속
+        std::string what = args.empty() ? nro : args[0].substr(args[0].find_last_of('/') + 1);
+        a.message = T("데모: 실행 대신 알림 — ") + what;
+        a.messageColor = {40, 100, 60, 240};
+        a.messageUntil = SDL_GetTicks() + 2500;
+        return false;
+    }
 #endif
     return true;
 }
@@ -3009,6 +3017,7 @@ int main(int argc, char **argv) {
         else if (s == "--home" && i + 1 < argc) gHome = argv[++i];
         else if (s == "--theme" && i + 1 < argc) wantTheme = argv[++i];
         else if (s == "--themepick") wantPick = true;
+        else if (s == "--demo") gDemo = true;
         else if (s == "--hbpick") wantHbPick = true;
         else if (s == "--frames") wantFrames = true;
     }
@@ -3017,7 +3026,9 @@ int main(int argc, char **argv) {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
     TTF_Init();
-    SDL_Window *win = SDL_CreateWindow("Joy Launcher", 0, 0, W, H, shot.empty() ? SDL_WINDOW_SHOWN : SDL_WINDOW_HIDDEN);
+    SDL_Window *win = SDL_CreateWindow(gDemo ? "Joy Launcher 데모  —  Enter/Space=A  Esc=B  T=X  Y=Y  Q/W=L/R  Z/X=ZL/ZR  F=-  방향키" : "Joy Launcher",
+                                       gDemo ? SDL_WINDOWPOS_CENTERED : 0, gDemo ? SDL_WINDOWPOS_CENTERED : 0, W, H,
+                                       shot.empty() ? SDL_WINDOW_SHOWN : SDL_WINDOW_HIDDEN);
     App a;
     a.r = SDL_CreateRenderer(win, -1, shot.empty() ? SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
                                                    : SDL_RENDERER_SOFTWARE);
@@ -3054,7 +3065,7 @@ int main(int argc, char **argv) {
     LoadUserImages();
     if (!gShotMode) ApplyBgm();
     if (!gShotMode && gVideoFrames == "auto") FrameWorkerStart();
-    if (!gShotMode && gAutoUpdate == "on") UpdateCheckStart();
+    if (!gShotMode && !gDemo && gAutoUpdate == "on") UpdateCheckStart();
     if (!gShotMode) ImgLoaderStart();
     // 이전에 중단된 임시 파일 정리
     if (DIR *d = opendir((gHome + "/cache").c_str())) {
@@ -3548,7 +3559,7 @@ int main(int argc, char **argv) {
         a.selChanged = SDL_GetTicks();
         Clamp(a);
     };
-    bool updateNotified = gAutoUpdate != "on" || gShotMode;
+    bool updateNotified = gAutoUpdate != "on" || gShotMode || gDemo;
 #ifdef __SWITCH__
     // 슬립·HOME: 런처가 멈추면 BGM 도 멈추고, 돌아오면 약 1초 동안 소리를 키우며 이어서 재생
     AppletHookCookie hookCookie;
@@ -3636,6 +3647,9 @@ int main(int argc, char **argv) {
                 case SDLK_f: act(11); break;
                 case SDLK_z: act(8); break;
                 case SDLK_x: act(9); break;
+                case SDLK_y: act(3); break;
+                case SDLK_BACKSPACE: act(1); break;
+                case SDLK_SPACE: act(0); break;
                 }
             }
         }

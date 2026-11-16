@@ -44,5 +44,15 @@ $(OBJDIR)/$(subst ../,up_,$(subst /,_,$(1:.cpp=.o))): $(1) $(wildcard *.h) $(wil
 endef
 $(foreach s,$(SRCS),$(eval $(call RULE,$(s))))
 
+# 데모 창: 런처 그대로 (영상·네트워크·BGM 은 빈 함수), 키보드로 조작
+DEMO_OUT = $(if $(WIN),build-win/JoyDemo.exe,build/joydemo)
+DEMO_SRCS = stubs.cpp ../source/main.cpp ../source/layout.cpp ../source/pegasus.cpp ../source/hbmenu.cpp ../source/i18n.cpp \
+            ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp
+DEMO_FLAGS = -O2 -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(CXXFLAGS_SDL)
+demo: $(DEMO_OUT)
+$(DEMO_OUT): $(DEMO_SRCS) $(wildcard ../source/*.h) $(RES)
+	@mkdir -p $(dir $@)
+	$(CXX) $(DEMO_FLAGS) -o $@ $(DEMO_SRCS) $(RES) $(LIBS)
+
 clean:
 	rm -rf build build-win

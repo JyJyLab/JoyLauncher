@@ -20,7 +20,15 @@
 #include "util.h"
 #include "ftp.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 #include <thread>
+#include <tuple>
 
 static const int SW = 1280, SH = 720;
 
@@ -49,7 +57,8 @@ struct Builder {
     int ox = 0, oy = 0, ow = 0, oh = 0;
     // 대화상자
     std::string newName = "MyTheme", newTemplate = "JoyBasic";
-    bool newCore = true;
+    bool newCore = true, newEmpty = false;
+    int wizard = 0;  // 시작 마법사 단계 (0 끔)
     std::string exportDir;
     // 그림 가져오기 대기 (끌어 놓기·파일 고르기)
     std::string pendKind, pendStem, pendProp;  // pendProp: 속성 파일 고르기 (rect 요소의 file 등)
@@ -481,6 +490,261 @@ static void DuplicateSel() {
     Changed();
 }
 
+// ---------------------------------------------------------------- 요소 팔레트 (빈 화면에 넣을 수 있는 요소)
+// name: 기본 요소 이름(숨겨져 있으면 다시 보이게) 또는 "+이름" (새 요소), kvs: "키=값;키=값"
+struct PresetSec { const char *name, *kvs; };
+struct Preset { int scr; const char *group, *label, *desc; std::vector<PresetSec> secs; };  // scr: 1 카테고리 / 2 게임 / 3 둘 다
+static const char *kListReset[] = {"style", "direction", "columns", "rows", "gap", "item_size", "spacing", "visible_items", "center_scale",
+                                   "side_scale", "side_alpha", "image", "padding", "label", "label_height", "card", "card_color", "card_grow",
+                                   "selector", "selector_grow", "selected_scale", "row_height", "count", "text_offset", "size"};
+static const std::vector<Preset> &Presets() {
+    static const std::vector<Preset> v = {
+        {3, "배경", "배경 그림", "카테고리마다 바뀌는 배경 (테마의 backgrounds/)", {{"background", "fit=cover"}}},
+        {3, "배경", "위 막대", "화면 위 반투명 막대", {{"topbar", "color=bar"}}},
+        {3, "배경", "아래 막대", "화면 아래 반투명 막대", {{"bottombar", "color=bar"}}},
+        {1, "목록", "줄 목록", "카테고리 이름을 한 줄씩 (게임 수 표시)", {{"list", "style=text;rect=28,92,720,546;row_height=42;size=27;count=on;text_offset=12,8"}}},
+        {1, "목록", "카드 격자", "기종 카드를 바둑판처럼 (5×2)", {{"list", "style=grid;rect=60,110,1160,520;columns=5;rows=2;gap=20,20;image=icon;padding=12;card_color=#ffffff20;selection=accent;selected_scale=1.06;size=22"}}},
+        {1, "목록", "가로 캐러셀", "가운데 카드가 크게, 양옆은 작고 흐리게 (◀▶)", {{"list", "style=carousel;direction=horizontal;rect=0,200,1280,330;item_size=230,230;spacing=250;visible_items=7;center_scale=1.35;side_scale=0.72;side_alpha=140;image=icon;card_color=#ffffff30;label=auto;size=22"}}},
+        {1, "목록", "세로 휠", "왼쪽에 로고가 세로로 도는 휠 (▲▼)", {{"list", "style=carousel;direction=vertical;rect=20,0,480,720;item_size=400,96;spacing=112;visible_items=7;center_scale=1.2;side_scale=0.78;side_alpha=110;image=logo;card_color=#ffffff18;size=26"}}},
+        {2, "목록", "게임 목록 (줄)", "게임 제목을 한 줄씩", {{"list", "style=text;rect=28,92,720,546;row_height=42;size=27;text_offset=12,8"}}},
+        {2, "목록", "박스 격자", "박스 사진 바둑판 (6×2)", {{"list", "style=grid;rect=40,100,1200,540;columns=6;rows=2;gap=16,16;image=boxart;padding=6;selection=accent;selected_scale=1.06;size=18"}}},
+        {2, "목록", "박스 캐러셀", "박스 사진이 가로로 흐름, 가운데 크게", {{"list", "style=carousel;direction=horizontal;rect=0,96,1280,330;item_size=190,266;spacing=200;visible_items=9;center_scale=1.18;side_scale=0.78;side_alpha=150;image=boxart;size=18"}}},
+        {2, "목록", "제목 휠", "게임 제목이 세로로 도는 휠", {{"list", "style=carousel;direction=vertical;rect=30,60,560,600;item_size=540,52;spacing=56;visible_items=11;center_scale=1.1;side_scale=0.86;side_alpha=120;image=none;label=on;label_height=52;padding=0;size=24;selection=#00000000;color=dim;selected_color=text"}}},
+        {1, "기종", "카테고리 이름", "커서가 있는 카테고리 이름", {{"+name", "type=text;text={category};rect=0,40,1280,0;align=center;size=40;font=bold"}}},
+        {1, "기종", "게임 수", "카테고리의 게임 수", {{"+count", "type=text;text={games} GAMES;rect=0,96,1280,0;align=center;size=22;color=dim"}}},
+        {1, "기종", "기종 그림 (아이콘)", "카테고리의 게임기 그림 (icons/)", {{"+machine", "type=image;source=icon;rect=760,120,440,400;fit=contain"}}},
+        {1, "기종", "기종 로고", "카테고리 로고 (logos/)", {{"+logo", "type=image;source=logo;rect=760,40,440,100;fit=contain"}}},
+        {1, "기종", "박스 미리보기", "그 카테고리 게임의 박스 사진 2×2", {{"preview", "rect=800,96,440,510"}}},
+        {2, "게임", "화면 사진", "게임 화면 사진 (+박스 사진 겹침)", {{"media", "rect=800,92,440,300"}}},
+        {2, "게임", "게임 정보 (묶음)", "제목·제작사·장르·설명을 차례로", {{"info", "rect=800,404,440,256"}}},
+        {2, "게임", "게임 제목", "선택한 게임 제목 (★ 즐겨찾기 표시)", {{"+game_title", "type=text;text={fav?★ :}{title};rect=640,420,600,0;size=30;font=bold;scroll=on"}}},
+        {2, "게임", "제작사·연도·장르", "값이 있는 것만 · 로 이어서", {{"+meta", "type=text;text={developer,year,genre| · };rect=640,466,600,0;size=20;color=dim"}}},
+        {2, "게임", "설명", "게임 설명 (여러 줄, 있을 때만)", {{"+desc", "type=text;text={description};visible_if=description;rect=640,500,600,140;wrap=on;size=19;color=dim"}}},
+        {2, "게임", "카테고리 이름·로고", "게임 화면 위 카테고리 (로고가 있으면 로고)", {{"title", "text={category};logo=on"}}},
+        {2, "게임", "보기 탭", "ZL/ZR 전체 · 즐겨찾기 · 최근 실행, 고른 탭 강조",
+         {{"+tab_all_bg", "type=rect;rect=470,26,110,34;color=accent;visible_if={view=all?1:}"},
+          {"+tab_fav_bg", "type=rect;rect=585,26,120,34;color=accent;visible_if={view=fav?1:}"},
+          {"+tab_recent_bg", "type=rect;rect=710,26,120,34;color=accent;visible_if={view=recent?1:}"},
+          {"+tab_all", "type=text;text=전체;rect=470,26,110,34;align=center;valign=center;size=20"},
+          {"+tab_fav", "type=text;text=★ 즐겨찾기;rect=585,26,120,34;align=center;valign=center;size=20"},
+          {"+tab_recent", "type=text;text=최근 실행;rect=710,26,120,34;align=center;valign=center;size=20"}}},
+        {2, "게임", "쪽 표시", "카테고리 순번 «2 / 13  R ▶»", {{"pager", ""}}},
+        {2, "게임", "게임 번호", "«12 / 340»", {{"counter", ""}}},
+        {2, "게임", "실행 기록", "실행 횟수·마지막 날짜 (있을 때만)", {{"+played", "type=text;text={playcount}회 실행 · {lastplayed};visible_if=playcount;rect=1240,650,0,0;align=right;size=17;color=accent"}}},
+        {3, "기타", "배터리", "남은 배터리", {{"battery", ""}}},
+        {3, "기타", "시계", "지금 시각", {{"+clock", "type=text;text={clock};rect=32,22,0,0;size=22;color=dim"}}},
+        {3, "기타", "조작 도움말", "[A] 열기 … (문구 탭에서 바꿈)", {{"hint", ""}}},
+        {3, "기타", "글자", "자유 글자 ({자리표} 사용)", {{"+text", "type=text;text=새 글자;rect=540,330,200,0;size=28"}}},
+        {3, "기타", "그림", "내 그림 파일 (속성에서 가져오기)", {{"+image", "type=image;rect=490,260,300,200;fit=contain"}}},
+        {3, "기타", "네모 (판)", "반투명 판·장식", {{"+box", "type=rect;rect=490,260,300,200;color=#00000080"}}},
+    };
+    return v;
+}
+static bool IsBuiltin(const std::string &key) { return std::string(LayoutDefaultText()).find("[" + key + "]") != std::string::npos; }
+static void ApplyPreset(const Preset &p) {
+    PushUndo();
+    std::string first;
+    for (const auto &ps : p.secs) {
+        std::string name = ps.name;
+        if (name[0] == '+') name = UniqueName(name.substr(1) + "_", ScreenPrefix());
+        std::string key = ScreenPrefix() + name;
+        if (name == "list")
+            for (const char *k : kListReset) B.doc.Erase(key, k);
+        std::string kvs = ps.kvs;
+        size_t pos = 0;
+        while (pos < kvs.size()) {
+            size_t semi = kvs.find(';', pos);
+            std::string kv = kvs.substr(pos, semi == std::string::npos ? std::string::npos : semi - pos);
+            size_t eq = kv.find('=');
+            if (eq != std::string::npos) B.doc.Set(key, kv.substr(0, eq), kv.substr(eq + 1));
+            if (semi == std::string::npos) break;
+            pos = semi + 1;
+        }
+        if (IsBuiltin(key)) B.doc.Set(key, "visible", "on");
+        if (first.empty()) first = key;
+    }
+    B.sel = first;
+    Changed();
+    Status(std::string("넣음: ") + p.label);
+    // 그림을 쓰는 요소인데 테마에 그 그림이 없으면 알려 줌
+    std::string kvs;
+    for (const auto &ps : p.secs) kvs += std::string(ps.name) + ";" + ps.kvs + ";";
+    for (auto [needle, kind, ko] : std::initializer_list<std::tuple<const char *, const char *, const char *>>{
+             {"background;", "backgrounds", "배경"}, {"image=icon", "icons", "아이콘"}, {"source=icon", "icons", "아이콘"},
+             {"image=logo", "logos", "로고"}, {"source=logo", "logos", "로고"}})
+        if (kvs.find(needle) != std::string::npos && ListDir(ThemeDir() + "/" + kind, false).empty()) {
+            Status(std::string("넣음: ") + p.label + " — 테마에 " + ko + " 그림이 아직 없음: 아래 [그림] 탭에서 세트를 골라 \"전부 채우기\"");
+            B.assetKind = kind;
+            B.tabReq = "assets";
+            break;
+        }
+}
+static void PalettePanel() {
+    int scr = B.games ? 2 : 1;
+    const char *group = "";
+    float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+    int col = 0;
+    for (const auto &p : Presets()) {
+        if (!(p.scr & scr)) continue;
+        if (strcmp(group, p.group) != 0) {
+            group = p.group;
+            ImGui::SeparatorText(group);
+            col = 0;
+        }
+        if (col % 2) ImGui::SameLine();
+        if (ImGui::Button(p.label, ImVec2(bw, 0))) ApplyPreset(p);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.desc);
+        col++;
+    }
+}
+
+// ---------------------------------------------------------------- 디자인 (고른 요소의 자주 쓰는 항목)
+static void SetKV(const std::string &k, const std::string &v) {
+    PushUndo();
+    B.doc.Set(B.sel, k, v);
+    Changed();
+}
+static bool ChoiceButtons(const char *label, const std::string &cur, std::initializer_list<std::pair<const char *, const char *>> opts, std::string &out) {
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(110);
+    bool hit = false;
+    int i = 0;
+    for (auto [lbl, val] : opts) {
+        if (i++) ImGui::SameLine();
+        bool on = cur == val;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::Button(lbl)) { out = val; hit = true; }
+        if (on) ImGui::PopStyleColor();
+    }
+    return hit;
+}
+static void ColorSwatches(const char *label, const std::string &key, const std::string &cur) {
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(110);
+    int i = 0;
+    for (const char *c : {"text", "dim", "accent", "#ffffff", "#000000", "#00000080", "#ffffff30"}) {
+        if (i++) ImGui::SameLine();
+        ImVec4 col = ResolveColor(c);
+        ImGui::PushID(c);
+        if (ImGui::ColorButton(c, col, ImGuiColorEditFlags_AlphaPreviewHalf, ImVec2(22, 22))) SetKV(key, c);
+        if (cur == c) ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(255, 200, 60, 255), 0, 0, 2);
+        ImGui::PopID();
+    }
+    ImGui::SameLine();
+    ImVec4 c = ResolveColor(cur);
+    float f[4] = {c.x, c.y, c.z, c.w};
+    ImGui::PushID(key.c_str());
+    if (ImGui::ColorEdit4("##pick", f, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf)) {
+        static Uint32 at = 0;
+        if (SDL_GetTicks() - at > 800) PushUndo();
+        at = SDL_GetTicks();
+        B.doc.Set(B.sel, key, ColorHex(ImVec4(f[0], f[1], f[2], f[3])));
+        Changed();
+    }
+    ImGui::PopID();
+}
+static void DesignPanel(const Elem &e) {
+    std::string v;
+    auto cur = [&](const char *k) { return B.doc.Has(B.sel, k) ? B.doc.Get(B.sel, k) : EffVal(e, k); };
+    switch (e.type) {
+    case ElemType::Text: {
+        int sz = e.size;
+        std::string sc = sz <= 19 ? "s" : sz <= 26 ? "m" : sz <= 36 ? "l" : "x";
+        if (ChoiceButtons("글자 크기", sc, {{"작게", "s"}, {"보통", "m"}, {"크게", "l"}, {"제목", "x"}}, v))
+            SetKV("size", v == "s" ? "18" : v == "m" ? "24" : v == "l" ? "32" : "44");
+        if (ChoiceButtons("굵기", e.bold ? "bold" : "regular", {{"보통", "regular"}, {"굵게", "bold"}}, v)) SetKV("font", v);
+        if (ChoiceButtons("정렬", cur("align"), {{"왼쪽", "left"}, {"가운데", "center"}, {"오른쪽", "right"}}, v)) SetKV("align", v);
+        ColorSwatches("색", "color", cur("color"));
+        ImGui::TextUnformatted("내용");
+        ImGui::SameLine(110);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##content", e.text.c_str(), ImGuiComboFlags_HeightLarge)) {
+            for (const auto &ph : kPlaceholders)
+                if (ImGui::Selectable((std::string(ph.key) + "   " + ph.desc).c_str())) SetKV("text", ph.key);
+            ImGui::EndCombo();
+        }
+        break;
+    }
+    case ElemType::List: {
+        std::string shape = e.style == 2 ? (e.direction ? "wheel" : "carousel") : e.style == 1 ? "grid" : "text";
+        if (ChoiceButtons("모양", shape, {{"줄 목록", "text"}, {"격자", "grid"}, {"가로 캐러셀", "carousel"}, {"세로 휠", "wheel"}}, v)) {
+            for (const auto &p : Presets()) {
+                if (!(p.scr & (B.games ? 2 : 1)) || p.secs.size() != 1 || std::string(p.secs[0].name) != "list") continue;
+                std::string kv = p.secs[0].kvs;
+                bool match = (v == "text" && kv.find("style=text") != std::string::npos) || (v == "grid" && kv.find("style=grid") != std::string::npos) ||
+                             (v == "carousel" && kv.find("direction=horizontal") != std::string::npos) ||
+                             (v == "wheel" && kv.find("direction=vertical") != std::string::npos);
+                if (match) { std::string keep = B.sel; ApplyPreset(p); B.sel = keep; break; }
+            }
+        }
+        if (e.style != 0 &&
+            ChoiceButtons("칸 그림", cur("image"), {{"아이콘", "icon"}, {"로고", "logo"}, {"배경", "background"}, {"박스", "boxart"}, {"화면", "screenshot"}, {"없음", "none"}}, v))
+            SetKV("image", v);
+        int am = e.animMs >= 0 ? e.animMs : JoyLayout().animMs;
+        if (ChoiceButtons("움직임", am <= 0 ? "0" : am <= 200 ? "150" : "300", {{"바로", "0"}, {"부드럽게", "150"}, {"느긋하게", "300"}}, v)) SetKV("anim_ms", v);
+        ColorSwatches("선택 표시", "selection", cur("selection"));
+        ColorSwatches("글자 색", "color", cur("color"));
+        int sz = e.size;
+        if (ChoiceButtons("글자 크기", sz <= 20 ? "s" : sz <= 26 ? "m" : "l", {{"작게", "s"}, {"보통", "m"}, {"크게", "l"}}, v))
+            SetKV("size", v == "s" ? "18" : v == "m" ? "24" : "30");
+        break;
+    }
+    case ElemType::Image: {
+        std::string src = e.source.empty() ? "file" : e.source;
+        if (ChoiceButtons("그림", src, {{"배경", "background"}, {"로고", "logo"}, {"아이콘", "icon"}, {"박스", "boxart"}, {"화면", "screenshot"}, {"내 파일", "file"}}, v)) {
+            if (v == "file") {
+                PushUndo();
+                B.doc.Erase(B.sel, "source");
+                Changed();
+            } else {
+                SetKV("source", v);
+            }
+        }
+        if (src == "file") {
+            ImGui::TextUnformatted("파일");
+            ImGui::SameLine(110);
+            if (ImGui::Button(e.file.empty() ? "그림 가져오기..." : e.file.c_str())) {
+                std::string sel = B.sel;
+                Browse("png jpg jpeg", [sel](const std::string &path) {
+                    std::string err, stem = Stem(U8(P(path).filename()));
+                    for (auto &ch : stem) if ((unsigned char)ch >= 0x80 || ch == ' ') ch = '_';
+                    std::string out = ImportImage(path, ThemeDir() + "/ui", stem, "ui", err);
+                    if (out.empty()) { Status("그림을 읽지 못함: " + err); return; }
+                    PushUndo();
+                    B.doc.Set(sel, "file", "ui/" + U8(P(out).filename()));
+                    Changed();
+                    AssetsChanged();
+                });
+            }
+        }
+        if (ChoiceButtons("맞추기", cur("fit"), {{"안에 맞춤", "contain"}, {"가득 (잘림)", "cover"}, {"늘림", "stretch"}}, v)) SetKV("fit", v);
+        int al = e.alpha, dm = std::max(0, e.dim);
+        ImGui::TextUnformatted("불투명도");
+        ImGui::SameLine(110);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderInt("##alpha", &al, 0, 255)) { B.doc.Set(B.sel, "alpha", std::to_string(al)); Changed(); }
+        if (ImGui::IsItemActivated()) PushUndo();
+        ImGui::TextUnformatted("어둡게");
+        ImGui::SameLine(110);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderInt("##dim", &dm, 0, 255)) { B.doc.Set(B.sel, "dim", std::to_string(dm)); Changed(); }
+        if (ImGui::IsItemActivated()) PushUndo();
+        break;
+    }
+    case ElemType::Rect:
+        ColorSwatches("색", "color", cur("color"));
+        break;
+    default:
+        ColorSwatches("색", "color", cur("color"));
+        if (e.type == ElemType::Info || e.type == ElemType::Pager) {
+            int sz = e.size;
+            if (ChoiceButtons("글자 크기", sz <= 20 ? "s" : sz <= 24 ? "m" : "l", {{"작게", "s"}, {"보통", "m"}, {"크게", "l"}}, v))
+                SetKV("size", v == "s" ? "18" : v == "m" ? "22" : "28");
+        }
+        break;
+    }
+}
+
 // ---------------------------------------------------------------- 속성 창
 static bool PropRow(const PropDef &pd, const Elem &e) {
     std::string sec = B.sel, k = pd.key;
@@ -635,7 +899,14 @@ static bool PropRow(const PropDef &pd, const Elem &e) {
 
 static void PropertiesPanel() {
     if (B.sel.empty()) {
-        ImGui::TextWrapped("화면에서 요소를 누르거나 왼쪽 레이어에서 고르세요.");
+        ImGui::TextWrapped("화면이나 왼쪽 레이어에서 요소를 고르면 디자인 항목이 켜집니다. 요소는 왼쪽 [요소 넣기] 에서 추가.");
+        ImGui::BeginDisabled();
+        ImGui::SeparatorText("디자인");
+        std::string dummy;
+        ChoiceButtons("글자 크기", "", {{"작게", "s"}, {"보통", "m"}, {"크게", "l"}, {"제목", "x"}}, dummy);
+        ChoiceButtons("정렬", "", {{"왼쪽", "left"}, {"가운데", "center"}, {"오른쪽", "right"}}, dummy);
+        ChoiceButtons("모양", "", {{"줄 목록", "text"}, {"격자", "grid"}, {"가로 캐러셀", "carousel"}, {"세로 휠", "wheel"}}, dummy);
+        ImGui::EndDisabled();
         return;
     }
     const Elem *e = FindElemKey(B.sel);
@@ -658,7 +929,20 @@ static void PropertiesPanel() {
             ImGui::EndPopup();
         }
     }
-    ImGui::Separator();
+    ImGui::SeparatorText("디자인");
+    DesignPanel(*e);
+    ImGui::Spacing();
+    if (!ImGui::CollapsingHeader("세부 속성 (layout.txt 의 모든 항목)")) {
+        if (e->type == ElemType::List && !child) {
+            ImGui::SeparatorText("칸 안 요소");
+            if (ImGui::Button("+ 칸 글자")) AddElem("text", true);
+            ImGui::SameLine();
+            if (ImGui::Button("+ 칸 그림")) AddElem("image", true);
+            ImGui::SameLine();
+            if (ImGui::Button("+ 칸 네모")) AddElem("rect", true);
+        }
+        return;
+    }
     unsigned bit = 1u << (int)e->type;
     const char *group = "";
     for (const auto &pd : kProps) {
@@ -687,13 +971,13 @@ static void LayersPanel() {
     ImGui::SameLine();
     if (ImGui::RadioButton("게임 화면", B.games)) { B.games = true; B.sel.clear(); }
     ImGui::Separator();
-    ImGui::TextDisabled("추가:");
-    ImGui::SameLine();
-    if (ImGui::SmallButton("글자")) AddElem("text", false);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("그림")) AddElem("image", false);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("네모")) AddElem("rect", false);
+    float half = ImGui::GetContentRegionAvail().y * 0.55f;
+    if (ImGui::CollapsingHeader("요소 넣기", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::BeginChild("palette", ImVec2(0, half), false);
+        PalettePanel();
+        ImGui::EndChild();
+    }
+    ImGui::SeparatorText("레이어 (위가 앞)");
     ImGui::BeginChild("layers");
     const Screen &sc = B.games ? JoyLayout().games : JoyLayout().categories;
     std::string prefix = ScreenPrefix();
@@ -1605,9 +1889,23 @@ static void ExportTheme(const std::string &target, bool zip) {
 static void CreateTheme() {
 
     std::string err, dst = B.home + "/themes/" + B.newName;
-    if (B.newTemplate == "(빈 테마)") {
-        WriteFile(dst + "/layout.txt", "# " + B.newName + " — Joy Launcher theme layout\n\n[theme]\n");
+    if (B.newEmpty || B.newTemplate == "(빈 테마)") {
+        // 완전 빈 테마: 스타일의 [theme] 글꼴·색만, 기본 요소는 모두 숨김
+        IniDoc src, d, def;
+        std::string txt;
+        ReadFile(B.templates + "/" + B.newTemplate + "/layout.txt", txt);
+        src.Parse(txt);
+        d.head = {"# " + B.newName + " — 빈 테마에서 시작 (Joy Launcher 테마 빌더)"};
+        if (const IniSec *t = src.Find("theme"))
+            for (const auto &kv : t->kv)
+                if (!kv.raw && (kv.key == "font" || kv.key == "font_bold" || kv.key == "background_color" || kv.key.rfind("color.", 0) == 0))
+                    d.Set("theme", kv.key, kv.val);
+        if (!d.Has("theme", "background_color")) d.Set("theme", "background_color", "#1e1e26");
+        def.Parse(LayoutDefaultText());
+        for (const auto &sec : def.secs) d.Set(sec.name, "visible", "off");
+        WriteFile(dst + "/layout.txt", d.Str());
         WriteFile(dst + "/theme.txt", "name=" + B.newName + "\nname_en=" + B.newName + "\ndim=0\n");
+        if (IsDir(B.templates + "/" + B.newTemplate + "/fonts")) CopyTree(B.templates + "/" + B.newTemplate + "/fonts", dst + "/fonts", err);
     } else {
         CopyTree(B.templates + "/" + B.newTemplate, dst, err);
         ThemeTxt t;
@@ -1633,15 +1931,220 @@ static void CreateTheme() {
     OpenTheme(B.newName);
 }
 
+// ---------------------------------------------------------------- 데모 창: 런처를 따로 띄워 키보드로 실제처럼 조작
+static void RunDemo() {
+    if (B.theme.empty()) { Status("테마를 먼저 여세요"); return; }
+    SaveFiles();
+    std::vector<std::string> args = {"--demo", "--root", B.roms, "--home", B.home, "--theme", B.theme, "--lang", B.en ? "en" : "ko"};
+#ifdef _WIN32
+    std::string cmd = "\"JoyDemo.exe\"";
+    for (const auto &a : args) cmd += " \"" + a + "\"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, cmd.c_str(), -1, nullptr, 0);
+    std::wstring w(n, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, cmd.c_str(), -1, &w[0], n);
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessW(nullptr, &w[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        Status("데모 창을 띄웠습니다 — Enter/Space=A  Esc=B  방향키  Q/W=L/R  Z/X=ZL/ZR  F=즐겨찾기  Y=옵션");
+    } else {
+        Status("데모를 띄우지 못함 (JoyDemo.exe 가 빌더 폴더에 있는지 확인)");
+    }
+#else
+    if (!Exists("joydemo")) { Status("데모를 띄우지 못함 (joydemo 가 빌더 폴더에 없음)"); return; }
+    pid_t pid = fork();
+    if (pid == 0) {
+        setsid();
+        std::vector<char *> av;
+        av.push_back((char *)"./joydemo");
+        for (auto &a : args) av.push_back((char *)a.c_str());
+        av.push_back(nullptr);
+        execv("./joydemo", av.data());
+        _exit(127);
+    }
+    Status(pid > 0 ? "데모 창을 띄웠습니다 — Enter/Space=A  Esc=B  방향키  Q/W=L/R  Z/X=ZL/ZR  F=즐겨찾기  Y=옵션" : "데모를 띄우지 못함");
+#endif
+}
+
+// ---------------------------------------------------------------- 시작 마법사: ① 스타일 ② 자동 매칭 / 빈 테마
+struct StyleInfo { std::string id, name, desc, preview; int order = 100; };
+static std::vector<StyleInfo> Styles() {
+    std::vector<StyleInfo> v;
+    for (const auto &t : ListDir(B.templates, true)) {
+        StyleInfo s;
+        s.id = s.name = t;
+        std::string txt;
+        if (ReadFile(B.templates + "/" + t + "/builder_info.txt", txt)) {
+            ThemeTxt f;
+            f.Parse(txt);
+            if (!f.Get("name").empty()) s.name = f.Get("name");
+            s.desc = f.Get("desc");
+            if (!f.Get("order").empty()) s.order = atoi(f.Get("order").c_str());
+        }
+        s.preview = B.templates + "/" + t + "/builder_preview.png";
+        v.push_back(s);
+    }
+    std::stable_sort(v.begin(), v.end(), [](const StyleInfo &a, const StyleInfo &b) { return a.order < b.order; });
+    return v;
+}
+static void Picture(const std::string &path, float w, float h) {
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(w, h));
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), IM_COL32(40, 40, 48, 255));
+    if (TexEntry *t = Tex(path, 640)) {
+        float sc = std::min(w / t->w, h / t->h);
+        ImVec2 a(p.x + (w - t->w * sc) / 2, p.y + (h - t->h * sc) / 2);
+        dl->AddImage((ImTextureID)(intptr_t)t->t, a, ImVec2(a.x + t->w * sc, a.y + t->h * sc));
+    }
+}
+static bool Card(const char *id, bool selected, float w, float h, const std::function<void()> &body) {
+    ImGui::PushStyleColor(ImGuiCol_Border, selected ? ImVec4(1, .78f, .25f, 1) : ImVec4(.35f, .35f, .4f, 1));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, selected ? 3.0f : 1.0f);
+    ImGui::BeginChild(id, ImVec2(w, h), true, ImGuiWindowFlags_NoScrollbar);
+    body();
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    bool clicked = ImGui::IsItemClicked();
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    return clicked;
+}
+static void WizardWindow() {
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::Begin("wizard", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+    auto styles = Styles();
+    if (B.newTemplate.empty() || std::none_of(styles.begin(), styles.end(), [](const StyleInfo &s) { return s.id == B.newTemplate; }))
+        B.newTemplate = styles.empty() ? "" : styles[0].id;
+    const StyleInfo *cur = nullptr;
+    for (const auto &s : styles)
+        if (s.id == B.newTemplate) cur = &s;
+    ImGui::SetWindowFontScale(1.5f);
+    ImGui::Text(B.wizard == 1 ? "① 테마 스타일을 고르세요" : "② 그림과 요소를 어떻게 시작할까요?");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::TextDisabled(B.wizard == 1 ? "고른 스타일의 화면 구성·글꼴·색으로 시작합니다. 나중에 모두 바꿀 수 있습니다."
+                                      : "스타일: %s", cur ? cur->name.c_str() : "");
+    ImGui::Separator();
+    float footer = 64;
+    ImGui::BeginChild("body", ImVec2(0, -footer), false);
+    if (B.wizard == 1) {
+        float cw = 380, ch = 310, gap = ImGui::GetStyle().ItemSpacing.x;
+        int cols = std::max(1, (int)((ImGui::GetContentRegionAvail().x + gap) / (cw + gap)));
+        int i = 0;
+        for (const auto &s : styles) {
+            if (i % cols) ImGui::SameLine();
+            ImGui::PushID(s.id.c_str());
+            bool click = Card("card", s.id == B.newTemplate, cw, ch, [&]() {
+                Picture(s.preview, cw - 16, (cw - 16) * 9 / 16);
+                ImGui::SetWindowFontScale(1.15f);
+                ImGui::TextUnformatted(s.name.c_str());
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cw - 20);
+                ImGui::TextDisabled("%s", s.desc.c_str());
+                ImGui::PopTextWrapPos();
+            });
+            if (click) {
+                if (B.newTemplate == s.id && ImGui::IsMouseDoubleClicked(0)) B.wizard = 2;
+                B.newTemplate = s.id;
+            }
+            ImGui::PopID();
+            i++;
+        }
+    } else {
+        float cw = std::min(620.0f, (ImGui::GetContentRegionAvail().x - 20) / 2), ch = cw * 9 / 16 + 230;
+        bool a = Card("auto", !B.newEmpty, cw, ch, [&]() {
+            Picture(cur ? cur->preview : "", cw - 16, (cw - 16) * 9 / 16);
+            ImGui::SetWindowFontScale(1.2f);
+            ImGui::TextUnformatted("자동 매칭");
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cw - 20);
+            ImGui::TextWrapped("고른 스타일의 화면 구성 그대로, 내 롬 모음의 카테고리에 맞는 배경·로고·아이콘을 라이브러리에서 알아서 넣습니다.");
+            ImGui::TextDisabled("예) 롬 폴더 'FC'·'패미컴' → nes 배경·로고, 'PS1' → psx 게임기 그림, '액션-아케이드' → 아케이드 그림");
+            ImGui::TextDisabled("바로 스위치에서 쓸 수 있는 상태로 시작 → 바꾸고 싶은 곳만 고치면 됨");
+            ImGui::PopTextWrapPos();
+        });
+        if (a) B.newEmpty = false;
+        ImGui::SameLine(0, 20);
+        bool e = Card("empty", B.newEmpty, cw, ch, [&]() {
+            Picture("builder_ui/empty_example.png", cw - 16, (cw - 16) * 9 / 16);
+            ImGui::SetWindowFontScale(1.2f);
+            ImGui::TextUnformatted("완전 빈 테마");
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cw - 20);
+            ImGui::TextWrapped("그림도 요소도 없는 빈 화면에서 시작합니다. 왼쪽 [요소 넣기] 에서 목록·제목·배경 등을 하나씩 넣고, 고른 요소의 디자인을 오른쪽에서 정합니다.");
+            ImGui::TextDisabled("예) 배경 그림 → 가로 캐러셀 → 카테고리 이름 → 게임 수 → 조작 도움말 순으로 넣어 나만의 화면 만들기");
+            ImGui::TextDisabled("고른 스타일에서는 글꼴과 색만 가져옴");
+            ImGui::PopTextWrapPos();
+        });
+        if (e) B.newEmpty = true;
+        ImGui::Spacing();
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputText("테마 폴더 이름 (영문·숫자)", &B.newName);
+        if (!B.newEmpty) {
+            ImGui::SameLine();
+            ImGui::Checkbox("주요 기종 그림만 (용량 절약)", &B.newCore);
+        }
+        bool exists = IsDir(B.home + "/themes/" + B.newName);
+        bool okName = !B.newName.empty() && std::all_of(B.newName.begin(), B.newName.end(), [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+        });
+        if (!okName) ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "영문·숫자·_·- 만 (스위치 SD 에서 안전)");
+        else if (exists) ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "같은 이름의 테마가 있음 — 다른 이름으로");
+    }
+    ImGui::EndChild();
+    ImGui::Separator();
+    if (B.wizard == 1) {
+        auto ts = ListDir(B.home + "/themes", true);
+        if (!ts.empty()) {
+            static std::string pick;
+            if (pick.empty() || std::find(ts.begin(), ts.end(), pick) == ts.end()) pick = ts[0];
+            ImGui::TextUnformatted("기존 테마 이어서 편집:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(220);
+            if (ImGui::BeginCombo("##resume", pick.c_str())) {
+                for (const auto &t : ts)
+                    if (ImGui::Selectable(t.c_str(), t == pick)) pick = t;
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("열기")) { OpenTheme(pick); B.wizard = 0; }
+        }
+        ImGui::SameLine(ImGui::GetWindowWidth() - 140);
+        if (ImGui::Button("다음 ▶", ImVec2(120, 40))) B.wizard = 2;
+    } else {
+        if (ImGui::Button("◀ 스타일 다시 고르기", ImVec2(200, 40))) B.wizard = 1;
+        ImGui::SameLine(ImGui::GetWindowWidth() - 140);
+        bool exists = IsDir(B.home + "/themes/" + B.newName);
+        bool okName = ValidName(B.newName) && !exists;
+        ImGui::BeginDisabled(!okName);
+        if (ImGui::Button("만들기", ImVec2(120, 40))) {
+            CreateTheme();
+            B.wizard = 0;
+            if (B.newEmpty) Status("빈 테마: 왼쪽 [요소 넣기] 에서 요소를 넣어 시작하세요. 요소를 고르면 오른쪽에 디자인 항목이 나타납니다");
+        }
+        ImGui::EndDisabled();
+    }
+    ImGui::End();
+}
+
 // ---------------------------------------------------------------- 메인
 static void Frame() {
     ImGuiIO &io = ImGui::GetIO();
     float W = io.DisplaySize.x, H = io.DisplaySize.y;
     float left = 300, right = 420, menuH = ImGui::GetFrameHeight(), bottom = std::max(240.0f, H * 0.36f), statusH = 26;
+    if (B.wizard) {
+        WizardWindow();
+        BrowseWindow();
+        return;
+    }
     bool openNew = false, openExport = false, openOpen = false, openFtp = false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("파일")) {
-            if (ImGui::MenuItem("새 테마...")) openNew = true;
+            if (ImGui::MenuItem("새 테마...")) B.wizard = 1;
             if (ImGui::MenuItem("열기...")) openOpen = true;
             if (ImGui::MenuItem("내보내기...", nullptr, false, !B.theme.empty())) openExport = true;
             if (ImGui::MenuItem("스위치로 보내기 (FTP)...", nullptr, false, !B.theme.empty())) openFtp = true;
@@ -1661,9 +2164,14 @@ static void Frame() {
             ImGui::MenuItem("자리 표시", nullptr, &B.showBounds);
             ImGui::EndMenu();
         }
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.2f, .55f, .3f, 1));
+        if (ImGui::Button("▶ 데모 실행 (F5)")) RunDemo();
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("이 테마를 실제 런처처럼 새 창에서 조작해 보기 (키보드: Enter=A Esc=B 방향키 Q/W=L/R Z/X=ZL/ZR F=즐겨찾기)");
         ImGui::TextDisabled("  |  %s  ·  Joy Launcher %s", B.theme.empty() ? "(테마 없음)" : (B.theme + " — " + B.ttxt.Get("name")).c_str(), JoyVersion());
         ImGui::EndMainMenuBar();
     }
+    if (ImGui::IsKeyPressed(ImGuiKey_F5)) RunDemo();
     if (!io.WantTextInput && io.KeyCtrl) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) Undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) Redo();
@@ -1856,7 +2364,7 @@ int main(int argc, char **argv) {
     fs::current_path(P(ExeDir(argv[0])), ec);
     std::string shot;
     std::string openName, selArg, newArg, ftpHost;
-    int ftpPort = 0;
+    int ftpPort = 0, wizArg = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--shot" && i + 1 < argc) shot = argv[++i];  // 시험: 빌더 화면을 그림으로 저장하고 끝
@@ -1865,6 +2373,8 @@ int main(int argc, char **argv) {
         else if (a == "--games") B.games = true;
         else if (a == "--tab" && i + 1 < argc) B.assetKind = argv[++i];
         else if (a == "--panel" && i + 1 < argc) B.tabReq = argv[++i];
+        else if (a == "--wizard" && i + 1 < argc) wizArg = atoi(argv[++i]);  // 시험: 마법사 단계
+        else if (a == "--empty") B.newEmpty = true;
         else if (a == "--ftp-test" && i + 2 < argc) { ftpHost = argv[++i]; ftpPort = atoi(argv[++i]); }  // 시험: 테마를 FTP 로 보내고 끝
         else if (a == "--new" && i + 2 < argc) { newArg = argv[++i]; B.newTemplate = argv[++i]; }  // 시험: --new 이름 견본
     }
@@ -1886,7 +2396,7 @@ int main(int argc, char **argv) {
     ImGui::StyleColorsDark();
     ImGui::GetStyle().WindowRounding = 0;
     ImGui::GetStyle().FrameRounding = 3;
-    static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2000, 0x206F, 0x2190, 0x21FF, 0x2500, 0x27BF, 0x3000, 0x30FF,
+    static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2000, 0x206F, 0x2190, 0x21FF, 0x2460, 0x24FF, 0x2500, 0x27BF, 0x3000, 0x30FF,
                                      0x3130, 0x318F, 0xAC00, 0xD7A3, 0xFF00, 0xFFEF, 0};
     io.Fonts->AddFontFromFileTTF("romfs/font.ttf", 17.0f, nullptr, ranges);
     ImGui_ImplSDL2_InitForSDLRenderer(B.win, B.r);
@@ -1916,6 +2426,8 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!selArg.empty()) B.sel = selArg;
+    if (openName.empty() && newArg.empty()) B.wizard = 1;
+    if (wizArg) B.wizard = wizArg;
     bool running = true;
     int frames = 0;
     while (running) {
