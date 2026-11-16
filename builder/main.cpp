@@ -63,6 +63,7 @@ struct Builder {
     std::string delAsk;     // 지울지 묻는 테마 (빈칸 = 아님)
     bool delThenCreate = false;  // 지운 뒤 같은 이름으로 새로 만들기
     bool openManage = false;
+    bool winCats = false, winTheme = false, winStrings = false, winRaw = false, winProblems = false;  // 따로 뜨는 설정 창
     std::string exportDir;
     // 그림 가져오기 대기 (끌어 놓기·파일 고르기)
     std::string pendKind, pendStem, pendProp;  // pendProp: 속성 파일 고르기 (rect 요소의 file 등)
@@ -1066,6 +1067,17 @@ static void SetRect(const std::string &key, int x, int y, int w, int h) {
 }
 static int Snap(int v) { return B.snap && B.grid > 1 ? (int)std::lround(v / (double)B.grid) * B.grid : v; }
 
+// 지금 카테고리의 기종 이름 (그림 찾기용)
+static std::string CurrentSystemId() {
+    auto cols = JoyCollections();
+    int c = JoyCategory();
+    if (c < 0 || c >= (int)cols.size()) return "";
+    for (const std::string &n : {cols[c].shortName, cols[c].name, cols[c].folder}) {
+        std::string id = EsdeSystemName(Lower(n));
+        if (!id.empty()) return id;
+    }
+    return Lower(cols[c].shortName.empty() ? cols[c].name : cols[c].shortName);
+}
 static void Canvas() {
     // 위 도구 줄
     auto cols = JoyCollections();
@@ -1093,17 +1105,36 @@ static void Canvas() {
     static const char *kViews[] = {"전체", "즐겨찾기", "최근 실행"};
     ImGui::TextDisabled("보기:%s", kViews[JoyView() % 3]);
     ImGui::SameLine();
+    if (ImGui::Button("카테고리·기종 설정 (F2)")) { B.winCats = true; B.assetFilter = CurrentSystemId(); B.tabReq = "assets"; }
+    ImGui::SameLine();
+    if (ImGui::Button("테마 설정 (F3)")) B.winTheme = true;
+    ImGui::SameLine();
     if (ImGui::Button("★ 즐겨찾기")) { B.games = true; JoyNav(30); }
     ImGui::SameLine();
     if (ImGui::Checkbox("English", &B.en)) JoySetLang(B.en);
 
-    // 화면
+    // 화면: 남은 자리에 가장 크게, 가운데 정렬
     ImVec2 avail = ImGui::GetContentRegionAvail();
     float sc = std::min(avail.x / SW, (avail.y - 4) / SH);
     sc = std::max(0.2f, sc);
+    ImVec2 c0 = ImGui::GetCursorPos();
+    ImGui::SetCursorPos(ImVec2(c0.x + std::max(0.0f, (avail.x - SW * sc) / 2), c0.y + std::max(0.0f, (avail.y - SH * sc) / 2)));
     ImVec2 p0 = ImGui::GetCursorScreenPos();
     ImGui::Image((ImTextureID)(intptr_t)B.preview, ImVec2(SW * sc, SH * sc));
     bool hovered = ImGui::IsItemHovered();
+    // 화면 밖(빈 곳)을 누르면 선택 해제
+    if (!hovered && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && ImGui::IsMouseClicked(0)) B.sel.clear();
+    // 카테고리 목록을 두 번 누르면 그 기종의 그림·이름 설정 창
+    if (hovered && !B.games && ImGui::IsMouseDoubleClicked(0)) {
+        int mx2 = (int)((ImGui::GetMousePos().x - p0.x) / sc), my2 = (int)((ImGui::GetMousePos().y - p0.y) / sc);
+        for (const auto &h : HitAll(mx2, my2))
+            if (h.rfind("categories.list", 0) == 0) {
+                B.winCats = true;
+                B.assetFilter = CurrentSystemId();
+                B.tabReq = "assets";
+                break;
+            }
+    }
     ImDrawList *dl = ImGui::GetWindowDrawList();
     auto toScr = [&](int x, int y) { return ImVec2(p0.x + x * sc, p0.y + y * sc); };
     ImVec2 mp = ImGui::GetMousePos();
@@ -1146,7 +1177,7 @@ static void Canvas() {
                 auto it = std::find(hits.begin(), hits.end(), B.sel);
                 B.sel = it == hits.end() || it + 1 == hits.end() ? hits[0] : *(it + 1);
             } else if (!(se && SDL_PointInRect(&pt, &sr))) {
-                B.sel = hits.empty() ? "" : hits[0];
+                B.sel = hits.empty() ? "" : hits[0];  // 아무 요소도 없는 곳 = 선택 해제
             }
         }
         se = B.sel.empty() ? nullptr : FindElemKey(B.sel);
@@ -2253,11 +2284,112 @@ static void WizardWindow() {
     ImGui::End();
 }
 
+// ---------------------------------------------------------------- 따로 뜨는 설정 창 (화면을 크게 쓰려고 아래 탭 대신)
+static bool BeginTool(const char *title, bool *open, float w, float h) {
+    if (!*open) return false;
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowSize(ImVec2(std::min(w, io.DisplaySize.x - 40), std::min(h, io.DisplaySize.y - 80)), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x / 2, io.DisplaySize.y / 2), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    return true;
+}
+static void MapsPanel() {
+    ImGui::TextWrapped("theme.txt: 카테고리·폴더 이름 = 그림 파일 이름. 내장 기종 표(FC→nes, 액션-아케이드→arcade_action …)로 찾지 못하는 이름만 적으면 됩니다.");
+    auto maps = B.ttxt.Maps();
+    if (ImGui::BeginTable("maps", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, -34))) {
+        ImGui::TableSetupColumn("카테고리·폴더 이름");
+        ImGui::TableSetupColumn("그림 이름");
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableHeadersRow();
+        for (size_t i = 0; i < maps.size(); i++) {
+            ImGui::TableNextRow();
+            ImGui::PushID((int)i);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(maps[i].first.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(maps[i].second.c_str());
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("x")) { PushUndo(); B.ttxt.Erase(maps[i].first); SaveFiles(); AssetsChanged(); }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    static std::string ma, mb;
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("##ma", "카테고리·폴더 이름", &ma);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("##mb", "그림 이름 (확장자 없이)", &mb);
+    ImGui::SameLine();
+    if (ImGui::Button("추가##map") && !ma.empty() && !mb.empty()) { PushUndo(); B.ttxt.Set(ma, mb); SaveFiles(); AssetsChanged(); ma.clear(); mb.clear(); }
+}
+static void ToolWindows() {
+    auto tf = [](const char *n) { return B.tabReq == n ? ImGuiTabItemFlags_SetSelected : 0; };
+    if (BeginTool("카테고리·기종 설정###wcats", &B.winCats, 1100, 640)) {
+        if (ImGui::Begin("카테고리·기종 설정###wcats", &B.winCats)) {
+            ImGui::TextDisabled("지금 카테고리: %s", CurrentSystemId().c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("이 기종만 보기")) B.assetFilter = CurrentSystemId();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("모두 보기")) B.assetFilter.clear();
+            if (ImGui::BeginTabBar("cattabs")) {
+                if (ImGui::BeginTabItem("기종별 그림 (배경·로고·아이콘)", nullptr, tf("assets"))) { AssetsPanel(); ImGui::EndTabItem(); }
+                if (ImGui::BeginTabItem("나만의 카테고리", nullptr, tf("cats"))) { CategoriesPanel(); ImGui::EndTabItem(); }
+                if (ImGui::BeginTabItem("카테고리 이름")) { TablePanel("names", "카테고리·폴더 이름", "화면에 보일 이름", {}); ImGui::EndTabItem(); }
+                if (ImGui::BeginTabItem("기종 연결 (theme.txt)")) { MapsPanel(); ImGui::EndTabItem(); }
+                if (ImGui::BeginTabItem("미리보기 롬")) {
+                    ImGui::TextWrapped("미리보기에 쓸 롬 폴더 (페가수스 metadata 또는 롬 파일). 기본은 함께 든 sample/roms. SD 카드의 /roms 를 골라도 됩니다.");
+                    ImGui::SetNextItemWidth(-120);
+                    ImGui::InputText("##roms", &B.roms);
+                    ImGui::SameLine();
+                    if (ImGui::Button("다시 읽기")) { std::string log; JoySetRoms(B.roms, log); Status("게임 목록: " + std::to_string(JoyCollections().size()) + " 카테고리"); }
+                    ImGui::EndTabItem();
+                }
+                ImGui::EndTabBar();
+            }
+        }
+        ImGui::End();
+    }
+    if (BeginTool("테마 설정###wtheme", &B.winTheme, 640, 720)) {
+        if (ImGui::Begin("테마 설정###wtheme", &B.winTheme)) ThemePanel();
+        ImGui::End();
+    }
+    if (BeginTool("화면 문구###wstr", &B.winStrings, 820, 480)) {
+        if (ImGui::Begin("화면 문구###wstr", &B.winStrings))
+            TablePanel("strings", "원래 문구", "바꿀 말",
+                       {{"hint.categories", "카테고리 화면 도움말 ([A] 열기 …)"}, {"hint.categories_grid", "카테고리 화면 도움말 (격자)"},
+                        {"hint.games", "게임 화면 도움말"}, {"hint.games_grid", "게임 화면 도움말 (격자)"}});
+        ImGui::End();
+    }
+    if (BeginTool("layout.txt###wraw", &B.winRaw, 760, 640)) {
+        if (ImGui::Begin("layout.txt###wraw", &B.winRaw)) {
+            if (!B.rawDirty) B.rawText = B.doc.Str();
+            if (ImGui::Button("적용")) {
+                PushUndo();
+                B.doc.Parse(B.rawText);
+                Changed();
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("직접 고친 뒤 [적용]");
+            if (ImGui::InputTextMultiline("##raw", &B.rawText, ImVec2(-1, -1))) B.rawDirty = true;
+        }
+        ImGui::End();
+    }
+    if (BeginTool("문제###wprob", &B.winProblems, 600, 320)) {
+        if (ImGui::Begin("문제###wprob", &B.winProblems)) {
+            const auto &probs = JoyLayout().problems;
+            if (probs.empty()) ImGui::TextDisabled("문제 없음");
+            for (const auto &p : probs) ImGui::TextWrapped("%s", p.c_str());
+        }
+        ImGui::End();
+    }
+    B.tabReq.clear();
+}
+
 // ---------------------------------------------------------------- 메인
 static void Frame() {
     ImGuiIO &io = ImGui::GetIO();
     float W = io.DisplaySize.x, H = io.DisplaySize.y;
-    float left = 300, right = 420, menuH = ImGui::GetFrameHeight(), bottom = std::max(240.0f, H * 0.36f), statusH = 26;
+    float menuH = ImGui::GetFrameHeight(), statusH = 26;
     if (B.wizard) {
         WizardWindow();
         BrowseWindow();
@@ -2281,6 +2413,14 @@ static void Frame() {
             if (ImGui::MenuItem("삭제", "Del", false, !B.sel.empty())) DeleteSel();
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("설정")) {
+            ImGui::MenuItem("카테고리·기종 (그림·나만의 카테고리·이름)", "F2", &B.winCats);
+            ImGui::MenuItem("테마 (이름·글꼴·색·화면 효과)", "F3", &B.winTheme);
+            ImGui::MenuItem("화면 문구 (도움말 등)", nullptr, &B.winStrings);
+            ImGui::MenuItem("layout.txt 직접 편집", nullptr, &B.winRaw);
+            ImGui::MenuItem("문제 목록", nullptr, &B.winProblems);
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("보기")) {
             ImGui::MenuItem("격자 맞춤", nullptr, &B.snap);
             ImGui::SliderInt("격자 간격", &B.grid, 1, 32);
@@ -2295,108 +2435,57 @@ static void Frame() {
         ImGui::EndMainMenuBar();
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F5)) RunDemo();
+    if (ImGui::IsKeyPressed(ImGuiKey_F2)) B.winCats = !B.winCats;
+    if (ImGui::IsKeyPressed(ImGuiKey_F3)) B.winTheme = !B.winTheme;
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) B.sel.clear();
     if (!io.WantTextInput && io.KeyCtrl) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) Undo();
         if (ImGui::IsKeyPressed(ImGuiKey_Y)) Redo();
         if (ImGui::IsKeyPressed(ImGuiKey_D)) DuplicateSel();
     }
     ImGuiWindowFlags fixed = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    // 예전 탭 요청 → 따로 뜨는 창
+    if (!B.tabReq.empty()) {
+        if (B.tabReq == "assets" || B.tabReq == "cats") B.winCats = true;
+        else if (B.tabReq == "theme") B.winTheme = true;
+        else if (B.tabReq == "strings") B.winStrings = true;
+        else if (B.tabReq == "raw") B.winRaw = true;
+    }
+    // 왼쪽: 고른 요소가 있으면 그 요소의 꾸미기만, 없으면 요소 넣기 + 레이어
+    float left = B.sel.empty() ? 300 : 400;
     ImGui::SetNextWindowPos(ImVec2(0, menuH));
     ImGui::SetNextWindowSize(ImVec2(left, H - menuH - statusH));
-    ImGui::Begin("레이어", nullptr, fixed);
-    LayersPanel();
+    ImGui::Begin(B.sel.empty() ? "요소###side" : "고른 요소 꾸미기###side", nullptr, fixed);
+    if (B.sel.empty()) {
+        LayersPanel();
+    } else {
+        if (ImGui::Button("◀ 선택 해제 (Esc)")) B.sel.clear();
+        ImGui::SameLine();
+        ImGui::TextDisabled(B.games ? "게임 화면" : "카테고리 화면");
+        ImGui::Separator();
+        if (!B.sel.empty()) PropertiesPanel();
+    }
     ImGui::End();
-    ImGui::SetNextWindowPos(ImVec2(W - right, menuH));
-    ImGui::SetNextWindowSize(ImVec2(right, H - menuH - statusH));
-    ImGui::Begin("속성", nullptr, fixed);
-    PropertiesPanel();
-    ImGui::End();
+    // 가운데: 화면 (남은 자리 전부, 가운데 정렬)
     ImGui::SetNextWindowPos(ImVec2(left, menuH));
-    ImGui::SetNextWindowSize(ImVec2(W - left - right, H - menuH - bottom - statusH));
-    ImGui::Begin("화면", nullptr, fixed | ImGuiWindowFlags_NoScrollbar);
+    ImGui::SetNextWindowSize(ImVec2(W - left, H - menuH - statusH));
+    ImGui::Begin("화면###canvas", nullptr, fixed | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoTitleBar);
     Canvas();
     ImGui::End();
-    ImGui::SetNextWindowPos(ImVec2(left, H - bottom - statusH));
-    ImGui::SetNextWindowSize(ImVec2(W - left - right, bottom));
-    ImGui::Begin("도구", nullptr, fixed);
-    auto tf = [](const char *n) { return B.tabReq == n ? ImGuiTabItemFlags_SetSelected : 0; };
-    if (ImGui::BeginTabBar("tabs")) {
-        if (ImGui::BeginTabItem("그림", nullptr, tf("assets"))) { AssetsPanel(); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("테마 설정", nullptr, tf("theme"))) { ThemePanel(); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("문구", nullptr, tf("strings"))) {
-            TablePanel("strings", "원래 문구", "바꿀 말",
-                       {{"hint.categories", "카테고리 화면 도움말 ([A] 열기 …)"}, {"hint.categories_grid", "카테고리 화면 도움말 (격자)"},
-                        {"hint.games", "게임 화면 도움말"}, {"hint.games_grid", "게임 화면 도움말 (격자)"}});
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("나만의 카테고리", nullptr, tf("cats"))) { CategoriesPanel(); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("카테고리 이름")) { TablePanel("names", "카테고리·폴더 이름", "화면에 보일 이름", {}); ImGui::EndTabItem(); }
-        if (ImGui::BeginTabItem("기종 연결")) {
-            ImGui::TextWrapped("theme.txt: 카테고리·폴더 이름 = 그림 파일 이름. 내장 기종 표(FC→nes, 액션-아케이드→arcade_action …)로 찾지 못하는 이름만 적으면 됩니다.");
-            auto maps = B.ttxt.Maps();
-            if (ImGui::BeginTable("maps", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, -34))) {
-                ImGui::TableSetupColumn("카테고리·폴더 이름");
-                ImGui::TableSetupColumn("그림 이름");
-                ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 30);
-                ImGui::TableHeadersRow();
-                for (size_t i = 0; i < maps.size(); i++) {
-                    ImGui::TableNextRow();
-                    ImGui::PushID((int)i);
-                    ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(maps[i].first.c_str());
-                    ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(maps[i].second.c_str());
-                    ImGui::TableNextColumn();
-                    if (ImGui::SmallButton("x")) { PushUndo(); B.ttxt.Erase(maps[i].first); SaveFiles(); AssetsChanged(); }
-                    ImGui::PopID();
-                }
-                ImGui::EndTable();
-            }
-            static std::string ma, mb;
-            ImGui::SetNextItemWidth(220);
-            ImGui::InputTextWithHint("##ma", "카테고리·폴더 이름", &ma);
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(220);
-            ImGui::InputTextWithHint("##mb", "그림 이름 (확장자 없이)", &mb);
-            ImGui::SameLine();
-            if (ImGui::Button("추가##map") && !ma.empty() && !mb.empty()) { PushUndo(); B.ttxt.Set(ma, mb); SaveFiles(); AssetsChanged(); ma.clear(); mb.clear(); }
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("layout.txt", nullptr, tf("raw"))) {
-            if (!B.rawDirty) B.rawText = B.doc.Str();
-            if (ImGui::Button("적용")) {
-                PushUndo();
-                B.doc.Parse(B.rawText);
-                Changed();
-            }
-            ImGui::SameLine();
-            ImGui::TextDisabled("직접 고친 뒤 [적용]");
-            if (ImGui::InputTextMultiline("##raw", &B.rawText, ImVec2(-1, -1))) B.rawDirty = true;
-            ImGui::EndTabItem();
-        }
-        const auto &probs = JoyLayout().problems;
-        std::string pt = "문제 (" + std::to_string(probs.size()) + ")###problems";
-        if (ImGui::BeginTabItem(pt.c_str())) {
-            if (probs.empty()) ImGui::TextDisabled("문제 없음");
-            for (const auto &p : probs) ImGui::TextWrapped("%s", p.c_str());
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("미리보기 자료")) {
-            ImGui::TextWrapped("미리보기에 쓸 롬 폴더 (페가수스 metadata 또는 롬 파일). 기본은 함께 든 sample/roms. SD 카드의 /roms 를 골라도 됩니다.");
-            ImGui::SetNextItemWidth(-120);
-            ImGui::InputText("##roms", &B.roms);
-            ImGui::SameLine();
-            if (ImGui::Button("다시 읽기")) { std::string log; JoySetRoms(B.roms, log); Status("게임 목록: " + std::to_string(JoyCollections().size()) + " 카테고리"); }
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
-    B.tabReq.clear();
-    ImGui::End();
+    ToolWindows();
     // 상태 줄
     ImGui::SetNextWindowPos(ImVec2(0, H - statusH));
     ImGui::SetNextWindowSize(ImVec2(W, statusH));
     ImGui::Begin("status", nullptr, fixed | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
+    {
+        size_t np = JoyLayout().problems.size();
+        if (np) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.6f, .3f, .15f, 1));
+            if (ImGui::SmallButton(("문제 " + std::to_string(np)).c_str())) B.winProblems = true;
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+        }
+    }
     if (SDL_GetTicks() < B.statusUntil) ImGui::TextUnformatted(B.status.c_str());
     else ImGui::TextDisabled("자동 저장: %s   ·   화면을 눌러 고르기, 끌어서 옮기기, 손잡이로 크기, 방향키 1점(Shift 10점), Alt+누르기 = 겹친 아래 요소",
                              B.theme.empty() ? "-" : ThemeDir().c_str());
