@@ -615,7 +615,9 @@ static const ThemePack kPacks[] = {
     {"JoyBasic", "기본테마", "Basic Theme", "기본팩", "Basic Pack"},
     {"RetroPack", "레트로테마", "Retro Theme", "레트로팩", "Retro Pack"},
     {"ByeokgolKim", "벽골김씨테마", "WallStreetKim's Theme", "벽골김씨팩", "Byeokgol Kim Pack"},
+    {"DcGall", "레트로게임갤러리테마", "Retro Game Gallery Theme", "디시 갤러리 (시험)", "DC Gallery (test)"},
 };
+static const int kPackCount = (int)(sizeof(kPacks) / sizeof(kPacks[0]));
 
 // theme.txt 한 줄을 key / value 로 (설명·빈 줄이면 false)
 static bool ThemeTxtLine(std::string line, bool first, std::string &k, std::string &v) {
@@ -2389,13 +2391,6 @@ static const char *kThemeDownload = "\x01download:";
 static bool IsThemeDownload(const std::string &item) { return item.rfind(kThemeDownload, 0) == 0; }
 static const char *kThemeFtp = "\x01ftp";  // 테마 선택 창 맨 아래: PC에서 받기
 static bool IsThemeSpecial(const std::string &item) { return !item.empty() && item[0] == '\x01'; }
-static const ThemePack *ThemeDownloadPack(const std::string &item) {
-    if (!IsThemeDownload(item)) return nullptr;
-    std::string folder = item.substr(strlen(kThemeDownload));
-    for (const auto &p : kPacks)
-        if (folder == p.folder) return &p;
-    return nullptr;
-}
 static const char *PackName(const ThemePack &p) { return CurrentLang() == Lang::En ? p.en : p.ko; }
 
 static void RenderThemePick(App &a) {
@@ -2412,11 +2407,13 @@ static void RenderThemePick(App &a) {
         int y = by + 66 + i * kRowH;
         bool sel = idx == a.themeSel;
         if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
-        const ThemePack *pack = ThemeDownloadPack(a.themeList[idx]);
-        bool dl = pack != nullptr;
+        bool dl = IsThemeDownload(a.themeList[idx]);
         std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : idx < (int)a.themeTitles.size() ? a.themeTitles[idx] : a.themeList[idx];
-        if (dl)
-            label = Fmt(IsDirPath(gHome + "/themes/" + pack->folder) ? T("%s 다시 받기 (최신으로)") : T("%s 내려받기"), PackName(*pack));
+        if (dl) {
+            bool all = true;
+            for (const auto &p : kPacks) all = all && IsDirPath(gHome + "/themes/" + p.folder);
+            label = Fmt(all ? T("기본 테마 %d종 다시 받기 (최신으로)") : T("기본 테마 %d종 내려받기"), kPackCount);
+        }
         if (a.themeList[idx] == kThemeFtp) {
             label = T("PC에서 테마 받기 (FTP)");
             dl = true;
@@ -3197,10 +3194,8 @@ int main(int argc, char **argv) {
         a.themeList.insert(a.themeList.begin(), "");
         a.themeTitles.clear();
         for (const auto &f : a.themeList) a.themeTitles.push_back(f.empty() ? "" : ThemeTitle(f));
-        for (const auto &p : kPacks) {
-            a.themeList.push_back(std::string(kThemeDownload) + p.folder);
-            a.themeTitles.push_back("");
-        }
+        a.themeList.push_back(kThemeDownload);  // 기본 테마 전부 한 번에
+        a.themeTitles.push_back("");
         a.themeList.push_back(kThemeFtp);
         a.themeTitles.push_back("");
         a.themeSel = 0;
@@ -3390,8 +3385,10 @@ int main(int argc, char **argv) {
         a.messageUntil = a.confirmUntil;
     };
     // 테마 선택 창의 "<팩> 내려받기": 최신 릴리스에서 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기
-    auto runThemeDownload = [&](const ThemePack &pack) {
+    // 테마 선택 창의 "기본 테마 n종 내려받기": 최신 릴리스에서 팩마다 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기
+    auto runThemeDownload = [&]() {
         Uint32 lastDraw = 0;
+        int cur = 0;
         auto progress = [&](long long got, long long total) {
             bool cancel = false;
             SDL_Event e;
@@ -3404,37 +3401,48 @@ int main(int argc, char **argv) {
                 lastDraw = SDL_GetTicks();
                 Render(a);
                 Fill(a, 240, 280, 800, 150, {28, 28, 40, 245});
-                DrawText(a, a.fList, Fmt(T("%s 내려받는 중  %.1f / %.1f MB"), PackName(pack), got / 1048576.0, total / 1048576.0),
+                DrawText(a, a.fList, Fmt(T("%s 내려받는 중 (%d/%d)  %.1f / %.1f MB"), PackName(kPacks[cur]), cur + 1, kPackCount,
+                                         got / 1048576.0, total / 1048576.0),
                          W / 2, 300, kWhite, 760, 1);
                 Fill(a, 280, 350, 720, 14, {60, 60, 80, 255});
-                if (total > 0) Fill(a, 280, 350, (int)(720.0 * got / total), 14, kAccent);
+                double part = total > 0 ? (double)got / total : 0.0;
+                Fill(a, 280, 350, (int)(720.0 * (cur + part) / kPackCount), 14, kAccent);
                 DrawText(a, a.fInfo, T("[B] 취소"), W / 2, 380, kGrey, 760, 1);
                 SDL_RenderPresent(a.r);
             }
             return !cancel;
         };
         showBusy(T("최신 릴리스 확인 중..."));
-        int files = 0;
-        std::string err;
-        bool ok = DownloadTheme(gHome + "/themes", pack.folder, files, err, progress);
-        if (!ok) {
-            modal(T("테마 내려받기 실패: ") + err, false);
-            return;
+        int total = 0, got = 0;
+        std::string failed;
+        for (cur = 0; cur < kPackCount; cur++) {
+            int files = 0;
+            std::string e;
+            if (DownloadTheme(gHome + "/themes", kPacks[cur].folder, files, e, progress)) {
+                total += files;
+                got++;
+            } else {
+                failed += std::string(failed.empty() ? "" : ", ") + PackName(kPacks[cur]) + " (" + e + ")";
+                if (e == T("취소했습니다")) break;
+            }
         }
         // 새 그림으로 다시 읽기 (지금 그 테마를 쓰고 있었으면 바로 반영)
         a.backs.Clear();
         a.images.Clear();
         a.lastBack.clear();
-        if (gThemeName == pack.folder) {
-            LoadTheme(pack.folder);
-            a.top = CenterTop(a.sel, true);
-            a.catTop = CenterTop(a.catSel, false);
-            Clamp(a);
-        }
+        for (const auto &p : kPacks)
+            if (gThemeName == p.folder) {
+                LoadTheme(p.folder);
+                a.top = CenterTop(a.sel, true);
+                a.catTop = CenterTop(a.catSel, false);
+                Clamp(a);
+            }
         openThemePick();
-        for (size_t i = 0; i < a.themeList.size(); i++)
-            if (a.themeList[i] == pack.folder) a.themeSel = (int)i;
-        a.message = Fmt(T("%s: 받았습니다 (파일 %d개) · A 를 누르면 적용합니다"), PackName(pack), files);
+        if (!failed.empty()) {
+            modal(Fmt(T("기본 테마 %d종 받음 (전체 %d종) · 실패: "), got, kPackCount) + failed, false);
+            return;
+        }
+        a.message = Fmt(T("기본 테마 %d종을 받았습니다 (파일 %d개) · 테마를 골라 A 로 적용합니다"), kPackCount, total);
         a.messageColor = {40, 100, 60, 240};
         a.messageUntil = SDL_GetTicks() + 4000;
     };
@@ -3621,9 +3629,7 @@ int main(int argc, char **argv) {
             }
             if (b == 13) a.themeSel = (a.themeSel + n - 1) % n;
             else if (b == 15) a.themeSel = (a.themeSel + 1) % n;
-            else if (b == 0 && IsThemeDownload(a.themeList[a.themeSel])) {
-                if (const ThemePack *p = ThemeDownloadPack(a.themeList[a.themeSel])) runThemeDownload(*p);
-            } else if (b == 0) {
+            else if (b == 0 && IsThemeDownload(a.themeList[a.themeSel])) runThemeDownload(); else if (b == 0) {
                 LoadTheme(a.themeList[a.themeSel]);
                 SaveSettings();
                 a.backs.Clear();

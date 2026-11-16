@@ -33,7 +33,7 @@ Put one folder into `/JoyLauncher/themes/` on the SD card and you have one more 
 
 ```
 /JoyLauncher/themes/
-├─ JoyBasic/                 Basic Theme (RetroPack = Retro Theme, ByeokgolKim = WallStreetKim's Theme)
+├─ JoyBasic/                 Basic Theme (RetroPack = Retro Theme, ByeokgolKim = WallStreetKim's Theme, DcGall = Retro Game Gallery Theme)
 └─ MyTheme/                  new theme (folder name = name in the theme picker)
    ├─ backgrounds/
    │  ├─ GBA.jpg             category background
@@ -206,7 +206,7 @@ If the same name exists in several folders, the leftmost folder in the table win
 
 ## 9. Customizing the included packs, naming a theme
 
-- **"Download <pack name> again"** in the theme picker replaces the stock pictures of Basic Theme (`JoyBasic`), Retro Theme (`RetroPack`) or WallStreetKim's Theme (`ByeokgolKim`) with new ones (pictures you added stay).
+- **"Download the 4 stock themes again"** in the theme picker replaces the stock pictures of all four packs — Basic Theme (`JoyBasic`), Retro Theme (`RetroPack`), WallStreetKim's Theme (`ByeokgolKim`) and Retro Game Gallery Theme (`DcGall`) — with new ones of the same names (pictures you added stay).
 - To change stock pictures, **copy the folder under another name (e.g. `JoyBasicMy`)** and edit the copy.
 - The name shown in the theme picker comes from `name=My Theme` in `theme.txt` (`name_en=` for the English interface); without it the folder name is shown. (from v1.0.0)
 - JoyBasic can be regenerated with `tools/make_joybasic.py` (Python + Pillow) in the repository — a starting point for a theme with your own colors or text.

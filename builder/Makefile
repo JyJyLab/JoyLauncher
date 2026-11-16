@@ -38,7 +38,7 @@ $(OUT): $(OBJS) $(RES)
 	$(CXX) -o $@ $(OBJS) $(RES) $(LIBS)
 
 define RULE
-$(OBJDIR)/$(subst ../,up_,$(subst /,_,$(1:.cpp=.o))): $(1) $(wildcard *.h) $(wildcard ../source/*.h) joy_api.inc
+$(OBJDIR)/$(subst ../,up_,$(subst /,_,$(1:.cpp=.o))): $(1) $(wildcard *.h) $(wildcard ../source/*.h) joy_api.inc ../Makefile
 	@mkdir -p $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c $(1) -o $$@
 endef
@@ -50,7 +50,7 @@ DEMO_SRCS = stubs.cpp ../source/main.cpp ../source/layout.cpp ../source/pegasus.
             ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp ../source/ftpserver.cpp
 DEMO_FLAGS = -O2 -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(CXXFLAGS_SDL)
 demo: $(DEMO_OUT)
-$(DEMO_OUT): $(DEMO_SRCS) $(wildcard ../source/*.h) $(RES)
+$(DEMO_OUT): $(DEMO_SRCS) $(wildcard ../source/*.h) $(RES) ../Makefile
 	@mkdir -p $(dir $@)
 	$(CXX) $(DEMO_FLAGS) -o $@ $(DEMO_SRCS) $(RES) $(LIBS)
 

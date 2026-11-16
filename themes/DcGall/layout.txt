@@ -1,0 +1,289 @@
+[theme]
+requires = 1.1.0
+font = fonts/NotoSansKR-Regular.otf
+font_bold = fonts/NotoSansKR-Bold.otf
+background_color = #ffffff
+color.text = #222222
+color.dim = #777777
+color.navy = #3b4191
+
+[categories.background]
+visible = off
+
+[categories.topbar]
+rect = 0,0,1280,72
+color = navy
+
+[categories.bottombar]
+rect = 0,668,1280,52
+color = navy
+
+[categories.preview]
+visible = off
+
+[categories.title]
+text = dcinside
+rect = 32,14,300,0
+size = 38
+color = #ffffff
+align = left
+
+[categories.battery]
+rect = 1056,26,200,20
+color = #ffffff
+
+[categories.gall]
+type = text
+text = 레트로게임기 마이너 갤러리
+rect = 32,92,800,0
+size = 34
+color = navy
+
+[categories.rank]
+type = text
+text = {category_index} / {category_count}
+rect = 1240,100,0,0
+align = right
+size = 20
+color = dim
+
+[categories.line]
+type = rect
+rect = 32,148,1216,3
+color = navy
+
+[categories.tabs]
+type = text
+text = 전체 갤러리        즐겨찾기        최근 방문
+rect = 36,168,800,0
+size = 20
+
+[categories.list]
+style = grid
+rect = 32,212,1216,440
+columns = 5
+rows = 2
+gap = 14,14
+card = ui/card.png
+selector = ui/selector.png
+selected_scale = 1.0
+image = icon
+padding = 70,14,70,96
+label = off
+
+[categories.list.short]
+type = text
+text = {short}
+rect = 0,112,0,0
+size = 15
+color = dim
+align = center
+
+[categories.list.name]
+text = {name}
+rect = 0,136,0,0
+size = 21
+align = center
+font = bold
+
+[categories.list.posts]
+text = 게시글 {games}
+rect = 0,166,0,0
+size = 17
+color = dim
+align = center
+
+[categories.list.selbg]
+type = rect
+rect = 2,2,-4,-4
+color = #eef0fa
+state = selected
+z = -1
+
+[categories.hint]
+rect = 640,682,0,0
+size = 20
+color = #ffffff
+
+[games.background]
+visible = off
+
+[games.topbar]
+rect = 0,0,1280,72
+color = navy
+
+[games.bottombar]
+rect = 0,668,1280,52
+color = navy
+
+[games.applet]
+visible = off
+
+[games.logo]
+type = text
+text = dcinside   레트로게임기 갤러리
+rect = 32,16,700,0
+size = 34
+color = #ffffff
+
+[games.battery]
+rect = 1056,26,200,20
+color = #ffffff
+
+[games.title]
+text = {category} 갤러리
+logo = off
+rect = 28,90,700,0
+size = 32
+color = navy
+align = left
+
+[games.prev]
+rect = 1000,96,0,0
+color = #333333
+
+[games.pager]
+rect = 1040,96,210,0
+color = #333333
+
+[games.line]
+type = rect
+rect = 28,144,1224,3
+color = navy
+
+[games.tabbar]
+type = rect
+rect = 28,164,604,46
+color = #eef0f6
+
+[games.tabs]
+type = text
+text = 전체글       개념글       최근 실행
+rect = 46,176,560,0
+size = 20
+color = navy
+
+[games.head]
+type = text
+text = 번호        제목
+rect = 40,218,400,0
+size = 18
+color = dim
+
+[games.head2]
+type = text
+text = 조회
+rect = 616,218,0,0
+size = 18
+color = dim
+align = right
+
+[games.rows]
+type = image
+file = ui/rows.png
+rect = 28,246,604,410
+fit = stretch
+z = 15
+
+[games.list]
+rect = 28,246,604,410
+rows = 11
+row_height = 37.3
+size = 21
+text_offset = 18
+color = #222222
+selected_color = navy
+selection = #e8eaf6
+label = off
+
+[games.list.num]
+text = {num_desc}
+rect = 6,0,60,37
+valign = center
+align = center
+size = 17
+color = dim
+
+[games.list.t]
+text = {fav?★ :}{title}
+rect = 76,0,460,37
+valign = center
+size = 21
+selected_color = navy
+
+[games.list.pc]
+text = {playcount}
+rect = 540,0,52,37
+valign = center
+align = right
+size = 17
+color = dim
+
+[games.counter]
+rect = 1240,682,0,0
+align = right
+color = #ffffff
+
+[games.vline]
+type = rect
+rect = 652,164,2,490
+color = #e0e0e4
+
+[games.tag]
+type = text
+text = [일반] 게임 정보
+rect = 676,166,560,0
+size = 18
+color = navy
+
+[games.gt]
+type = text
+text = {title}
+rect = 676,192,570,40
+size = 30
+scroll = on
+
+[games.meta2]
+type = text
+text = {developer,year,players,genre| | }
+rect = 676,240,570,0
+size = 19
+color = dim
+
+[games.media]
+rect = 676,272,560,250
+overlay = off
+
+[games.info]
+visible = off
+
+[games.desc]
+visible_if = description
+type = text
+text = {description}
+rect = 676,532,560,90
+size = 19
+wrap = on
+
+[games.hint]
+rect = 640,682,0,0
+size = 19
+color = #ffffff
+
+[games.favbtn]
+type = rect
+rect = 860,626,200,34
+color = #f4f4f6
+
+[games.favtext]
+type = text
+text = {fav?★ 개념글:☆ 개념 보내기}
+rect = 860,626,200,34
+align = center
+valign = center
+size = 19
+color = #444444
+
+[strings]
+hint.categories = [A] 입갤    [B] 탈갤    [X] 홈브류    [Y] 갤 설정    ▲▼◀▶ 이동
+hint.games = [A] 실행   [B] 갤 목록   [L/R] 갤 이동   [-] 개념 보내기   [X] 홈브류   [Y] 옵션

@@ -1,0 +1,4 @@
+# 레트로게임갤러리테마 (DcGall) — Joy Launcher 테마
+name=레트로게임갤러리테마
+name_en=Retro Game Gallery Theme
+dim=0

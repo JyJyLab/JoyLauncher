@@ -7,7 +7,8 @@ Joy Launcher reads an Android **Pegasus ROM pack** copied to the Switch SD card 
 - Converts the Android launch settings in `metadata.pegasus.txt` (RetroArch cores, PPSSPP app) to Switch programs automatically.
 - Works without a list file too: ROMs in per-system folders are found and matched automatically. ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) are read as they are.
 - Shows box art, screenshots and descriptions. When there is no screenshot, it grabs a frame from the preview video.
-- Per-category background themes. Three theme packs are included: **Basic Theme, Retro Theme, WallStreetKim's Theme**.
+- Per-category background themes. Four theme packs are included: **Basic Theme, Retro Theme, WallStreetKim's Theme, Retro Game Gallery Theme**.
+- The PC program **Joy Theme Builder** (Windows, Linux) lets you make themes while seeing the Switch screen as it will look, and send them to the Switch (section 8).
 - Korean / English interface (default: the Switch system language).
 - Plays your own mp3/ogg files as **background music (BGM)**.
 - Shows the **battery level** at the top right, like the Switch HOME screen.
@@ -36,11 +37,13 @@ switch/joylauncher/joylauncher.nro   the launcher
 JoyLauncher/themes/JoyBasic/         Basic Theme (section 8)
 JoyLauncher/themes/RetroPack/        Retro Theme
 JoyLauncher/themes/ByeokgolKim/      WallStreetKim's Theme
+JoyLauncher/themes/DcGall/           Retro Game Gallery Theme
 설명서.md                             Korean manual
 Manual_en.md                         this manual
 theme-guide-en.md                    how to add/make themes (section 8)
 theme-layout-en.md                   how to change the screen layout (layout.txt)
 테마_만들기.md                        theme guide (Korean)
+테마_빌더.md                          PC theme builder guide (Korean)
 OFL.txt                              license of the built-in font (NanumGothic)
 LICENSE                              launcher license (GPL-3.0)
 ```
@@ -48,7 +51,7 @@ LICENSE                              launcher license (GPL-3.0)
 ## 3. Installation
 
 1. Copy `switch/` and `JoyLauncher/` from the zip to the root of the SD card.
-   - `JoyLauncher/` only contains the three theme packs. If `/JoyLauncher` already exists, merge it; your settings stay.
+   - `JoyLauncher/` only contains the four theme packs. If `/JoyLauncher` already exists, merge it; your settings stay.
    - If you don't want the default theme, copying `switch/` is enough. **`/JoyLauncher` is created automatically on first run.**
 2. Copy your Pegasus ROM pack (with its ROM folders) to `/roms` on the SD card (section 4).
 3. Start **Joy Launcher** from the Album (homebrew menu).
@@ -192,26 +195,51 @@ Images are matched by: category name in `theme.txt` → ROM folder name (e.g. `/
 | **Basic Theme** | `themes/JoyBasic` | self-made pictures: color backgrounds per system family + system-name logos. Selected on first run |
 | **Retro Theme** | `themes/RetroPack` | console photo backgrounds and logos per system (excerpt of the Eungae pack theme pictures) |
 | **WallStreetKim's Theme** | `themes/ByeokgolKim` | system card grid + list panel screens (a theme that changes the layout too, `layout.txt`) |
+| **Retro Game Gallery Theme** | `themes/DcGall` | gallery-board style screens (gallery cards + a board table with number, title and views), white/navy design. Needs launcher v1.1.0 or later |
 
-> Themes are not installed by the automatic update. Use **"Download Basic Theme" / "Download Retro Theme" / "Download WallStreetKim's Theme"** near the bottom of the theme picker ("Download ... again" if it is already there). It downloads from the latest GitHub release, checks size and SHA-256, unpacks into `/JoyLauncher/themes/<folder>/`, replaces the stock images and keeps images you added. B cancels. (Needs internet; otherwise copy `JoyLauncher/themes/` from the release zip.)
+> Themes are not installed by the automatic update. Use **"Download the 4 stock themes"** near the bottom of the theme picker ("Download the 4 stock themes again" when all four are there). It downloads the four packs one after another from the latest GitHub release, checks size and SHA-256, unpacks into `/JoyLauncher/themes/<folder>/`, replaces the stock images and keeps images you added. B cancels. (Needs internet; otherwise copy `JoyLauncher/themes/` from the release zip.)
 
 - **Basic Theme**: color gradients with simple shapes and system names in NanumGothic Bold — all self-made, no company logos or game images, free to use and modify. Regenerate it with `tools/make_joybasic.py`.
 - **Retro Theme**: excerpt (systems the Switch launcher uses) of the theme pictures of the Eungae pack, an Android Pegasus collection. The pictures belong to their owners.
 - **WallStreetKim's Theme**: arranged by WallStreetKim from the ES-DE theme Canvas (Siddy212, CC0). Console photos and logos belong to their owners. Font: Cafe24 Ohsquare air.
-- All three map common ROM folder names (SFC, MD, PS1, GBA, PCE, WSC...) and the arcade categories of popular Korean packs in `theme.txt`.
+- **Retro Game Gallery Theme**: font Noto Sans KR (SIL Open Font License 1.1, `fonts/OFL-NotoSansKR.txt`), icons from the ES-DE theme Canvas (Siddy212, CC0). The "dcinside" text on screen is a parody label, unrelated to DCinside.
+- Basic, Retro and WallStreetKim's Theme map common ROM folder names (SFC, MD, PS1, GBA, PCE, WSC...) and the arcade categories of popular Korean packs in `theme.txt`.
 
 Change themes with **Y** Options → **"Theme"** → A. **"Default (no background)"** turns themes off. To use other pictures, make your own theme folder ([Theme guide](theme-guide-en.md)).
+
+**Deleting a theme**: in the theme picker select a theme and press **X** (or **−**), then **A** to confirm; `/JoyLauncher/themes/<folder>` is deleted. If it was the theme in use, the launcher switches to Basic Theme (or no theme). (Hint line: `[A] Apply [X] Delete [B] Close`)
+
+### Receive themes from PC (FTP)
+
+Send themes made on a PC over Wi-Fi without taking out the SD card.
+
+- **Y** Options → **"Receive themes from PC (FTP)"** (right below Theme, or the last row of the theme picker)
+- The screen shows `ftp://<Switch IP>:<port>`. The port is 5000 (5001, 5002 or 5021 if it is busy).
+- FTP is open only while this screen is shown. Leave user and password empty (anonymous).
+- Only `/JoyLauncher/themes/…`, `/JoyLauncher/categories.txt` and `/JoyLauncher/categories/…` can be written or deleted; everything else is refused.
+- The screen shows the PC connection, received/removed counts and a recent log.
+- **B** closes it and reloads the themes.
+- On the PC, use **File → Send to Switch** in the theme builder (or any FTP client).
+
+### Custom categories
+
+`/JoyLauncher/categories.txt` combines categories (e.g. PlayStation = PS1+PS2+PSP), includes or excludes them and hides categories (`[hide]`). Pictures in your own folder `/JoyLauncher/categories/{backgrounds,logos,icons}/` are used by every theme that lacks that picture. Syntax: **[테마_레이아웃.md](테마_레이아웃.md) chapter 12** (Korean).
+
+### Theme builder (PC)
+
+**Joy Theme Builder** is a PC program for making themes while seeing the Switch screen exactly as the launcher draws it. Releases include Windows 10/11 64-bit (`JoyThemeBuilder_win64_<version>.zip`) and Linux x86_64 (`JoyThemeBuilder_linux_x86_64_<version>.tar.gz`) builds. Send a theme straight to the Switch over FTP, or export it as a zip or folder. Guide: **[테마_빌더.md](테마_빌더.md)** (Korean).
 
 ## 9. Controls and menus
 
 | Screen | Controls |
 |---|---|
 | Categories | ▲▼ select / A open / B exit (confirm: A exit, B back) / X homebrew menu / Y options / + exit at once |
-| Game list | ▲▼ move / ◀▶ page / L·R previous·next category / A play / B back / **− add/remove favorite** / X homebrew menu / Y options / + exit |
+| Game list | ▲▼ move / ◀▶ page / L·R previous·next category / **ZL·ZR view tabs** / A play / B back / **− add/remove favorite** / X homebrew menu / Y options / + exit |
 
 The left and right sticks work like the D-pad, and holding a direction repeats.
 
 - After a game you return to the same game in the list. After exiting (HOME) you start at the top of the categories.
+- **View tabs**: **ZL·ZR** in a game list switch between **All · Favorites · Recently played**.
 - **Favorites**: press **−** in a game list to add the game to favorites, again to remove it. Favorites get a ★ and appear in a **"Favorites"** category at the top of the category list (only when there are any). Saved in `/JoyLauncher/favorites.txt`, kept across list refreshes. Theme background name: `favorites`.
 
 ![Favorites](images/19_favorites.png)
@@ -231,6 +259,8 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 | Refresh game list | section 7 |
 | Check for updates / Install update | see "Automatic updates" |
 | Theme | section 8 |
+| Receive themes from PC (FTP) | section 8 |
+| Screen effects | on / off: theme motion (smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade) |
 | BGM | A opens the BGM window; see "Background music" (dimmed when there are no songs) |
 | Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
 | Homebrew Favorites: add / remove | see "Homebrew Favorites" below (green when some nro are added) |
@@ -268,7 +298,7 @@ The interface is available in Korean and English. **Auto** (default) follows the
 - At start the launcher checks GitHub Releases in the background and briefly shows "New version vX.Y.Z is available" (it does not install by itself).
 - Install: **Y** Options → **"Install update: vX.Y.Z"** → A, then A again to confirm. B cancels the download.
 - The file is verified (size and SHA-256) before replacing; the old file is kept as `joylauncher.nro.old`. If Joy Launcher is the default homebrew menu, `/hbmenu.nro` is updated too. The launcher then restarts.
-- **Automatic updates replace only the launcher (`joylauncher.nro`).** Get the theme packs (Basic Theme, Retro Theme, WallStreetKim's Theme) with **Y Options → Theme → "Download <pack name>"**, or download the release zip and copy `JoyLauncher/themes/` to the SD card yourself.
+- **Automatic updates replace only the launcher (`joylauncher.nro`).** Get the four theme packs with **Y Options → Theme → "Download the 4 stock themes again"**, or download the release zip and copy `JoyLauncher/themes/` to the SD card yourself.
 - `auto_update=off` in `settings.txt` turns the start-up check off.
 
 ## 10. Settings (`/JoyLauncher/settings.txt`)
@@ -281,8 +311,9 @@ The interface is available in Korean and English. **Auto** (default) follows the
 | `auto_update` | `on` / `off` |
 | `language` | `auto` / `ko` / `en` |
 | `bgm`, `bgm_volume`, `bgm_shuffle` | `on`/`off`, `0`-`100`, `on`/`off` |
+| `effects` | `on` / `off` (screen effects) |
 
-Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games, `debug_log.txt` the diagnostic log (start, launch, exit, crash; moved to `debug_log_old.txt` above 512 KB, with `debug_state.txt` as its helper; section 11).
+Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games, `playcount.txt` play counts per game, `categories.txt` and `categories/` the custom categories and their pictures (section 8), `debug_log.txt` the diagnostic log (start, launch, exit, crash; moved to `debug_log_old.txt` above 512 KB, with `debug_state.txt` as its helper; section 11).
 
 ## 11. Troubleshooting
 
