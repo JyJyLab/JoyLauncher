@@ -259,13 +259,28 @@ Lang SystemLang() {
 #endif
 }
 
+static const std::map<std::string, std::string> *gOvKo = nullptr, *gOvEn = nullptr;
+void SetStringOverrides(const std::map<std::string, std::string> *ko, const std::map<std::string, std::string> *en) {
+    gOvKo = ko && !ko->empty() ? ko : nullptr;
+    gOvEn = en && !en->empty() ? en : nullptr;
+}
+// 영어 화면: [strings.en], 한국어 화면: [strings]
+const char *StringOverride(const char *key) {
+    const auto *m = gLang == Lang::En ? gOvEn : gOvKo;
+    if (!key || !m) return nullptr;
+    auto it = m->find(key);
+    return it != m->end() ? it->second.c_str() : nullptr;
+}
+
 const char *T(const char *ko) {
+    if (const char *o = StringOverride(ko)) return o;
     if (gLang == Lang::Ko || !ko) return ko;
     auto it = Map().find(ko);
     return it != Map().end() ? it->second : ko;
 }
 
 std::string T(const std::string &ko) {
+    if (const char *o = StringOverride(ko.c_str())) return o;
     if (gLang == Lang::Ko) return ko;
     auto it = Map().find(ko);
     if (it != Map().end()) return it->second;

@@ -14,6 +14,12 @@ enum class ElemType { Rect, Image, Text, List, Preview, Media, Info, Battery, Pa
 
 struct Elem {
     std::string name;
+    // 확장 (v1.1): 조건부 표시 — visible_if 를 채운 결과가 비었거나 "0" 이면 숨김, hidden_if 는 반대
+    std::string visibleIf, hiddenIf;
+    // 목록 칸·줄 안 요소 ([화면.<목록>.<이름>]): rect 는 칸 기준. state 0 항상 / 1 선택된 칸만 / 2 선택 안 된 칸만
+    std::vector<Elem> children;
+    int state = 0;
+    bool hasSelColor = false;  // 칸 안 글자: 선택된 칸에서 selected_color 사용
     ElemType type = ElemType::Rect;
     bool visible = true;
     int z = 20;
@@ -85,6 +91,8 @@ struct Layout {
     std::map<std::string, std::string> names;  // [names]: 카테고리·롬 폴더 이름(소문자) -> 화면에 보일 이름
     bool hasClear = false;
     LColor clear;                          // 바탕색
+    std::map<std::string, std::string> strings, stringsEn;  // [strings] / [strings.en]: 화면 문구 바꾸기 (원래 한국어 문구 또는 hint.* 키 -> 바꿀 말)
+    std::string minVersion;                 // [theme] requires = 최소 Joy Launcher 버전
     bool custom = false;                   // 테마의 layout.txt 를 읽었는지
     std::vector<std::string> problems;     // 읽으면서 생긴 문제 ("줄 번호: 내용")
 };
@@ -93,5 +101,7 @@ struct Layout {
 void LayoutDefault(Layout &l);
 // 기본 구성 위에 path 의 layout.txt 를 덮어쓴다. 파일이 없으면 false (기본 그대로)
 bool LayoutLoad(Layout &l, const std::string &path);
+// 기본 구성 위에 글(layout.txt 내용)을 덮어쓴다 (테마 빌더 미리보기용)
+void LayoutLoadText(Layout &l, const std::string &text);
 // 내장 기본 구성의 원문 (설명서·시험용)
 const char *LayoutDefaultText();

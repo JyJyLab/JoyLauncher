@@ -328,6 +328,9 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
         return true;
     }
     if (key == "visible") { if (!ParseBool(val, b)) return bad("on / off"); e.visible = b; return true; }
+    if (key == "visible_if") { e.visibleIf = val; return true; }
+    if (key == "hidden_if") { e.hiddenIf = val; return true; }
+    if (key == "state") return ParseChoice(val, {"all", "selected", "normal"}, e.state) || bad("all / selected / normal");
     if (key == "z") return ParseInt(val, e.z) || bad("number");
     if (key == "rect") {
         if (!ParseInts(val, v4, 4)) return bad("rect = x,y,w,h");
@@ -389,7 +392,7 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
         if (ParseInt(val, v4[0])) { e.gapX = e.gapY = v4[0]; return true; }
         return bad("gap = x,y");
     }
-    if (key == "selected_color") return ParseColor(val, e.selColor) || bad("color");
+    if (key == "selected_color") { if (!ParseColor(val, e.selColor)) return bad("color"); e.hasSelColor = true; return true; }
     if (key == "selection") return ParseColor(val, e.selection) || bad("color");
     if (key == "text_offset") {
         if (ParseInts(val, v4, 2)) { e.textX = v4[0]; e.textY = v4[1]; return true; }
@@ -438,10 +441,28 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
     return false;
 }
 
+// "screen.name" 또는 "screen.list.child" 의 요소 찾기 (없으면 nullptr)
+Elem *FindElem(Layout &l, const std::string &section) {
+    size_t dot = section.find('.');
+    if (dot == std::string::npos) return nullptr;
+    std::string sc = section.substr(0, dot), name = section.substr(dot + 1);
+    Screen *screen = sc == "categories" ? &l.categories : sc == "games" ? &l.games : nullptr;
+    if (!screen) return nullptr;
+    size_t d2 = name.find('.');
+    std::string parent = name.substr(0, d2);
+    Elem *pe = nullptr;
+    for (auto &e : screen->elems)
+        if (e.name == parent) pe = &e;
+    if (!pe || d2 == std::string::npos) return pe;
+    std::string child = name.substr(d2 + 1);
+    for (auto &e : pe->children)
+        if (e.name == child) return &e;
+    return nullptr;
+}
+
 void Parse(Layout &l, std::istream &in, bool builtin) {
     std::string line, section;
-    Screen *screen = nullptr;
-    int cur = -1;                      // screen->elems 안의 번호
+    bool inElem = false;               // 요소 구역 안인지
     std::set<std::string> fresh;       // 이번에 새로 생긴 요소 ("screen.name") 중 type 을 아직 안 받은 것
     std::set<std::string> created;     // 이번에 새로 생긴 요소
     bool skip = false;
@@ -461,28 +482,36 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
         if (line[0] == '[') {
             size_t close = line.find(']');
             section = Lower(Trim(line.substr(1, close == std::string::npos ? std::string::npos : close - 1)));
-            screen = nullptr;
-            cur = -1;
+            inElem = false;
             skip = false;
-            if (section == "theme" || section == "names") continue;
+            if (section == "theme" || section == "names" || section == "strings" || section == "strings.en") continue;
             size_t dot = section.find('.');
             std::string sc = section.substr(0, dot), name = dot == std::string::npos ? "" : section.substr(dot + 1);
-            if (sc == "categories") screen = &l.categories;
-            else if (sc == "games") screen = &l.games;
-            if (!screen || name.empty()) {
-                problem("[" + section + "]: [theme], [names], [categories.<name>], [games.<name>]");
-                screen = nullptr;
+            Screen *screen = sc == "categories" ? &l.categories : sc == "games" ? &l.games : nullptr;
+            if (!screen || name.empty() || name.back() == '.') {
+                problem("[" + section + "]: [theme], [names], [strings], [categories.<name>], [games.<name>], [games.list.<name>]");
                 skip = true;
                 continue;
             }
-            for (size_t i = 0; i < screen->elems.size(); i++)
-                if (screen->elems[i].name == name) cur = (int)i;
-            if (cur < 0) {
+            if (FindElem(l, section)) { inElem = true; continue; }
+            size_t d2 = name.find('.');
+            if (d2 == std::string::npos) {
                 screen->elems.push_back(NewElem(name));
-                cur = (int)screen->elems.size() - 1;
-                fresh.insert(section);
-                created.insert(section);
+            } else {
+                Elem *parent = FindElem(l, sc + "." + name.substr(0, d2));
+                if (!parent || name.find('.', d2 + 1) != std::string::npos) {
+                    problem("[" + section + "]: " + (parent ? "칸 안 요소는 한 단계까지" : "앞 이름의 목록 요소가 없음"));
+                    skip = true;
+                    continue;
+                }
+                Elem ch = NewElem(name.substr(d2 + 1));
+                ch.type = ElemType::Text;  // 칸 안 요소의 기본 종류는 글자
+                ch.z = 50;
+                parent->children.push_back(ch);
             }
+            fresh.insert(section);
+            created.insert(section);
+            inElem = true;
             continue;
         }
         if (skip) continue;
@@ -500,6 +529,7 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
         if (section == "theme") {
             if (key == "font") l.font = val;
             else if (key == "font_bold") l.fontBold = val;
+            else if (key == "requires") l.minVersion = val;
             else if (key == "background_color") {
                 if (ParseColor(val, l.clear) && l.clear.name.empty()) l.hasClear = true;
                 else problem("background_color: #rrggbb");
@@ -516,22 +546,32 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
             if (!key.empty() && !val.empty()) l.names[key] = val;
             continue;
         }
-        if (section.empty() || !screen || cur < 0) { problem("section 밖의 줄: " + line); continue; }
-        Elem &e = screen->elems[cur];
+        if (section == "strings" || section == "strings.en") {
+            // 원래 문구는 대소문자·공백 그대로 (키 줄의 앞뒤 공백만 뺌)
+            std::string rawKey = Trim(line.substr(0, eq));
+            if (!rawKey.empty()) (section == "strings" ? l.strings : l.stringsEn)[rawKey] = val;
+            continue;
+        }
+        Elem *ep = inElem ? FindElem(l, section) : nullptr;
+        if (!ep) { problem("section 밖의 줄: " + line); continue; }
         std::string why;
         if (key == "type") fresh.erase(section);
-        if (!SetProp(e, key, val, created.count(section) > 0, why)) problem("[" + section + "] " + key + "=" + val + " (" + why + ")");
+        if (!SetProp(*ep, key, val, created.count(section) > 0, why)) problem("[" + section + "] " + key + "=" + val + " (" + why + ")");
     }
-    // type 이 없는 새 요소는 버린다
+    // type 이 없는 새 요소는 버린다 (칸 안 요소는 글자가 기본이라 그대로)
     for (const auto &sec : fresh) {
         size_t dot = sec.find('.');
-        Screen &s = sec.compare(0, dot, "categories") == 0 ? l.categories : l.games;
         std::string name = sec.substr(dot + 1);
+        if (name.find('.') != std::string::npos) continue;
+        Screen &s = sec.compare(0, dot, "categories") == 0 ? l.categories : l.games;
         s.elems.erase(std::remove_if(s.elems.begin(), s.elems.end(), [&](const Elem &e) { return e.name == name; }), s.elems.end());
         l.problems.push_back("[" + sec + "]: type 이 없음");
     }
-    for (Screen *s : {&l.categories, &l.games})
-        std::stable_sort(s->elems.begin(), s->elems.end(), [](const Elem &a, const Elem &b) { return a.z < b.z; });
+    auto byZ = [](const Elem &a, const Elem &b) { return a.z < b.z; };
+    for (Screen *s : {&l.categories, &l.games}) {
+        std::stable_sort(s->elems.begin(), s->elems.end(), byZ);
+        for (auto &e : s->elems) std::stable_sort(e.children.begin(), e.children.end(), byZ);
+    }
     if (builtin) l.problems.clear();
 }
 
@@ -541,6 +581,13 @@ void LayoutDefault(Layout &l) {
     l = Layout();
     std::istringstream in(kDefault);
     Parse(l, in, true);
+}
+
+void LayoutLoadText(Layout &l, const std::string &text) {
+    LayoutDefault(l);
+    l.custom = true;
+    std::istringstream in(text);
+    Parse(l, in, false);
 }
 
 bool LayoutLoad(Layout &l, const std::string &path) {

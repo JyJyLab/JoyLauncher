@@ -417,3 +417,14 @@ rect = 952,684,0,0
 - To match a striped panel picture exactly, `row_height` accepts decimals (e.g. `50.4`).
 - For light themes set dark `color.text` / `color.dim`; the battery color is `[<screen>.battery] color`.
 - Mind copyright when sharing a theme that contains company logos or console photos.
+
+## 11. Extensions (v1.1.0+)
+
+Themes that use these should set `requires = 1.1.0` in `[theme]` (the theme builder adds it on export).
+
+- **Cell elements** `[screen.<list>.<name>]`: drawn in every cell (grid) or row (text list). `rect` is relative to the cell; width/height ≤ 0 = to the cell edge (negative = that much less). `type` defaults to text. `state = all | selected | normal`, `selected_color`, negative `z` = below the cell content. `label = off` on the list hides the built-in name.
+- **Conditions**: `visible_if = <placeholder>` / `hidden_if` (empty or `0` = false).
+- **Placeholders**: `{name}` `{short}` `{system}` `{num}` `{num_desc}` `{fav}` `{playcount}` `{lastplayed}` `{selected}` `{file}` `{date}`. Templates: `{a,b,c| · }` joins non-empty values; `{key?yes:no}`; `{key=value?yes:no}`.
+- **`[strings]` / `[strings.en]`**: replace UI text. Keys `hint.categories`, `hint.categories_grid`, `hint.games`, `hint.games_grid`, or any original Korean UI string.
+- **Built-in system names**: folder/category names (FC, SFC, MD, PS1, 액션-아케이드 …) map to ES-DE names (nes, snes, megadrive, psx, arcade_action …), so ES-DE theme art works without theme.txt lines.
+- **Theme builder**: see 테마_빌더.md (Korean).

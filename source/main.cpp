@@ -25,6 +25,7 @@
 
 #include "bgm.h"
 #include "debuglog.h"
+#include "esde.h"
 #include "hbmenu.h"
 #include "i18n.h"
 #include "installed.h"
@@ -131,6 +132,30 @@ static void SaveFavorites() {
     std::ofstream o(gHome + "/favorites.txt");
     o << "# Joy Launcher favorites (rom paths)\n";
     for (const auto &f : gFavSet) o << f << "\n";
+}
+
+// 실행 횟수: /JoyLauncher/playcount.txt (횟수<TAB>마지막 실행 시각(유닉스 초)<TAB>롬 경로) — 테마의 {playcount} {lastplayed}
+struct PlayStat { int count = 0; long long last = 0; };
+static std::map<std::string, PlayStat> gPlay;
+static void LoadPlayCounts() {
+    gPlay.clear();
+    std::ifstream in(gHome + "/playcount.txt");
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        size_t t1 = line.find('\t'), t2 = t1 == std::string::npos ? t1 : line.find('\t', t1 + 1);
+        if (t2 == std::string::npos) continue;
+        PlayStat &p = gPlay[line.substr(t2 + 1)];
+        p.count = atoi(line.substr(0, t1).c_str());
+        p.last = atoll(line.substr(t1 + 1, t2 - t1 - 1).c_str());
+    }
+}
+static void CountPlay(const std::string &file) {
+    PlayStat &p = gPlay[file];
+    p.count++;
+    p.last = (long long)time(nullptr);
+    std::ofstream o(gHome + "/playcount.txt");
+    for (const auto &kv : gPlay) o << kv.second.count << '\t' << kv.second.last << '\t' << kv.first << "\n";
 }
 
 static void ApplyLanguage() {
@@ -450,6 +475,7 @@ static std::string ThemeTitle(const std::string &folder) {
 }
 
 static void LoadTheme(const std::string &name) {
+    SetStringOverrides(nullptr, nullptr);  // gTheme 를 바꾸기 전에 (문구 표가 사라짐)
     gTheme = Theme();
     LayoutDefault(gTheme.layout);
     gThemeSerial++;
@@ -460,6 +486,10 @@ static void LoadTheme(const std::string &name) {
     gTheme.name = gThemeName = name;
     gTheme.base = base;
     LayoutLoad(gTheme.layout, base + "/layout.txt");
+    if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, CurrentVersion()) > 0)
+        gTheme.layout.problems.insert(gTheme.layout.problems.begin(),
+                                      Fmt(T("이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)"), gTheme.layout.minVersion.c_str(), CurrentVersion()));
+    SetStringOverrides(&gTheme.layout.strings, &gTheme.layout.stringsEn);
     // layout.txt 의 문제는 테마 폴더의 layout_errors.txt 에 적어 둔다 (문제가 없으면 지움)
     if (gTheme.layout.custom) {
         std::string ep = base + "/layout_errors.txt";
@@ -533,6 +563,18 @@ static std::string ThemeFind(const std::map<std::string, std::string> &m, const 
     // 4) 여러 폴더를 합친 카테고리: 그림이 있는 첫 폴더 (예: psx+psp+ps2 를 합친 "Play Station")
     for (const auto &f : c->folders) {
         r = first({alias(f), direct(f)});
+        if (!r.empty()) return r;
+    }
+    // 5) 내장 기종 이름 표 (FC -> nes, 액션-아케이드 -> arcade_action …): ES-DE 이름의 그림을 theme.txt 없이 찾음
+    auto esde = [&](const std::string &k) -> std::string {
+        if (k.empty()) return "";
+        std::string id = EsdeSystemName(LowerAscii(k));
+        return id.empty() ? "" : first({alias(id), direct(id)});
+    };
+    r = first({esde(c->name), esde(c->shortName)});
+    if (!r.empty()) return r;
+    for (const auto &f : c->folders) {
+        r = esde(f);
         if (!r.empty()) return r;
     }
     return "";
@@ -748,6 +790,17 @@ static int MarqueeOffset(const std::string &key, int over, int pxPerSec, Uint32 
 }
 
 // maxW 를 넘는 한 줄 글자: scroll 이면 가로로 흐르고(선택된 줄·알림), 아니면 끝을 «…» 로
+// 테마 빌더: 요소마다 실제로 그린 자리 모으기 (선택·끌기용)
+static bool gTrackBox = false;
+static SDL_Rect gDrawBox = {0, 0, 0, 0};
+static void TrackBox(const SDL_Rect &r) {
+    if (!gTrackBox || r.w <= 0 || r.h <= 0) return;
+    if (gDrawBox.w <= 0 || gDrawBox.h <= 0) { gDrawBox = r; return; }
+    SDL_Rect u;
+    SDL_UnionRect(&gDrawBox, &r, &u);
+    gDrawBox = u;
+}
+
 static void DrawText(App &a, TTF_Font *f, const std::string &s, int x, int y, SDL_Color c, int maxW = 0,
                      int align = 0, int wrap = 0, int clipH = 0, int scroll = 0) {
     SDL_Texture *t = a.text.Get(f, s, c, wrap);
@@ -778,6 +831,7 @@ static void DrawText(App &a, TTF_Font *f, const std::string &s, int x, int y, SD
     if (align == 2) dx = x - boxW;
     SDL_Rect dst = {dx, y, src.w, src.h};
     SDL_RenderCopy(a.r, t, &src, &dst);
+    TrackBox({dx, y, boxW, src.h});
     if (ell) {
         int eh;
         SDL_QueryTexture(ell, nullptr, nullptr, nullptr, &eh);
@@ -793,6 +847,7 @@ static void Fill(App &a, int x, int y, int w, int h, SDL_Color c) {
     SDL_SetRenderDrawColor(a.r, c.r, c.g, c.b, c.a);
     SDL_Rect rc = {x, y, w, h};
     SDL_RenderFillRect(a.r, &rc);
+    TrackBox(rc);
 }
 
 static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
@@ -801,6 +856,7 @@ static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
     float s = std::min(w / (float)bw, h / (float)bh);
     SDL_Rect d = {x + (int)(w - bw * s) / 2, y + (int)(h - bh * s) / 2, (int)(bw * s), (int)(bh * s)};
     SDL_RenderCopy(a.r, t, nullptr, &d);
+    TrackBox(d);
     return d;
 }
 
@@ -1111,8 +1167,10 @@ static void DrawFit(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit,
     if (w <= 0 || h <= 0) {  // 크기를 안 정했으면 그림 크기 그대로
         SDL_Rect d = {x, y, bw, bh};
         SDL_RenderCopy(a.r, t, nullptr, &d);
+        TrackBox(d);
         return;
     }
+    TrackBox({x, y, w, h});
     if (fit == 2) {
         SDL_Rect d = {x, y, w, h};
         SDL_RenderCopy(a.r, t, nullptr, &d);
@@ -1149,6 +1207,10 @@ struct DrawCtx {
     const Game *game = nullptr;       // 선택된 게임 (게임 화면)
     int index = 0, count = 0;         // 목록의 선택 위치(1부터) / 전체
     std::string hint;
+    // 목록 칸 안 요소를 그릴 때: 그 칸의 항목 (col/game 은 그 항목으로 바뀜)
+    bool item = false, itemSel = false;
+    int itemIdx = 0, itemCount = 0;
+    const Collection *screenCol = nullptr;  // 칸 그리기 전의 col (게임 화면의 열린 카테고리)
 };
 
 static std::string GameLongTitle(const Game &g) {
@@ -1174,7 +1236,89 @@ static std::string GameDescription(App &a, const Game &g) {
     return g.description.substr(0, cut);
 }
 
-// 글자 틀의 {자리표} 채우기. 모르는 자리표는 그대로 둔다
+// 자리표 하나의 값. 모르는 이름이면 false
+static bool PlaceValue(App &a, const std::string &k, const DrawCtx &c, std::string &v) {
+    const Game *g = c.game;
+    v.clear();
+    if (k == "app") v = "Joy Launcher";
+    else if (k == "version") v = CurrentVersion();
+    else if (k == "applet") v = gAppletMode ? T("애플릿 모드") : "";
+    else if (k == "hint") v = c.hint;
+    else if (k == "clock") {
+        time_t now = time(nullptr);
+        char buf[16];
+        strftime(buf, sizeof(buf), "%H:%M", localtime(&now));
+        v = buf;
+    }
+    else if (k == "date") {
+        time_t now = time(nullptr);
+        char buf[16];
+        strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&now));
+        v = buf;
+    }
+    else if (k == "category") v = c.col ? CatName(*c.col) : "";
+    else if (k == "games") v = c.col ? std::to_string(c.col->games.size()) : "";
+    else if (k == "index") v = std::to_string(c.index);
+    else if (k == "count") v = std::to_string(c.count);
+    else if (k == "category_index") v = std::to_string((c.games ? a.col : a.catSel) + 1);
+    else if (k == "category_count") v = std::to_string(a.cols.size());
+    else if (k == "title") v = g ? g->title : "";
+    else if (k == "longtitle") v = g ? GameLongTitle(*g) : "";
+    else if (k == "developer") v = g ? g->developer : "";
+    else if (k == "release") v = g ? g->release : "";
+    else if (k == "year") v = g ? g->release.substr(0, std::min<size_t>(4, g->release.size())) : "";
+    else if (k == "players") v = g ? g->players : "";
+    else if (k == "genre") v = g ? g->genre : "";
+    else if (k == "meta") v = g ? GameMeta(*g) : "";
+    else if (k == "description") v = g ? GameDescription(a, *g) : "";
+    else if (k == "file") {  // 롬 파일 이름 (확장자 뺌)
+        if (g) {
+            size_t sl = g->file.find_last_of('/'), dot = g->file.find_last_of('.');
+            v = g->file.substr(sl == std::string::npos ? 0 : sl + 1);
+            if (dot != std::string::npos && dot > sl + 1) v = g->file.substr(sl + 1, dot - sl - 1);
+        }
+    }
+    // 칸 안 요소용 (칸이 아니면 선택된 항목 기준)
+    else if (k == "name") v = c.item ? (c.games ? (g ? g->title : "") : (c.col ? CatName(*c.col) : "")) : (c.games ? (g ? g->title : "") : (c.col ? CatName(*c.col) : ""));
+    else if (k == "short") v = c.col ? (!c.col->shortName.empty() ? c.col->shortName : c.col->folders.size() == 1 ? c.col->folders[0] : "") : "";
+    else if (k == "system") {  // ES-DE 기종 이름 (모르면 shortname·폴더 이름)
+        if (c.col) {
+            for (const std::string &n : {c.col->name, c.col->shortName, c.col->folders.empty() ? std::string() : c.col->folders[0]}) {
+                v = EsdeSystemName(LowerAscii(n));
+                if (!v.empty()) break;
+            }
+            if (v.empty()) v = c.col->shortName.empty() && !c.col->folders.empty() ? c.col->folders[0] : c.col->shortName;
+        }
+    }
+    else if (k == "num") v = std::to_string(c.item ? c.itemIdx + 1 : c.index);
+    else if (k == "num_desc") v = std::to_string(c.item ? c.itemCount - c.itemIdx : c.count - c.index + 1);
+    else if (k == "selected") v = c.item ? (c.itemSel ? "1" : "") : "1";
+    else if (k == "fav") v = g && (gFavSet.count(g->file) || (c.col && c.col->shortName == "hbfav")) ? "★" : "";
+    else if (k == "playcount") {
+        auto it = g ? gPlay.find(g->file) : gPlay.end();
+        v = std::to_string(it == gPlay.end() ? 0 : it->second.count);
+    }
+    else if (k == "lastplayed") {
+        auto it = g ? gPlay.find(g->file) : gPlay.end();
+        if (it != gPlay.end() && it->second.last > 0) {
+            time_t t = (time_t)it->second.last;
+            char buf[16];
+            strftime(buf, sizeof(buf), "%Y-%m-%d", localtime(&t));
+            v = buf;
+        }
+    }
+    else if (k == "screen") v = c.games ? "games" : "categories";
+    else return false;
+    return true;
+}
+
+// 조건 값: 비었거나 "0" 이면 거짓
+static bool Truthy(const std::string &v) { return !v.empty() && v != "0"; }
+
+// 글자 틀의 {자리표} 채우기. 모르는 자리표는 그대로 둔다.
+//   {이름}                       값
+//   {이름1,이름2,이름3| · }       비지 않은 값만 « · » 로 이어 붙임
+//   {이름?참일 때:거짓일 때}       값이 있으면(0 아님) 앞, 없으면 뒤. {이름=값?…:…} 은 값이 같은지
 static std::string Expand(App &a, const std::string &tpl, const DrawCtx &c) {
     if (tpl.find('{') == std::string::npos) return tpl;
     std::string out;
@@ -1183,33 +1327,27 @@ static std::string Expand(App &a, const std::string &tpl, const DrawCtx &c) {
         if (close == std::string::npos) { out += tpl[i++]; continue; }
         std::string k = tpl.substr(i + 1, close - i - 1), v;
         bool known = true;
-        const Game *g = c.game;
-        if (k == "app") v = "Joy Launcher";
-        else if (k == "version") v = CurrentVersion();
-        else if (k == "applet") v = gAppletMode ? T("애플릿 모드") : "";
-        else if (k == "hint") v = c.hint;
-        else if (k == "clock") {
-            time_t now = time(nullptr);
-            char buf[16];
-            strftime(buf, sizeof(buf), "%H:%M", localtime(&now));
-            v = buf;
+        size_t q = k.find('?'), bar = k.find('|');
+        if (q != std::string::npos) {
+            std::string cond = k.substr(0, q), rest = k.substr(q + 1), want;
+            size_t colon = rest.find(':');
+            std::string yes = rest.substr(0, colon), no = colon == std::string::npos ? "" : rest.substr(colon + 1);
+            size_t eq = cond.find('=');
+            if (eq != std::string::npos) { want = cond.substr(eq + 1); cond = cond.substr(0, eq); }
+            std::string cv;
+            known = PlaceValue(a, cond, c, cv);
+            if (known) v = (eq != std::string::npos ? cv == want : Truthy(cv)) ? yes : no;
+        } else if (bar != std::string::npos) {
+            std::string sep = k.substr(bar + 1), part;
+            std::stringstream ks(k.substr(0, bar));
+            while (known && std::getline(ks, part, ',')) {
+                std::string pv;
+                known = PlaceValue(a, part, c, pv);
+                if (!pv.empty()) v += (v.empty() ? "" : sep) + pv;
+            }
+        } else {
+            known = PlaceValue(a, k, c, v);
         }
-        else if (k == "category") v = c.col ? CatName(*c.col) : "";
-        else if (k == "games") v = c.col ? std::to_string(c.col->games.size()) : "";
-        else if (k == "index") v = std::to_string(c.index);
-        else if (k == "count") v = std::to_string(c.count);
-        else if (k == "category_index") v = std::to_string((c.games ? a.col : a.catSel) + 1);
-        else if (k == "category_count") v = std::to_string(a.cols.size());
-        else if (k == "title") v = g ? g->title : "";
-        else if (k == "longtitle") v = g ? GameLongTitle(*g) : "";
-        else if (k == "developer") v = g ? g->developer : "";
-        else if (k == "release") v = g ? g->release : "";
-        else if (k == "year") v = g ? g->release.substr(0, std::min<size_t>(4, g->release.size())) : "";
-        else if (k == "players") v = g ? g->players : "";
-        else if (k == "genre") v = g ? g->genre : "";
-        else if (k == "meta") v = g ? GameMeta(*g) : "";
-        else if (k == "description") v = g ? GameDescription(a, *g) : "";
-        else known = false;
         if (known) out += v;
         else out += tpl.substr(i, close - i + 1);
         i = close + 1;
@@ -1217,6 +1355,16 @@ static std::string Expand(App &a, const std::string &tpl, const DrawCtx &c) {
     // 자리표가 모두 비어 글자가 공백뿐이면 그리지 않는다
     if (out.find_first_not_of(" \t") == std::string::npos) return "";
     return out;
+}
+
+// visible_if / hidden_if
+static bool ElemShown(App &a, const Elem &e, const DrawCtx &c) {
+    if (!e.visible) return false;
+    auto cond = [&](const std::string &t) { return Truthy(Expand(a, t.find('{') == std::string::npos ? "{" + t + "}" : t, c)); };
+    if (!e.visibleIf.empty() && !cond(e.visibleIf)) return false;
+    if (!e.hiddenIf.empty() && cond(e.hiddenIf)) return false;
+    if (c.item && ((e.state == 1 && !c.itemSel) || (e.state == 2 && c.itemSel))) return false;
+    return true;
 }
 
 static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
@@ -1281,7 +1429,7 @@ static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
     if (s.empty()) return;
     TTF_Font *f = FontFor(e.bold, e.size, s);
     if (!f) return;
-    SDL_Color col = LC(e.color);
+    SDL_Color col = c.item && c.itemSel && e.hasSelColor ? LC(e.selColor) : LC(e.color);
     if (e.wrap && e.w > 0) {
         DrawText(a, f, s, e.x, e.y, col, e.w, 0, e.w, e.h, e.scroll ? kScrollDesc : 0);
         return;
@@ -1313,6 +1461,45 @@ static void ScreenGeom(bool games, int &cols, int &rows) {
     ListGeom(*l, cols, rows);
 }
 
+static void DrawElem(App &a, const Elem &e, const DrawCtx &c);
+static std::map<std::string, SDL_Rect> gBounds;  // 테마 빌더: "화면.요소" -> 그린 자리
+
+// 목록 칸(줄) 안 요소: rc = 칸 자리, sc = 선택 확대 배율, before = z 가 음수인 것(칸 내용 아래)만
+static void DrawCellChildren(App &a, const Elem &e, const DrawCtx &c, int idx, int n, bool s, SDL_Rect rc, float sc, bool before) {
+    for (const Elem &ch : e.children) {
+        if ((ch.z < 0) != before || ch.type == ElemType::List || ch.type == ElemType::Preview) continue;
+        DrawCtx ic = c;
+        ic.item = true;
+        ic.itemSel = s;
+        ic.itemIdx = idx;
+        ic.itemCount = n;
+        ic.screenCol = c.col;
+        if (c.games) ic.game = &c.col->games[idx];
+        else { ic.col = &a.cols[idx]; ic.game = nullptr; }
+        if (!ElemShown(a, ch, ic)) continue;
+        Elem ce = ch;
+        auto px = [&](int v) { return (int)(v * sc); };
+        // 칸 기준 자리. 폭이 0 이하면 칸 오른쪽 끝까지(음수는 그만큼 덜), 높이도 같음 (글자는 높이 0 = 한 줄)
+        ce.x = rc.x + px(ch.x);
+        ce.y = rc.y + px(ch.y);
+        ce.w = ch.w > 0 ? px(ch.w) : rc.w - px(ch.x) + px(ch.w);
+        ce.h = ch.h > 0 ? px(ch.h) : (ch.type == ElemType::Text && ch.h == 0) ? 0 : rc.h - px(ch.y) + px(ch.h);
+        ce.lx = rc.x + px(ch.lx); ce.ly = rc.y + px(ch.ly); ce.lw = px(ch.lw); ce.lh = px(ch.lh);
+        if (sc != 1.0f) ce.size = std::max(6, px(ch.size));
+        ce.hasRect = true;
+        SDL_Rect outer = gDrawBox;
+        if (gTrackBox && s) gDrawBox = {0, 0, 0, 0};
+        DrawElem(a, ce, ic);
+        if (gTrackBox && s) {
+            SDL_Rect b = gDrawBox, u;
+            if (ce.w > 0 && ce.h > 0) { SDL_Rect r = {ce.x, ce.y, ce.w, ce.h}; if (b.w > 0) { SDL_UnionRect(&b, &r, &u); b = u; } else b = r; }
+            gBounds[(c.games ? "games." : "categories.") + e.name + "." + ch.name] = b;
+            gDrawBox = outer;
+            TrackBox(b);
+        }
+    }
+}
+
 static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
     int cols, rows;
     ListGeom(e, cols, rows);
@@ -1333,6 +1520,12 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
                 int g = e.selectorGrow;
                 if (st) DrawFit(a, st, e.x - g, ry - g, e.w + g * 2, rh + g * 2, 2);
                 else Fill(a, e.x, ry, e.w, rh, LC(e.selection));
+            }
+            SDL_Rect rowRc = {e.x, ry, e.w, rh};
+            if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rowRc, 1.0f, true);
+            if (e.label == 2) {  // label = off: 제목을 그리지 않음 (칸 안 요소로 직접 배치)
+                if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rowRc, 1.0f, false);
+                continue;
             }
             std::string label = c.games ? c.col->games[idx].title : CatName(a.cols[idx]);
             int maxW = e.w - e.textX - (showCount ? 148 : 18), dx = 0;
@@ -1365,6 +1558,7 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
                     DrawText(a, fc, num, e.x + e.w - e.countX, ry + cy, LC(e.countColor), 0, 2);
                 }
             }
+            if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rowRc, 1.0f, false);
         }
         return;
     }
@@ -1398,6 +1592,7 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
                 int g = px(e.cardGrow);
                 DrawFit(a, ct, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
             }
+        if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rc, sc, true);
         std::string path = cellPath(idx), name;
         if (c.games) name = starred(idx) ? "★ " + c.col->games[idx].title : c.col->games[idx].title;
         else name = CatName(a.cols[idx]);
@@ -1417,6 +1612,7 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
                 int g = px(e.selectorGrow);
                 DrawFit(a, st, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
             }
+        if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rc, sc, false);
     };
     int end = std::min(n, top + cols * rows);
     for (int idx = top; idx < end; idx++)
@@ -1520,18 +1716,31 @@ static void RenderScreen(App &a, const Screen &sc, const DrawCtx &c) {
     gLoadBudget = gShotMode ? 100000 : 1;
     a.thumbs.tick++;
     for (const Elem &e : sc.elems) {
-        if (!e.visible) continue;
-        switch (e.type) {
-        case ElemType::Rect: Fill(a, e.x, e.y, e.w, e.h, LC(e.color)); break;
-        case ElemType::Image: DrawElemImage(a, e, c); break;
-        case ElemType::Text: DrawElemText(a, e, c); break;
-        case ElemType::List: DrawElemList(a, e, c); break;
-        case ElemType::Preview: DrawElemPreview(a, e, c); break;
-        case ElemType::Media: DrawElemMedia(a, e, c); break;
-        case ElemType::Info: DrawElemInfo(a, e, c); break;
-        case ElemType::Battery: gBatteryLeft = DrawBattery(a, e.x + e.w, e.y, LC(e.color)); break;
-        case ElemType::Pager: DrawElemPager(a, e, c); break;
+        if (!ElemShown(a, e, c)) continue;
+        gDrawBox = {0, 0, 0, 0};
+        DrawElem(a, e, c);
+        if (gTrackBox) {
+            SDL_Rect b = gDrawBox, u;
+            if (e.w > 0 && e.h > 0 && e.type != ElemType::Battery) {
+                SDL_Rect r = {e.x, e.y, e.w, e.h};
+                if (b.w > 0) { SDL_UnionRect(&b, &r, &u); b = u; } else b = r;
+            }
+            gBounds[(c.games ? "games." : "categories.") + e.name] = b;
         }
+    }
+}
+
+static void DrawElem(App &a, const Elem &e, const DrawCtx &c) {
+    switch (e.type) {
+    case ElemType::Rect: Fill(a, e.x, e.y, e.w, e.h, c.item && c.itemSel && e.hasSelColor ? LC(e.selColor) : LC(e.color)); break;
+    case ElemType::Image: DrawElemImage(a, e, c); break;
+    case ElemType::Text: DrawElemText(a, e, c); break;
+    case ElemType::List: DrawElemList(a, e, c); break;
+    case ElemType::Preview: DrawElemPreview(a, e, c); break;
+    case ElemType::Media: DrawElemMedia(a, e, c); break;
+    case ElemType::Info: DrawElemInfo(a, e, c); break;
+    case ElemType::Battery: gBatteryLeft = DrawBattery(a, e.x + e.w, e.y, LC(e.color)); break;
+    case ElemType::Pager: DrawElemPager(a, e, c); break;
     }
 }
 
@@ -1542,8 +1751,10 @@ static void RenderCategories(App &a) {
     c.count = (int)a.cols.size();
     int cols, rows;
     ScreenGeom(false, cols, rows);
-    c.hint = cols > 1 ? T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼◀▶ 선택")
-                      : T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼ 선택");
+    const char *ov = StringOverride(cols > 1 ? "hint.categories_grid" : "hint.categories");
+    if (!ov && cols > 1) ov = StringOverride("hint.categories");
+    c.hint = ov ? ov : cols > 1 ? T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼◀▶ 선택")
+                                : T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼ 선택");
     RenderScreen(a, gTheme.layout.categories, c);
 }
 
@@ -1557,8 +1768,10 @@ static void RenderGames(App &a) {
     c.count = (int)col.games.size();
     int cols, rows;
     ScreenGeom(true, cols, rows);
-    c.hint = cols > 1 ? T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ▲▼◀▶ 선택  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션")
-                      : T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션");
+    const char *ov = StringOverride(cols > 1 ? "hint.games_grid" : "hint.games");
+    if (!ov && cols > 1) ov = StringOverride("hint.games");
+    c.hint = ov ? ov : cols > 1 ? T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ▲▼◀▶ 선택  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션")
+                                : T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션");
     RenderScreen(a, gTheme.layout.games, c);
 }
 
@@ -2021,6 +2234,7 @@ static bool LaunchNro(App &a, const Game &g) {
     }
     SaveState(a, true);
     bool ok = ChainLoad(a, g.file, {});
+    if (ok) CountPlay(g.file);
     LogLaunch(a, g, g.file, ok ? std::string(T("실행 예약됨")) : T("실패: ") + a.message);
     return ok;
 }
@@ -2044,10 +2258,12 @@ static bool LaunchGame(App &a) {
     }
     SaveState(a, true);
     bool ok = ChainLoad(a, nro, {g.file});
+    if (ok) CountPlay(g.file);
     LogLaunch(a, g, nro, ok ? std::string(T("실행 예약됨")) : T("실패: ") + a.message);
     return ok;
 }
 
+#ifndef JOY_BUILDER
 int main(int argc, char **argv) {
     std::string shot;
     int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1;
@@ -2197,6 +2413,7 @@ int main(int argc, char **argv) {
     LoadCoreConfig(gHome + "/cores.txt");
     LoadFavorites();
     LoadHbFav();
+    LoadPlayCounts();
     gRoots = roots;
     LoadGames(a, false, log);
     printf("%s", log.c_str());
@@ -2776,3 +2993,8 @@ int main(int argc, char **argv) {
 #endif
     return 0;
 }
+#endif  // JOY_BUILDER
+
+#ifdef JOY_BUILDER
+#include "../builder/joy_api.inc"
+#endif

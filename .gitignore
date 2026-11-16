@@ -12,8 +12,14 @@
 !/README.en.md
 !/themes/
 !/tools/
+!/builder/
 !/icon.jpg
 !/.gitignore
 *.o
 *.d
 __pycache__/
+builder/build/
+builder/build-win/
+builder/dist/
+builder/third_party/dl/
+builder/third_party/sdl-mingw/

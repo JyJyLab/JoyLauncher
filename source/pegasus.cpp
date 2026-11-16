@@ -49,12 +49,17 @@ const std::unordered_map<std::string, DirEntry> &DirIndex(const std::string &dir
             std::string n = ent->d_name;
             if (n == "." || n == "..") continue;
             bool isDir;
+#ifdef _WIN32  // 테마 빌더 윈도우 빌드: d_type 없음
+            struct stat st;
+            isDir = stat((dir + "/" + n).c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+#else
             if (ent->d_type == DT_DIR) isDir = true;
             else if (ent->d_type == DT_REG) isDir = false;
             else {
                 struct stat st;
                 isDir = stat((dir + "/" + n).c_str(), &st) == 0 && S_ISDIR(st.st_mode);
             }
+#endif
             m[EntryKey(n)] = {n, isDir};
         }
         closedir(d);
