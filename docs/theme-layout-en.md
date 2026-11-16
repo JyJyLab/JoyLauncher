@@ -422,6 +422,8 @@ rect = 952,684,0,0
 
 Themes that use these should set `requires = 1.1.0` in `[theme]` (the theme builder adds it on export).
 
+Button icons (v1.1.1+): `[A]` `[B]` `[X]` `[Y]` `[L]` `[R]` `[ZL]` `[ZR]` `[+]` `[-]` `[L/R]` in hints and messages are drawn as Switch button shapes (circles / rounded bars, letters cut out) in the text color and size. Turn it off with `button_icons = off` in `[theme]`.
+
 - **Cell elements** `[screen.<list>.<name>]`: drawn in every cell (grid) or row (text list). `rect` is relative to the cell; width/height ≤ 0 = to the cell edge (negative = that much less). `type` defaults to text. `state = all | selected | normal`, `selected_color`, negative `z` = below the cell content. `label = off` on the list hides the built-in name.
 - **Conditions**: `visible_if = <placeholder>` / `hidden_if` (empty or `0` = false).
 - **Placeholders**: `{name}` `{short}` `{system}` `{num}` `{num_desc}` `{fav}` `{playcount}` `{lastplayed}` `{selected}` `{file}` `{date}`. Templates: `{a,b,c| · }` joins non-empty values; `{key?yes:no}`; `{key=value?yes:no}`.

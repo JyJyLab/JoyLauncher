@@ -561,6 +561,11 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
             } else if (key == "transition") {
                 if (!ParseChoice(val, {"none", "fade", "slide"}, l.transition)) problem("transition: none / fade / slide");
             }
+            else if (key == "button_icons") {
+                bool b;
+                if (!ParseBool(val, b)) problem("button_icons: on / off");
+                else l.buttonIcons = b;
+            }
             else if (key == "background_color") {
                 if (ParseColor(val, l.clear) && l.clear.name.empty()) l.hasClear = true;
                 else problem("background_color: #rrggbb");

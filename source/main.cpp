@@ -544,7 +544,8 @@ struct Theme {
     bool Active() const { return !bg.empty() || !logo.empty() || layout.custom; }
 };
 static Theme gTheme;
-static Uint32 gThemeSerial = 0;  // 테마를 바꿀 때마다 +1 (글꼴·그림 캐시 비우기용)
+static Uint32 gThemeSerial = 0;
+static bool ButtonIconsOn() { return gTheme.layout.buttonIcons; }  // 테마를 바꿀 때마다 +1 (글꼴·그림 캐시 비우기용)
 
 static std::string LowerAscii(std::string s) {
     for (auto &c : s)
@@ -1244,8 +1245,173 @@ static void TrackBox(const SDL_Rect &r) {
     gDrawBox = u;
 }
 
+// ---- 도움말의 버튼 표시: "[A]" "[ZL]" "[-]" "[L/R]" … 를 스위치 버튼 모양 그림으로
+// A·B·X·Y·+·− 는 동그라미, L·R·ZL·ZR 은 둥근 막대. 글자 부분은 비워(투명) 어느 바탕에서도 읽힌다
+static TTF_Font *FontRaw(bool bold, int size, bool theme);
+static bool ButtonIconsOn();
+static bool IsButtonLabel(const std::string &b) {
+    static const char *k[] = {"A", "B", "X", "Y", "L", "R", "ZL", "ZR", "+", "-", "−"};
+    for (const char *x : k)
+        if (b == x) return true;
+    return false;
+}
+// 글자를 [버튼] 과 나머지로 나눔. 버튼이 하나도 없으면 false
+struct HintPart { std::string text; bool button; };
+static bool SplitButtons(const std::string &s, std::vector<HintPart> &out) {
+    out.clear();
+    bool any = false;
+    size_t i = 0;
+    std::string cur;
+    while (i < s.size()) {
+        size_t e = s[i] == '[' ? s.find(']', i) : std::string::npos;
+        if (e != std::string::npos && e - i <= 6) {
+            std::string in = s.substr(i + 1, e - i - 1);
+            std::vector<std::string> keys;
+            size_t sl = in.find('/');
+            if (sl != std::string::npos) keys = {in.substr(0, sl), in.substr(sl + 1)};
+            else keys = {in};
+            bool ok = true;
+            for (const auto &k : keys) ok = ok && IsButtonLabel(k);
+            if (ok) {
+                if (!cur.empty()) out.push_back({cur, false});
+                cur.clear();
+                for (const auto &k : keys) out.push_back({k == "-" ? "−" : k, true});
+                any = true;
+                i = e + 1;
+                continue;
+            }
+        }
+        cur += s[i++];
+    }
+    if (!cur.empty()) out.push_back({cur, false});
+    return any;
+}
+// 버튼 그림 (색 c, 높이 h). TextCache 에 함께 둠
+static SDL_Texture *ButtonTexture(App &a, const std::string &label, int h, SDL_Color c) {
+    char key[64];
+    snprintf(key, sizeof(key), "\x01btn|%d|%02x%02x%02x|", h, c.r, c.g, c.b);
+    std::string k = key + label;
+    auto it = a.text.map.find(k);
+    if (it != a.text.map.end()) return it->second;
+    bool round = label == "A" || label == "B" || label == "X" || label == "Y" || label == "+" || label == "−";
+    int w = round ? h : (int)(h * (label.size() > 1 ? 1.8f : 1.5f));
+    SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!sf) return nullptr;
+    // 모양: 동그라미 / 둥근 막대 (가장자리 부드럽게, 4x4 표본)
+    float r = h / 2.0f;
+    for (int y = 0; y < h; y++) {
+        Uint8 *row = (Uint8 *)sf->pixels + y * sf->pitch;
+        for (int x = 0; x < w; x++) {
+            int in = 0;
+            for (int sy = 0; sy < 4; sy++)
+                for (int sx = 0; sx < 4; sx++) {
+                    float px = x + (sx + 0.5f) / 4, py = y + (sy + 0.5f) / 4;
+                    float cx = std::min(std::max(px, r), w - r);  // 막대: 가운데 부분은 곧게
+                    float dx = px - cx, dy = py - r;
+                    if (dx * dx + dy * dy <= r * r) in++;
+                }
+            row[x * 4 + 0] = c.r;
+            row[x * 4 + 1] = c.g;
+            row[x * 4 + 2] = c.b;
+            row[x * 4 + 3] = (Uint8)(c.a * in / 16);
+        }
+    }
+    // + · − 는 직접 그림 (글꼴마다 모양·높이가 달라서)
+    if (label == "+" || label == "−") {
+        int len = (int)(h * 0.56f), th = std::max(2, (int)(h * 0.14f + 0.5f));
+        auto cut = [&](int x0, int y0, int ww, int hh) {
+            for (int y = y0; y < y0 + hh; y++)
+                for (int x = x0; x < x0 + ww; x++)
+                    if (x >= 0 && y >= 0 && x < w && y < h) ((Uint8 *)sf->pixels)[y * sf->pitch + x * 4 + 3] = 0;
+        };
+        cut((w - len) / 2, (h - th) / 2, len, th);
+        if (label == "+") cut((w - th) / 2, (h - len) / 2, th, len);
+    }
+    // 글자 자리는 비움 (내장 굵은 글꼴)
+    int fs = std::max(8, (int)(h * (round ? 0.78f : 0.7f)));
+    if (label != "+" && label != "−")
+    if (TTF_Font *lf = FontRaw(true, fs, false)) {
+        SDL_Surface *ls = TTF_RenderUTF8_Blended(lf, label.c_str(), SDL_Color{255, 255, 255, 255});
+        if (ls) {
+            SDL_Surface *lc = SDL_ConvertSurfaceFormat(ls, SDL_PIXELFORMAT_RGBA32, 0);
+            SDL_FreeSurface(ls);
+            if (lc) {
+                int minx, maxx, miny, maxy, adv;
+                int ox = (w - lc->w) / 2, oy = (h - lc->h) / 2;
+                // 대문자 높이 기준으로 세로 가운데 (글꼴의 아래 여백 보정)
+                Uint32 ch = (unsigned char)label[0];
+                if (TTF_GlyphMetrics32(lf, ch, &minx, &maxx, &miny, &maxy, &adv) == 0)
+                    oy = (h - (maxy - miny)) / 2 - (TTF_FontAscent(lf) - maxy);
+                for (int y = 0; y < lc->h; y++) {
+                    int ty = y + oy;
+                    if (ty < 0 || ty >= h) continue;
+                    const Uint8 *src = (const Uint8 *)lc->pixels + y * lc->pitch;
+                    Uint8 *dst = (Uint8 *)sf->pixels + ty * sf->pitch;
+                    for (int x = 0; x < lc->w; x++) {
+                        int tx = x + ox;
+                        if (tx < 0 || tx >= w) continue;
+                        dst[tx * 4 + 3] = (Uint8)(dst[tx * 4 + 3] * (255 - src[x * 4 + 3]) / 255);
+                    }
+                }
+                SDL_FreeSurface(lc);
+            }
+        }
+    }
+    SDL_Texture *t = SDL_CreateTextureFromSurface(a.r, sf);
+    SDL_FreeSurface(sf);
+    if (t) SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    if (a.text.map.size() > 800) a.text.Clear();
+    a.text.map[k] = t;
+    return t;
+}
+// 버튼 그림이 섞인 한 줄. 다 들어가지 않으면 false (보통 글자로 그림)
+static bool DrawTextButtons(App &a, TTF_Font *f, const std::string &s, int x, int y, SDL_Color c, int maxW, int align) {
+    std::vector<HintPart> parts;
+    if (!SplitButtons(s, parts)) return false;
+    int fh = TTF_FontHeight(f), asc = TTF_FontAscent(f);
+    int bh = std::max(12, asc * 100 / 100);             // 버튼 높이 ≈ 글자 윗선~바닥선
+    int by = y + asc - bh + std::max(1, bh / 10);       // 글자 바닥선보다 조금 아래까지
+    int gap = std::max(2, bh / 4);
+    struct Piece { SDL_Texture *t; int w, h; bool button; };
+    std::vector<Piece> ps;
+    int total = 0;
+    for (size_t i = 0; i < parts.size(); i++) {
+        SDL_Texture *t;
+        if (parts[i].button) t = ButtonTexture(a, parts[i].text, bh, c);
+        else {
+            // 버튼 바로 뒤 공백 하나는 버튼 간격으로
+            std::string tx = parts[i].text;
+            if (i > 0 && parts[i - 1].button && !tx.empty() && tx[0] == ' ') tx.erase(0, 1);
+            if (tx.empty()) continue;
+            t = a.text.Get(f, tx, c);
+        }
+        if (!t) return false;
+        int w, h;
+        SDL_QueryTexture(t, nullptr, nullptr, &w, &h);
+        if (!ps.empty()) total += parts[i].button && ps.back().button ? gap / 2 : gap;
+        ps.push_back({t, w, h, parts[i].button});
+        total += w;
+    }
+    if (maxW > 0 && total > maxW) return false;
+    int dx = align == 1 ? x - total / 2 : align == 2 ? x - total : x;
+    int cx = dx;
+    for (size_t i = 0; i < ps.size(); i++) {
+        if (i > 0) cx += ps[i].button && ps[i - 1].button ? gap / 2 : gap;
+        SDL_Rect d = {cx, ps[i].button ? by : y, ps[i].w, ps[i].h};
+        AlphaMod(ps[i].t, true);
+        SDL_RenderCopy(a.r, ps[i].t, nullptr, &d);
+        AlphaMod(ps[i].t, false);
+        cx += ps[i].w;
+    }
+    TrackBox({dx, y, total, fh});
+    return true;
+}
+
 static void DrawText(App &a, TTF_Font *f, const std::string &s, int x, int y, SDL_Color c, int maxW = 0,
                      int align = 0, int wrap = 0, int clipH = 0, int scroll = 0) {
+    if (wrap == 0 && clipH == 0 && s.find('[') != std::string::npos && ButtonIconsOn() &&
+        DrawTextButtons(a, f, s, x, y, c, maxW, align))
+        return;
     SDL_Texture *t = a.text.Get(f, s, c, wrap);
     if (!t) return;
     int tw, th;
@@ -2246,6 +2412,10 @@ static void DrawElemPreview(App &a, const Elem &e, const DrawCtx &c) {
 }
 
 // 게임 화면: 화면 사진(또는 영상 장면)을 크게, 박스 사진은 오른쪽 아래에 작게 겹쳐서. 화면 사진이 없으면 박스 사진만
+// 그림을 읽는 동안 칸 자리 표시 (어두운 네모): 배경 그림도 배경 색도 없는 기본 화면에서만.
+// 배경 색을 정한 테마(흰 바탕 갤러리테마 등)에서는 빠르게 넘길 때 검은 네모가 깜빡여 보이므로 그리지 않는다
+static bool MediaPlaceholder() { return !Themed() && !gTheme.layout.hasClear; }
+
 static void DrawElemMedia(App &a, const Elem &e, const DrawCtx &c) {
     if (!c.game) return;
     const Game &g = *c.game;
@@ -2261,7 +2431,7 @@ static void DrawElemMedia(App &a, const Elem &e, const DrawCtx &c) {
         SDL_Texture *shot = img(shotPath);
         SDL_Rect area = {e.x, e.y, e.w, e.h};
         if (shot) area = DrawImage(a, shot, e.x, e.y, e.w, e.h);
-        else if (!Themed()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
+        else if (MediaPlaceholder()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
         SDL_Texture *box = e.overlay && g.boxart != shotPath ? img(g.boxart) : nullptr;
         if (box) {
             int bw, bh;
@@ -2275,7 +2445,7 @@ static void DrawElemMedia(App &a, const Elem &e, const DrawCtx &c) {
     } else {
         SDL_Texture *box = img(g.boxart);
         if (box) DrawImage(a, box, e.x, e.y, e.w, e.h);
-        else if (!Themed()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
+        else if (MediaPlaceholder()) Fill(a, e.x, e.y, e.w, e.h, {44, 44, 56, 255});
     }
 }
 
