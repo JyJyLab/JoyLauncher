@@ -12,7 +12,7 @@ ifdef WIN
   OUT = build-win/JoyThemeBuilder.exe
   OBJDIR = build-win/obj
   CXXFLAGS_SDL = -I$(SDLW)/include/SDL2 -I$(SDLW)/include -include wincompat.h
-  LIBS = -L$(SDLW)/lib -lmingw32 -lSDL2main -lSDL2_ttf -lSDL2_image -lSDL2 -mwindows -static-libgcc -static-libstdc++ \
+  LIBS = -L$(SDLW)/lib -lmingw32 -lSDL2main -lSDL2_ttf -lSDL2_image -lSDL2 -lws2_32 -mwindows -static-libgcc -static-libstdc++ \
          -Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic
 else
   CXX = g++

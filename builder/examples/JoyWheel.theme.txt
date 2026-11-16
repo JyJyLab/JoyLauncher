@@ -1,0 +1,3 @@
+name=조이 휠
+name_en=Joy Wheel
+dim=70

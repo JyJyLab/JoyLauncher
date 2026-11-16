@@ -54,7 +54,7 @@ static const PropDef kProps[] = {
     {"dim", PK_INT, TI, "어둡게 (0~255)", nullptr, nullptr, "그림"},
     {"tint", PK_COLOR, TI, "색 입히기", nullptr, nullptr, "그림"},
     // 목록
-    {"style", PK_CHOICE, TL, "목록 모양", "text|grid", "text 줄 목록 / grid 격자", "목록"},
+    {"style", PK_CHOICE, TL, "목록 모양", "text|grid|carousel", "text 줄 목록 / grid 격자 / carousel 캐러셀(가운데 크게)", "목록"},
     {"rows", PK_INT, TL | TP, "줄 수", nullptr, "0 = 높이에서 계산", "목록"},
     {"columns", PK_INT, TL | TP, "열 수 (격자)", nullptr, nullptr, "목록"},
     {"row_height", PK_FLOAT, TL, "줄 높이", nullptr, nullptr, "목록"},
@@ -63,7 +63,7 @@ static const PropDef kProps[] = {
     {"text_offset", PK_INT2, TL, "글자 위치 (x, y)", nullptr, "y = -1 세로 가운데", "목록"},
     {"label", PK_CHOICE, TL, "이름 글자", "auto|on|off", "off = 이름을 그리지 않음 (칸 안 요소로 직접 배치)", "목록"},
     {"label_height", PK_INT, TL, "이름 글자 높이", nullptr, nullptr, "목록"},
-    {"image", PK_CHOICE, TL, "칸 그림 (격자)", "|icon|boxart|logo|none", nullptr, "목록"},
+    {"image", PK_CHOICE, TL, "칸 그림 (격자)", "|icon|boxart|screenshot|logo|background|none", nullptr, "목록"},
     {"padding", PK_INT4, TL, "칸 안쪽 여백", nullptr, nullptr, "목록"},
     {"card", PK_FILE, TL, "칸 바탕 그림", nullptr, nullptr, "목록"},
     {"card_color", PK_COLOR, TL, "칸 바탕색", nullptr, nullptr, "목록"},
@@ -75,6 +75,15 @@ static const PropDef kProps[] = {
     {"count_color", PK_COLOR, TL, "게임 수 색", nullptr, nullptr, "목록"},
     {"count_size", PK_INT, TL, "게임 수 크기", nullptr, nullptr, "목록"},
     {"count_offset", PK_INT2, TL, "게임 수 위치", nullptr, nullptr, "목록"},
+    // 캐러셀·움직임
+    {"direction", PK_CHOICE, TL, "캐러셀 방향", "horizontal|vertical", nullptr, "캐러셀·움직임"},
+    {"visible_items", PK_INT, TL, "보이는 칸 수", nullptr, "가운데 + 양옆 (홀수 권장)", "캐러셀·움직임"},
+    {"item_size", PK_INT2, TL, "칸 크기 (폭, 높이)", nullptr, "0 = 자리에서 계산", "캐러셀·움직임"},
+    {"spacing", PK_INT, TL, "칸 사이 거리", nullptr, "칸 중심 사이 (0 = 칸 크기 + gap)", "캐러셀·움직임"},
+    {"center_scale", PK_FLOAT, TL, "가운데 크기", nullptr, nullptr, "캐러셀·움직임"},
+    {"side_scale", PK_FLOAT, TL, "양옆 크기", nullptr, nullptr, "캐러셀·움직임"},
+    {"side_alpha", PK_INT, TL, "양옆 불투명도", nullptr, "0~255", "캐러셀·움직임"},
+    {"anim_ms", PK_INT, TL, "움직임 시간 (ms)", nullptr, "선택·스크롤이 미끄러지는 시간. -1 = 테마 설정, 0 = 바로", "캐러셀·움직임"},
     // 정보·사진
     {"overlay", PK_BOOL, TM, "박스 사진 겹치기", nullptr, nullptr, "사진"},
     {"title_color", PK_COLOR, TN, "제목 색", nullptr, nullptr, "정보"},
@@ -91,6 +100,8 @@ static const Placeholder kPlaceholders[] = {
     {"{name}", "칸 항목 이름 (카테고리 또는 게임)"}, {"{short}", "약칭 (shortname·폴더)"}, {"{system}", "ES-DE 기종 이름"},
     {"{num}", "칸 번호 (1부터)"}, {"{num_desc}", "칸 번호 (거꾸로, 게시판 번호)"}, {"{fav}", "즐겨찾기면 ★"},
     {"{playcount}", "실행 횟수"}, {"{lastplayed}", "마지막 실행 날짜"}, {"{selected}", "선택된 칸이면 1"},
+    {"{view}", "보기 (all / fav / recent)"}, {"{view_name}", "보기 이름 (전체면 빈칸)"}, {"{view_count}", "보기의 게임 수"},
+    {"{view=fav?[개념글]:개념글}", "보기가 즐겨찾기면 강조"},
     {"{clock}", "시각"}, {"{date}", "날짜"}, {"{hint}", "조작 도움말"}, {"{app}", "Joy Launcher"}, {"{version}", "버전"},
     {"{developer,year,players,genre| · }", "값 있는 것만 · 로 잇기"}, {"{fav?★ 개념글:☆ 개념 보내기}", "조건: 값이 있으면 앞, 없으면 뒤"},
 };

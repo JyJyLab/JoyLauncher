@@ -19,6 +19,8 @@ bool JoyInit(SDL_Renderer *r, const std::string &home, const std::string &roms, 
     gB.fDesc = OpenFontMem(gFontReg, 20);
     gHome = home;
     gShotMode = true;  // 그림을 바로 읽음 (나눠 읽기 없음)
+    gAnimAllowed = true;
+    LoadUserImages();
     gTrackBox = true;
     gBattery.percent = 76;
     gBattery.nextRead = 0xFFFFFFFFu;  // 빌더: 배터리 76% 고정
@@ -54,7 +56,7 @@ void JoySetLayoutText(const std::string &text) {
     std::string oldFont = gTheme.layout.font, oldBold = gTheme.layout.fontBold;
     SetStringOverrides(nullptr, nullptr);
     LayoutLoadText(gTheme.layout, text);
-    if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, CurrentVersion()) > 0)
+    if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, std::string(CurrentVersion()).substr(0, std::string(CurrentVersion()).find('-'))) > 0)
         gTheme.layout.problems.insert(gTheme.layout.problems.begin(),
                                       Fmt(T("이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)"), gTheme.layout.minVersion.c_str(), CurrentVersion()));
     SetStringOverrides(&gTheme.layout.strings, &gTheme.layout.stringsEn);
@@ -76,7 +78,7 @@ void JoyRender(bool games) {
     gB.selChanged = SDL_GetTicks() - 1000;
     gBounds.clear();
     Clamp(gB);
-    Render(gB);
+    RenderFrame(gB, SDL_GetRenderTarget(gB.r));
 }
 
 const std::map<std::string, SDL_Rect> &JoyBounds() { return gBounds; }
@@ -86,7 +88,7 @@ void JoyNav(int b) {
     if (a.cols.empty()) return;
     if (b >= 12 && b <= 15) {
         if (a.mode == Mode::Categories) a.catSel = MoveSel(a.catSel, (int)a.cols.size(), false, b);
-        else a.sel = MoveSel(a.sel, (int)a.cols[a.col].games.size(), true, b);
+        else a.sel = MoveSel(a.sel, (int)CurCol(a).games.size(), true, b);
     } else if (b == 0 && a.mode == Mode::Categories) {
         if (a.col != a.catSel) { a.col = a.catSel; a.sel = a.top = 0; }
     } else if (b == 1) {
@@ -96,10 +98,16 @@ void JoyNav(int b) {
         a.col = (a.col + (b == 21 ? 1 : n - 1)) % n;
         a.catSel = a.col;
         a.sel = a.top = 0;
-    } else if (b == 30 && a.mode == Mode::Games && !a.cols[a.col].games.empty()) {
-        const std::string &file = a.cols[a.col].games[a.sel].file;
+    } else if (b == 22 || b == 23) {
+        CurCol(a);
+        a.view = (a.view + (b == 23 ? 1 : 2)) % 3;
+        a.viewFor = a.col;
+        a.sel = a.top = 0;
+    } else if (b == 30 && a.mode == Mode::Games && !CurCol(a).games.empty()) {
+        const std::string &file = CurCol(a).games[a.sel].file;
         if (gFavSet.count(file)) gFavSet.erase(file);
         else gFavSet.insert(file);
+        gViewVersion++;
     }
     Clamp(a);
 }
@@ -123,3 +131,24 @@ std::vector<JoyCollectionInfo> JoyCollections() {
 }
 
 const char *JoyVersion() { return CurrentVersion(); }
+
+int JoyView() { return gB.view; }
+
+void JoyReloadCategories() {
+    LoadUserImages();
+    LoadCustomCategories();
+    gB.cols = gBaseCols;
+    ApplyCustomCategories(gB.cols);
+    RebuildHbFavorites(gB, false);
+    RebuildFavorites(gB, false);
+    gB.images.Clear();
+    gB.thumbs.Clear();
+    gB.backs.Clear();
+    Clamp(gB);
+}
+
+std::vector<JoyCollectionInfo> JoyBaseCollections() {
+    std::vector<JoyCollectionInfo> v;
+    for (const auto &c : gBaseCols) v.push_back({c.name, c.shortName, c.folders.empty() ? "" : c.folders[0], (int)c.games.size()});
+    return v;
+}

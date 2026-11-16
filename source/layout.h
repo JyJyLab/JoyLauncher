@@ -50,7 +50,15 @@ struct Elem {
     LColor tint;
 
     // list
-    int style = 0;         // 0 text / 1 grid
+    int style = 0;         // 0 text / 1 grid / 2 carousel
+    // 캐러셀 (v1.1): 가운데가 선택, 양옆으로 작아지고 흐려짐
+    int direction = 0;     // 0 가로 / 1 세로
+    int visibleItems = 5;
+    float centerScale = 1.3f, sideScale = 0.8f;
+    int sideAlpha = 160;
+    int spacing = 0;       // 칸 중심 사이 거리 (0 = 칸 크기 + gap)
+    int itemW = 0, itemH = 0;  // 칸 크기 (0 = 자리에서 계산)
+    int animMs = -1;       // 움직임 시간 (-1 = [theme] anim_ms)
     float rowH = 42;       // 줄 높이 (소수 가능: 줄무늬 그림에 맞출 때)
     int columns = 1, rows = 0;  // rows 0 = 높이에서 계산
     int gapX = 0, gapY = 0;
@@ -92,7 +100,9 @@ struct Layout {
     bool hasClear = false;
     LColor clear;                          // 바탕색
     std::map<std::string, std::string> strings, stringsEn;  // [strings] / [strings.en]: 화면 문구 바꾸기 (원래 한국어 문구 또는 hint.* 키 -> 바꿀 말)
-    std::string minVersion;                 // [theme] requires = 최소 Joy Launcher 버전
+    std::string minVersion;
+    // 화면 효과 (v1.1, 0 = 없음): 선택·스크롤 움직임, 배경 바뀜, 화면 전환
+    int animMs = 0, bgFadeMs = 0, transition = 0, transitionMs = 220;  // transition: 0 none / 1 fade / 2 slide                 // [theme] requires = 최소 Joy Launcher 버전
     bool custom = false;                   // 테마의 layout.txt 를 읽었는지
     std::vector<std::string> problems;     // 읽으면서 생긴 문제 ("줄 번호: 내용")
 };

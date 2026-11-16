@@ -32,3 +32,9 @@ void JoySetCategory(int idx);
 void JoySetGameIndex(int idx);
 std::vector<JoyCollectionInfo> JoyCollections();
 const char *JoyVersion();
+// 보기 탭 (0 전체 / 1 즐겨찾기 / 2 최근 실행)
+int JoyView();
+// home/categories.txt 와 내 그림 폴더(home/categories) 다시 읽기 (게임 목록은 그대로)
+void JoyReloadCategories();
+// 나만의 카테고리를 적용하기 전의 원래 카테고리
+std::vector<JoyCollectionInfo> JoyBaseCollections();

@@ -174,6 +174,14 @@ size=22
 color=dim
 z=51
 
+[games.view]
+type=text
+text={view_name}
+size=22
+color=accent
+rect=150,26,0,0
+z=50
+
 [games.counter]
 type=text
 text={index} / {count}
@@ -377,7 +385,23 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
     if (key == "dim") return (ParseInt(val, e.dim) && e.dim >= 0 && e.dim <= 255) || bad("0~255");
     if (key == "tint") { if (!ParseColor(val, e.tint)) return bad("color"); e.hasTint = true; return true; }
     // list
-    if (key == "style") return ParseChoice(val, {"text", "grid"}, e.style) || bad("text / grid");
+    if (key == "style") return ParseChoice(val, {"text", "grid", "carousel"}, e.style) || bad("text / grid / carousel");
+    if (key == "direction") return ParseChoice(val, {"horizontal", "vertical"}, e.direction) || bad("horizontal / vertical");
+    if (key == "visible_items") return (ParseInt(val, e.visibleItems) && e.visibleItems >= 1 && e.visibleItems <= 31) || bad("1~31");
+    if (key == "center_scale" || key == "side_scale") {
+        char *end = nullptr;
+        double d = strtod(val.c_str(), &end);
+        if (end == val.c_str() || *end || d < 0.1 || d > 4.0) return bad("0.1~4.0");
+        (key == "center_scale" ? e.centerScale : e.sideScale) = (float)d;
+        return true;
+    }
+    if (key == "side_alpha") return (ParseInt(val, e.sideAlpha) && e.sideAlpha >= 0 && e.sideAlpha <= 255) || bad("0~255");
+    if (key == "spacing") return ParseInt(val, e.spacing) || bad("number");
+    if (key == "item_size") {
+        if (ParseInts(val, v4, 2)) { e.itemW = v4[0]; e.itemH = v4[1]; return true; }
+        return bad("item_size = w,h");
+    }
+    if (key == "anim_ms") return (ParseInt(val, e.animMs) && e.animMs >= 0 && e.animMs <= 3000) || bad("0~3000");
     if (key == "row_height") {
         char *end = nullptr;
         double d = strtod(val.c_str(), &end);
@@ -530,6 +554,13 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
             if (key == "font") l.font = val;
             else if (key == "font_bold") l.fontBold = val;
             else if (key == "requires") l.minVersion = val;
+            else if (key == "anim_ms" || key == "bg_fade_ms" || key == "transition_ms") {
+                int v;
+                if (!ParseInt(val, v) || v < 0 || v > 3000) problem(key + ": 0~3000");
+                else (key == "anim_ms" ? l.animMs : key == "bg_fade_ms" ? l.bgFadeMs : l.transitionMs) = v;
+            } else if (key == "transition") {
+                if (!ParseChoice(val, {"none", "fade", "slide"}, l.transition)) problem("transition: none / fade / slide");
+            }
             else if (key == "background_color") {
                 if (ParseColor(val, l.clear) && l.clear.name.empty()) l.hasClear = true;
                 else problem("background_color: #rrggbb");

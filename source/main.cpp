@@ -7,6 +7,7 @@
 #include <SDL_ttf.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <strings.h>
 #include <fstream>
 #include <iterator>
+#include <deque>
 #include <list>
 #include <map>
 #include <set>
@@ -60,7 +62,7 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, Frames, Refresh, Update, Language, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, Frames, Refresh, Update, Language, Effects, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
 struct MenuItem {
     std::string label;
     std::string nro;
@@ -87,6 +89,18 @@ static Lang gSystemLang = Lang::Ko;         // 본체 언어 (시작할 때 한 
 static bool gBgmOn = false;                 // BGM (/JoyLauncher/bgm 의 mp3·ogg)
 static int gBgmVolume = 60;                 // 0~100
 static bool gBgmShuffle = false;
+static bool gEffects = true;      // 설정: 화면 효과 (effects=on/off)
+static bool gAnimAllowed = true;  // 데스크톱 스냅샷에서는 끔
+static bool AnimOn() { return gEffects && gAnimAllowed; }
+static float Ease(float t) {
+    t = std::max(0.0f, std::min(1.0f, t));
+    return 1 - (1 - t) * (1 - t) * (1 - t);
+}
+static float Approach(float cur, float target, float dt, int ms) {
+    if (ms <= 0) return target;
+    cur += (target - cur) * (1 - expf(-dt / (ms / 3.0f)));
+    return fabsf(target - cur) < 0.002f ? target : cur;
+}
 
 // 즐겨찾기: /JoyLauncher/favorites.txt (롬 파일 경로 한 줄씩)
 static std::set<std::string> gFavSet;
@@ -135,6 +149,7 @@ static void SaveFavorites() {
 }
 
 // 실행 횟수: /JoyLauncher/playcount.txt (횟수<TAB>마지막 실행 시각(유닉스 초)<TAB>롬 경로) — 테마의 {playcount} {lastplayed}
+static unsigned gViewVersion = 1;  // 즐겨찾기·실행 기록이 바뀔 때 +1 (보기 목록 다시 만들기)
 struct PlayStat { int count = 0; long long last = 0; };
 static std::map<std::string, PlayStat> gPlay;
 static void LoadPlayCounts() {
@@ -152,6 +167,7 @@ static void LoadPlayCounts() {
 }
 static void CountPlay(const std::string &file) {
     PlayStat &p = gPlay[file];
+    gViewVersion++;
     p.count++;
     p.last = (long long)time(nullptr);
     std::ofstream o(gHome + "/playcount.txt");
@@ -203,6 +219,7 @@ static void BuildMenu() {
     gBgmMenu.push_back({gBgmShuffle ? T("순서: 무작위") : T("순서: 차례대로"), "", MenuAct::BgmOrder});
     if (gBgmOn) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
+    gMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), gEffects ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::Effects, gEffects});
     gMenu.push_back({Fmt(T("홈브루 즐겨찾기 추가·빼기 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
     if (hbReplaced) {
     } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
@@ -239,6 +256,21 @@ struct TextCache {
     }
 };
 
+// ---------------------------------------------------------------- 그림 읽기 스레드
+// 파일 읽기·풀기·줄이기는 스레드에서, 텍스처 만들기는 메인에서 (SDL 렌더러는 메인 스레드 전용).
+// 큰 그림을 넘길 때 화면이 멈칫하지 않게 한다. 데스크톱 스냅샷·테마 빌더는 바로 읽음 (gAsyncImg = false)
+struct ImgJob {
+    std::string key, path;
+    int w = 0, h = 0;
+    bool cover = false, thumb = false;
+    void *cache = nullptr;
+    Uint32 tick = 0, seq = 0;  // 요청한 프레임 (최근 프레임 것부터), 요청 순서
+};
+struct ImgDone { ImgJob job; SDL_Surface *s = nullptr; };
+static bool gAsyncImg = false;
+static Uint32 gFrameTick = 0;
+static void ImgRequest(const ImgJob &j);
+
 // 박스아트 텍스처 LRU 캐시
 struct ImageCache {
     SDL_Renderer *r = nullptr;
@@ -256,9 +288,23 @@ struct ImageCache {
         if (p.empty()) return nullptr;
         if (SDL_Texture *t = Find(p)) return t;
         if (map.count(p)) return nullptr;  // 읽기에 실패했던 그림: 다시 읽지 않음
+        if (gAsyncImg) {
+            ImgJob j;
+            j.key = j.path = p;
+            j.cache = this;
+            ImgRequest(j);
+            return nullptr;
+        }
         SDL_Surface *s = IMG_Load(p.c_str());
         SDL_Texture *t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
         if (s) SDL_FreeSurface(s);
+        return Insert(p, t);
+    }
+    SDL_Texture *Insert(const std::string &p, SDL_Texture *t) {
+        if (map.count(p)) {  // 이미 있음 (같은 그림을 두 번 받음)
+            if (t) SDL_DestroyTexture(t);
+            return Find(p);
+        }
         map[p] = t;  // 실패도 기록해 재시도 방지
         order.push_front(p);
         while (order.size() > cap) {
@@ -325,6 +371,18 @@ struct ThumbCache {
     }
     // w x h 칸에 그릴 그림. cover: 칸을 가득 채우는 용도 (작은 쪽 배율 기준)
     SDL_Texture *Load(const std::string &p, int w, int h, bool cover) {
+        if (gAsyncImg) {
+            ImgJob j;
+            j.key = Key(p, w, h);
+            j.path = p;
+            j.w = w;
+            j.h = h;
+            j.cover = cover;
+            j.thumb = true;
+            j.cache = this;
+            ImgRequest(j);
+            return nullptr;
+        }
         SDL_Surface *s = IMG_Load(p.c_str());
         if (s && w > 0 && h > 0) {
             float kx = s->w / (float)w, ky = s->h / (float)h;
@@ -332,6 +390,13 @@ struct ThumbCache {
         }
         SDL_Texture *t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
         if (s) SDL_FreeSurface(s);
+        return Insert(Key(p, w, h), t);
+    }
+    SDL_Texture *Insert(const std::string &key, SDL_Texture *t) {
+        if (map.count(key)) {
+            if (t) SDL_DestroyTexture(t);
+            return map[key].t;
+        }
         if (t) SDL_SetTextureScaleMode(t, SDL_ScaleModeLinear);  // 줄이거나 늘릴 때 부드럽게
         if (map.size() >= cap) {
             auto old = map.begin();
@@ -340,7 +405,7 @@ struct ThumbCache {
             if (old->second.t) SDL_DestroyTexture(old->second.t);
             map.erase(old);
         }
-        map[Key(p, w, h)] = {t, tick};
+        map[key] = {t, tick};
         return t;
     }
     void Clear() {
@@ -349,6 +414,107 @@ struct ThumbCache {
         map.clear();
     }
 };
+
+static SDL_mutex *gImgMx = nullptr;
+static SDL_cond *gImgCv = nullptr;
+static SDL_Thread *gImgTh = nullptr;
+static std::deque<ImgJob> gImgQ;
+static std::vector<ImgDone> gImgDone;
+static std::set<std::string> gImgPending;
+static bool gImgQuit = false;
+static Uint32 gImgSeq = 0;
+
+static int ImgWorker(void *) {
+    SDL_LockMutex(gImgMx);
+    while (!gImgQuit) {
+        if (gImgQ.empty()) {
+            SDL_CondWait(gImgCv, gImgMx);
+            continue;
+        }
+        // 가장 최근 프레임의 요청부터, 같은 프레임 안에서는 요청 순서대로 (보이는 칸 → 미리 읽기)
+        size_t pick = 0;
+        for (size_t i = 1; i < gImgQ.size(); i++)
+            if (gImgQ[i].tick > gImgQ[pick].tick || (gImgQ[i].tick == gImgQ[pick].tick && gImgQ[i].seq < gImgQ[pick].seq)) pick = i;
+        ImgJob j = gImgQ[pick];
+        gImgQ.erase(gImgQ.begin() + pick);
+        SDL_UnlockMutex(gImgMx);
+        SDL_Surface *s = IMG_Load(j.path.c_str());
+        if (s && j.thumb && j.w > 0 && j.h > 0) {
+            float kx = s->w / (float)j.w, ky = s->h / (float)j.h;
+            s = ShrinkSurface(s, (int)(j.cover ? std::min(kx, ky) : std::max(kx, ky)));
+        }
+        SDL_LockMutex(gImgMx);
+        gImgDone.push_back({j, s});
+    }
+    SDL_UnlockMutex(gImgMx);
+    return 0;
+}
+
+static void ImgLoaderStart() {
+    if (gImgTh) return;
+    gImgMx = SDL_CreateMutex();
+    gImgCv = SDL_CreateCond();
+    gImgQuit = false;
+    gImgTh = SDL_CreateThread(ImgWorker, "imgload", nullptr);
+    gAsyncImg = gImgTh != nullptr;
+}
+
+static void ImgLoaderStop() {
+    if (!gImgTh) return;
+    SDL_LockMutex(gImgMx);
+    gImgQuit = true;
+    gImgQ.clear();
+    SDL_CondSignal(gImgCv);
+    SDL_UnlockMutex(gImgMx);
+    SDL_WaitThread(gImgTh, nullptr);
+    gImgTh = nullptr;
+    gAsyncImg = false;
+    for (auto &d : gImgDone)
+        if (d.s) SDL_FreeSurface(d.s);
+    gImgDone.clear();
+    gImgPending.clear();
+}
+
+static void ImgRequest(const ImgJob &job) {
+    if (!gImgTh) return;
+    SDL_LockMutex(gImgMx);
+    if (!gImgPending.count(job.key)) {
+        ImgJob j = job;
+        j.tick = gFrameTick;
+        j.seq = ++gImgSeq;
+        gImgPending.insert(j.key);
+        gImgQ.push_back(j);
+        // 너무 쌓이면 가장 오래된 요청을 버림 (빠르게 넘긴 동안의 칸)
+        while (gImgQ.size() > 48) {
+            size_t old = 0;
+            for (size_t i = 1; i < gImgQ.size(); i++)
+                if (gImgQ[i].tick < gImgQ[old].tick || (gImgQ[i].tick == gImgQ[old].tick && gImgQ[i].seq < gImgQ[old].seq)) old = i;
+            gImgPending.erase(gImgQ[old].key);
+            gImgQ.erase(gImgQ.begin() + old);
+        }
+        SDL_CondSignal(gImgCv);
+    }
+    SDL_UnlockMutex(gImgMx);
+}
+
+// 매 프레임: 다 읽은 그림을 텍스처로 올려 캐시에 넣는다 (한 프레임에 너무 많이 올리지 않게 최대 6장)
+static void ImgPump(SDL_Renderer *r) {
+    gFrameTick++;
+    if (!gImgTh) return;
+    std::vector<ImgDone> done;
+    SDL_LockMutex(gImgMx);
+    size_t n = std::min<size_t>(gImgDone.size(), 6);
+    done.assign(gImgDone.begin(), gImgDone.begin() + n);
+    gImgDone.erase(gImgDone.begin(), gImgDone.begin() + n);
+    for (const auto &d : done) gImgPending.erase(d.job.key);
+    SDL_UnlockMutex(gImgMx);
+    for (auto &d : done) {
+        SDL_Texture *t = d.s ? SDL_CreateTextureFromSurface(r, d.s) : nullptr;
+        if (d.s) SDL_FreeSurface(d.s);
+        if (d.job.thumb) ((ThumbCache *)d.job.cache)->Insert(d.job.key, t);
+        else ((ImageCache *)d.job.cache)->Insert(d.job.path, t);
+    }
+}
 
 // ---------------------------------------------------------------- 테마
 // /JoyLauncher/themes/<테마>/
@@ -486,7 +652,7 @@ static void LoadTheme(const std::string &name) {
     gTheme.name = gThemeName = name;
     gTheme.base = base;
     LayoutLoad(gTheme.layout, base + "/layout.txt");
-    if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, CurrentVersion()) > 0)
+    if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, std::string(CurrentVersion()).substr(0, std::string(CurrentVersion()).find('-'))) > 0)
         gTheme.layout.problems.insert(gTheme.layout.problems.begin(),
                                       Fmt(T("이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)"), gTheme.layout.minVersion.c_str(), CurrentVersion()));
     SetStringOverrides(&gTheme.layout.strings, &gTheme.layout.stringsEn);
@@ -525,8 +691,29 @@ static void LoadTheme(const std::string &name) {
     }
 }
 
-static std::string ThemeFind(const std::map<std::string, std::string> &m, const Collection *c) {
-    if (m.empty()) return "";
+// 내 그림 폴더: /JoyLauncher/categories/{backgrounds,logos,icons}/<이름>.png|jpg — 테마를 바꿔도 쓰는 카테고리 그림
+// (폴더 바로 안의 그림은 아이콘으로). 테마에 그림이 없을 때 찾는다 (나만의 카테고리는 기종 그림보다 먼저)
+static std::map<std::string, std::map<std::string, std::string>> gUserImg;
+static void LoadUserImages() {
+    gUserImg.clear();
+    for (const char *k : {"backgrounds", "logos", "icons"}) IndexImages(gHome + "/categories/" + k, gUserImg[k]);
+    IndexImages(gHome + "/categories", gUserImg["icons"]);
+}
+static std::string UserFind(const char *kind, const Collection *c) {
+    if (!kind || !c) return "";
+    auto it = gUserImg.find(kind);
+    if (it == gUserImg.end()) return "";
+    for (const std::string &k : {c->shortName, c->name}) {
+        if (k.empty()) continue;
+        auto f = it->second.find(LowerAscii(k));
+        if (f != it->second.end()) return f->second;
+    }
+    return "";
+}
+
+// kind: backgrounds / logos / icons … (내 그림 폴더에서도 찾을 때)
+static std::string ThemeFind(const std::map<std::string, std::string> &m, const Collection *c, const char *kind = nullptr) {
+    if (m.empty()) return UserFind(kind, c);
     auto alias = [&](const std::string &k) -> std::string {
         auto al = gTheme.alias.find(LowerAscii(k));
         if (al == gTheme.alias.end()) return "";
@@ -560,24 +747,30 @@ static std::string ThemeFind(const std::map<std::string, std::string> &m, const 
     // 3) 카테고리 shortname / 이름과 같은 그림
     r = first({c->shortName.empty() ? "" : direct(c->shortName), direct(c->name)});
     if (!r.empty()) return r;
-    // 4) 여러 폴더를 합친 카테고리: 그림이 있는 첫 폴더 (예: psx+psp+ps2 를 합친 "Play Station")
-    for (const auto &f : c->folders) {
-        r = first({alias(f), direct(f)});
+    // 나만의 카테고리 (categories.txt): 내 그림 폴더가 포함한 기종 그림보다 먼저
+    if (c->custom) {
+        r = UserFind(kind, c);
         if (!r.empty()) return r;
     }
-    // 5) 내장 기종 이름 표 (FC -> nes, 액션-아케이드 -> arcade_action …): ES-DE 이름의 그림을 theme.txt 없이 찾음
+    // 내장 기종 이름 표 (FC -> nes, 액션-아케이드 -> arcade_action …): ES-DE 이름의 그림을 theme.txt 없이 찾음
     auto esde = [&](const std::string &k) -> std::string {
         if (k.empty()) return "";
         std::string id = EsdeSystemName(LowerAscii(k));
         return id.empty() ? "" : first({alias(id), direct(id)});
     };
+    // 4) 여러 폴더를 합친 카테고리: 그림이 있는 첫 폴더 (예: psx+psp+ps2 를 합친 "Play Station"), 폴더 이름의 기종 이름까지
+    for (const auto &f : c->folders) {
+        r = first({alias(f), direct(f), c->custom ? esde(f) : std::string()});
+        if (!r.empty()) return r;
+    }
+    // 5) 내장 기종 이름 표 (FC -> nes, 액션-아케이드 -> arcade_action …): ES-DE 이름의 그림을 theme.txt 없이 찾음
     r = first({esde(c->name), esde(c->shortName)});
     if (!r.empty()) return r;
     for (const auto &f : c->folders) {
         r = esde(f);
         if (!r.empty()) return r;
     }
-    return "";
+    return UserFind(kind, c);
 }
 
 // 숨길 코어 설정 (settings.txt 의 hide_cores=, 쉼표 구분). 비우면 모두 표시
@@ -615,6 +808,8 @@ static void SaveSettings() {
     o << "bgm=" << (gBgmOn ? "on" : "off") << "\n";
     o << "bgm_volume=" << gBgmVolume << "\n";
     o << "bgm_shuffle=" << (gBgmShuffle ? "on" : "off") << "\n";
+    o << T("# 화면 효과: on = 테마의 움직임·화면 전환 사용, off = 끔") << "\n";
+    o << "effects=" << (gEffects ? "on" : "off") << "\n";
 }
 
 static void LoadSettings() {
@@ -634,6 +829,7 @@ static void LoadSettings() {
         if (line.rfind("bgm=", 0) == 0) gBgmOn = line.substr(4) == "on";
         if (line.rfind("bgm_volume=", 0) == 0) gBgmVolume = std::max(0, std::min(100, atoi(line.c_str() + 11)));
         if (line.rfind("bgm_shuffle=", 0) == 0) gBgmShuffle = line.substr(12) == "on";
+        if (line.rfind("effects=", 0) == 0) gEffects = line.substr(8) != "off";
     }
     ApplyLanguage();
     // 설정이 없으면 기본 테마 JoyBasic (없으면 첫 번째 테마)
@@ -742,7 +938,213 @@ struct App {
     SDL_Color messageColor = {120, 40, 40, 240};
     int confirmIdx = -1;
     Uint32 confirmUntil = 0;
+    // 보기 탭 (게임 화면, ZL/ZR): 0 전체 / 1 즐겨찾기 / 2 최근 실행
+    int view = 0, viewFor = -1;
+    Collection viewCol;
+    unsigned viewSig = 0;
 };
+
+// 게임 화면이 보는 목록: 보기가 "전체"면 카테고리 그대로, 아니면 걸러 만든 목록
+static const Collection &CurCol(App &a) {
+    static Collection empty;
+    if (a.cols.empty()) return empty;
+    if (a.viewFor != a.col) { a.view = 0; a.viewFor = a.col; }
+    const Collection &src = a.cols[a.col];
+    if (a.view == 0) return src;
+    unsigned sig = gViewVersion * 131u + (unsigned)a.col * 7u + (unsigned)a.view + (unsigned)src.games.size() * 1009u;
+    if (a.viewSig != sig || a.viewCol.name != src.name) {
+        Collection &v = a.viewCol;
+        v.name = src.name;
+        v.sortBy = src.sortBy;
+        v.shortName = src.shortName;
+        v.virt = src.virt;
+        v.custom = src.custom;
+        v.folders = src.folders;
+        v.games.clear();
+        if (a.view == 1) {
+            for (const auto &g : src.games)
+                if (gFavSet.count(g.file) || src.shortName == "hbfav" || (src.virt && src.shortName == "favorites")) v.games.push_back(g);
+        } else {
+            std::vector<std::pair<long long, const Game *>> played;
+            for (const auto &g : src.games) {
+                auto it = gPlay.find(g.file);
+                if (it != gPlay.end() && it->second.count > 0) played.push_back({it->second.last, &g});
+            }
+            std::stable_sort(played.begin(), played.end(), [](const std::pair<long long, const Game *> &x, const std::pair<long long, const Game *> &y) { return x.first > y.first; });
+            for (const auto &p : played) v.games.push_back(*p.second);
+        }
+        a.viewSig = sig;
+    }
+    return a.viewCol;
+}
+static const char *ViewName(int v) { return v == 1 ? T("★ 즐겨찾기") : v == 2 ? T("최근 실행") : ""; }
+
+// ---------------------------------------------------------------- 나만의 카테고리 (/JoyLauncher/categories.txt)
+//   [이름]                    화면에 보일 카테고리 이름
+//   image = playstation       그림 이름 (테마 → 내 그림 폴더 /JoyLauncher/categories → 포함한 기종 그림 순)
+//   include = PS1, PS2, PSP   롬 폴더·카테고리 이름 (쉼표, * = 모두)
+//   exclude = …               뺄 롬 폴더·카테고리
+//   genre = RPG, 액션         장르에 이 글이 들어간 게임만 (쉼표)
+//   games = mypick.txt        롬 경로 목록 파일 (/JoyLauncher 기준, 즐겨찾기와 같은 형식)
+//   hide_included = on        묶은 원래 카테고리를 목록에서 숨김 (기본 on, genre 를 쓰면 숨기지 않음)
+//   position = top | bottom | after:<카테고리 이름>
+//   [hide]                    목록에서 숨길 카테고리 (한 줄에 하나)
+struct CustomCat {
+    std::string name, image, gamesFile, position = "top";
+    std::vector<std::string> include, exclude, genres;
+    bool hideIncluded = true;
+};
+static std::vector<CustomCat> gCustomCats;
+static std::vector<std::string> gHideCats;
+static std::vector<std::string> SplitList(const std::string &v) {
+    std::vector<std::string> out;
+    std::stringstream ss(v);
+    for (std::string p; std::getline(ss, p, ',');) {
+        size_t a = p.find_first_not_of(" \t"), b = p.find_last_not_of(" \t\r");
+        if (a != std::string::npos) out.push_back(p.substr(a, b - a + 1));
+    }
+    return out;
+}
+static void LoadCustomCategories() {
+    gCustomCats.clear();
+    gHideCats.clear();
+    std::ifstream in(gHome + "/categories.txt");
+    std::string line, section;
+    bool first = true;
+    while (std::getline(in, line)) {
+        if (first && line.size() >= 3 && (unsigned char)line[0] == 0xEF) line = line.substr(3);
+        first = false;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+        size_t lead = line.find_first_not_of(" \t");
+        if (lead == std::string::npos) continue;
+        line = line.substr(lead);
+        if (line[0] == '#' || line[0] == ';') continue;
+        if (line[0] == '[') {
+            section = line.substr(1, line.find(']') == std::string::npos ? std::string::npos : line.find(']') - 1);
+            if (LowerAscii(section) != "hide") {
+                gCustomCats.push_back(CustomCat());
+                gCustomCats.back().name = section;
+            }
+            continue;
+        }
+        if (LowerAscii(section) == "hide") {
+            for (const auto &h : SplitList(line)) gHideCats.push_back(h);
+            continue;
+        }
+        if (gCustomCats.empty()) continue;
+        size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string k = LowerAscii(line.substr(0, line.find_last_not_of(" \t", eq - 1) + 1)), v = line.substr(eq + 1);
+        size_t vs = v.find_first_not_of(" \t");
+        v = vs == std::string::npos ? "" : v.substr(vs);
+        CustomCat &cc = gCustomCats.back();
+        if (k == "image") cc.image = v;
+        else if (k == "include") cc.include = SplitList(v);
+        else if (k == "exclude") cc.exclude = SplitList(v);
+        else if (k == "genre") cc.genres = SplitList(v);
+        else if (k == "games") cc.gamesFile = v;
+        else if (k == "hide_included") cc.hideIncluded = LowerAscii(v) != "off" && v != "0" && LowerAscii(v) != "no";
+        else if (k == "position") cc.position = v;
+    }
+}
+static bool CatMatch(const Collection &c, const std::string &key) {
+    if (key == "*") return true;
+    std::string k = LowerAscii(key);
+    if (LowerAscii(c.name) == k || LowerAscii(T(c.name)) == k || (!c.shortName.empty() && LowerAscii(c.shortName) == k)) return true;
+    for (const auto &f : c.folders)
+        if (LowerAscii(f) == k) return true;
+    return false;
+}
+static void ApplyCustomCategories(std::vector<Collection> &cols) {
+    if (gCustomCats.empty() && gHideCats.empty()) return;
+    std::set<size_t> hide;
+    std::vector<Collection> made;
+    std::map<std::string, const Game *> byFile;
+    for (const auto &cc : gCustomCats) {
+        Collection n;
+        n.name = cc.name;
+        n.sortBy = cc.name;
+        n.shortName = cc.image.empty() ? cc.name : cc.image;
+        n.custom = true;
+        std::set<std::string> seen;
+        bool all = std::find(cc.include.begin(), cc.include.end(), "*") != cc.include.end();
+        // include 에 적은 순서대로 (그림을 대신할 첫 기종 = 처음 적은 것)
+        std::vector<std::pair<size_t, size_t>> picks;
+        for (size_t i = 0; i < cols.size(); i++) {
+            const Collection &c = cols[i];
+            if (c.virt || c.custom) continue;
+            size_t at = cc.include.size();
+            bool out = false;
+            for (size_t k = 0; k < cc.include.size(); k++)
+                if (at == cc.include.size() && CatMatch(c, cc.include[k])) at = k;
+            for (const auto &k : cc.exclude) out = out || CatMatch(c, k);
+            if (at < cc.include.size() && !out) picks.push_back({at, i});
+        }
+        std::stable_sort(picks.begin(), picks.end());
+        for (const auto &pk : picks) {
+            size_t i = pk.second;
+            const Collection &c = cols[i];
+            for (const auto &f : c.folders)
+                if (std::find(n.folders.begin(), n.folders.end(), f) == n.folders.end()) n.folders.push_back(f);
+            for (const auto &g : c.games) {
+                if (!cc.genres.empty()) {
+                    bool ok = false;
+                    for (const auto &ge : cc.genres) ok = ok || LowerAscii(g.genre).find(LowerAscii(ge)) != std::string::npos;
+                    if (!ok) continue;
+                }
+                if (seen.insert(g.file).second) n.games.push_back(g);
+            }
+            if (cc.hideIncluded && cc.genres.empty() && !all) hide.insert(i);
+        }
+        if (!cc.gamesFile.empty()) {
+            if (byFile.empty())
+                for (const auto &c : cols)
+                    for (const auto &g : c.games) byFile[g.file] = &g;
+            std::ifstream gl(gHome + "/" + cc.gamesFile);
+            for (std::string l; std::getline(gl, l);) {
+                while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
+                auto it = byFile.find(l);
+                if (it != byFile.end() && seen.insert(l).second) {
+                    n.games.push_back(*it->second);
+                    for (const auto &c : cols)
+                        if (&c.games.front() <= it->second && it->second <= &c.games.back())
+                            for (const auto &f : c.folders)
+                                if (std::find(n.folders.begin(), n.folders.end(), f) == n.folders.end()) n.folders.push_back(f);
+                }
+            }
+        }
+        std::stable_sort(n.games.begin(), n.games.end(), [](const Game &x, const Game &y) {
+            return LowerAscii(x.sortKey.empty() ? x.title : x.sortKey) < LowerAscii(y.sortKey.empty() ? y.title : y.sortKey);
+        });
+        made.push_back(std::move(n));
+    }
+    for (size_t i = 0; i < cols.size(); i++)
+        for (const auto &h : gHideCats)
+            if (CatMatch(cols[i], h)) hide.insert(i);
+    std::vector<Collection> rest;
+    for (size_t i = 0; i < cols.size(); i++)
+        if (!hide.count(i)) rest.push_back(std::move(cols[i]));
+    int topAt = 0;
+    for (size_t k = 0; k < made.size(); k++) {
+        const std::string &pos = gCustomCats[k].position;
+        if (made[k].games.empty()) continue;  // 게임이 없는 카테고리는 만들지 않음
+        if (LowerAscii(pos) == "bottom") {
+            rest.push_back(std::move(made[k]));
+        } else if (LowerAscii(pos).rfind("after:", 0) == 0) {
+            std::string target = pos.substr(6);
+            size_t at = rest.size();
+            for (size_t i = 0; i < rest.size(); i++)
+                if (CatMatch(rest[i], target)) at = i + 1;
+            rest.insert(rest.begin() + at, std::move(made[k]));
+        } else {
+            rest.insert(rest.begin() + topAt++, std::move(made[k]));
+        }
+    }
+    cols = std::move(rest);
+}
+#ifdef JOY_BUILDER
+static std::vector<Collection> gBaseCols;  // 테마 빌더: 나만의 카테고리 다시 적용용 원래 목록
+#endif
 
 static std::vector<char> gFontReg, gFontBold;
 
@@ -790,6 +1192,19 @@ static int MarqueeOffset(const std::string &key, int over, int pxPerSec, Uint32 
 }
 
 // maxW 를 넘는 한 줄 글자: scroll 이면 가로로 흐르고(선택된 줄·알림), 아니면 끝을 «…» 로
+// 지금 그리는 것 전체의 불투명도 (캐러셀 양옆 칸 흐리게): 글자·네모·그림에 곱함
+static int gAlpha = 255;
+static void AlphaMod(SDL_Texture *t, bool on) {
+    if (gAlpha >= 255 || !t) return;
+    static Uint8 saved = 255;
+    if (on) {
+        SDL_GetTextureAlphaMod(t, &saved);
+        SDL_SetTextureAlphaMod(t, (Uint8)(saved * gAlpha / 255));
+    } else {
+        SDL_SetTextureAlphaMod(t, saved);
+    }
+}
+
 // 테마 빌더: 요소마다 실제로 그린 자리 모으기 (선택·끌기용)
 static bool gTrackBox = false;
 static SDL_Rect gDrawBox = {0, 0, 0, 0};
@@ -830,13 +1245,17 @@ static void DrawText(App &a, TTF_Font *f, const std::string &s, int x, int y, SD
     if (align == 1) dx = x - boxW / 2;
     if (align == 2) dx = x - boxW;
     SDL_Rect dst = {dx, y, src.w, src.h};
+    AlphaMod(t, true);
     SDL_RenderCopy(a.r, t, &src, &dst);
+    AlphaMod(t, false);
     TrackBox({dx, y, boxW, src.h});
     if (ell) {
         int eh;
         SDL_QueryTexture(ell, nullptr, nullptr, nullptr, &eh);
         SDL_Rect ed = {dx + src.w, y, ellW, eh};
+        AlphaMod(ell, true);
         SDL_RenderCopy(a.r, ell, nullptr, &ed);
+        AlphaMod(ell, false);
     }
 }
 
@@ -844,7 +1263,7 @@ static void DrawText(App &a, TTF_Font *f, const std::string &s, int x, int y, SD
 static const int kScroll = 40, kScrollMsg = 80, kScrollDesc = 14;
 
 static void Fill(App &a, int x, int y, int w, int h, SDL_Color c) {
-    SDL_SetRenderDrawColor(a.r, c.r, c.g, c.b, c.a);
+    SDL_SetRenderDrawColor(a.r, c.r, c.g, c.b, (Uint8)(c.a * gAlpha / 255));
     SDL_Rect rc = {x, y, w, h};
     SDL_RenderFillRect(a.r, &rc);
     TrackBox(rc);
@@ -855,7 +1274,9 @@ static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
     SDL_QueryTexture(t, nullptr, nullptr, &bw, &bh);
     float s = std::min(w / (float)bw, h / (float)bh);
     SDL_Rect d = {x + (int)(w - bw * s) / 2, y + (int)(h - bh * s) / 2, (int)(bw * s), (int)(bh * s)};
+    AlphaMod(t, true);
     SDL_RenderCopy(a.r, t, nullptr, &d);
+    AlphaMod(t, false);
     TrackBox(d);
     return d;
 }
@@ -952,7 +1373,7 @@ static void Frame(App &a, const std::string &title, const std::string &hint, con
     if (themed) {
         // 카테고리(플랫폼)별 배경. 그 카테고리 배경이 없으면 배경 없이 기본 화면
         // (카테고리가 아닌 메뉴 항목에서는 테마의 default 배경)
-        std::string bg = ThemeFind(gTheme.bg, col);
+        std::string bg = ThemeFind(gTheme.bg, col, "backgrounds");
         SDL_Texture *t = nullptr;
         if (!bg.empty()) {
             t = a.backs.Find(bg);
@@ -974,7 +1395,7 @@ static void Frame(App &a, const std::string &title, const std::string &hint, con
     Uint8 barA = gBackDrawn ? 200 : 255;
     Fill(a, 0, 0, W, 76, {kDark.r, kDark.g, kDark.b, barA});
     Fill(a, 0, H - 52, W, 52, {kDark.r, kDark.g, kDark.b, barA});
-    std::string logo = col && logoTitle ? ThemeFind(gTheme.logo, col) : "";
+    std::string logo = col && logoTitle ? ThemeFind(gTheme.logo, col, "logos") : "";
     SDL_Texture *lt = logo.empty() ? nullptr : a.images.Load(logo);
     if (lt) DrawImage(a, lt, W / 2 - 220, 8, 440, 60);
     else DrawText(a, a.fTitle, title, W / 2, 18, kAccent, 640, 1, 0, 0, kScroll);
@@ -1161,7 +1582,7 @@ static SDL_Texture *Thumb(App &a, const std::string &path, int w, int h, bool co
 }
 
 // 칸에 맞춰 그리기. fit: 0 비율 유지(안에 맞춤) / 1 비율 유지(가득, 넘치면 자름) / 2 늘림
-static void DrawFit(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit, int align = 1, int valign = 1) {
+static void DrawFitRaw(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit, int align, int valign) {
     int bw, bh;
     SDL_QueryTexture(t, nullptr, nullptr, &bw, &bh);
     if (w <= 0 || h <= 0) {  // 크기를 안 정했으면 그림 크기 그대로
@@ -1187,6 +1608,12 @@ static void DrawFit(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit,
                       y + (valign == 0 ? 0 : valign == 2 ? h - dh : (int)(h - bh * s) / 2), dw, dh};
         SDL_RenderCopy(a.r, t, nullptr, &d);
     }
+}
+
+static void DrawFit(App &a, SDL_Texture *t, int x, int y, int w, int h, int fit, int align = 1, int valign = 1) {
+    AlphaMod(t, true);
+    DrawFitRaw(a, t, x, y, w, h, fit, align, valign);
+    AlphaMod(t, false);
 }
 
 // 화면에 보일 카테고리 이름: layout.txt 의 [names] (카테고리 이름 → shortname → 롬 폴더 순), 없으면 원래 이름
@@ -1308,6 +1735,9 @@ static bool PlaceValue(App &a, const std::string &k, const DrawCtx &c, std::stri
         }
     }
     else if (k == "screen") v = c.games ? "games" : "categories";
+    else if (k == "view") v = a.view == 1 ? "fav" : a.view == 2 ? "recent" : "all";
+    else if (k == "view_name") v = c.games ? ViewName(a.view) : "";
+    else if (k == "view_count") v = c.games && c.col ? std::to_string(c.col->games.size()) : "";
     else return false;
     return true;
 }
@@ -1370,7 +1800,7 @@ static bool ElemShown(App &a, const Elem &e, const DrawCtx &c) {
 static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
     if (e.source == "background") {
         // 카테고리(플랫폼)별 배경. 그 카테고리 배경이 없으면 fallback 그림, 그것도 없으면 배경 없이
-        std::string bg = ThemeFind(gTheme.bg, c.col);
+        std::string bg = ThemeFind(gTheme.bg, c.col, "backgrounds");
         if (bg.empty()) bg = ThemeFile(e.fallback);
         SDL_Texture *t = nullptr;
         if (!bg.empty()) {
@@ -1382,8 +1812,23 @@ static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
         } else {
             a.lastBack.clear();
         }
-        if (t) {
+        // 배경이 바뀌면 직전 배경 위로 천천히 (bg_fade_ms)
+        static std::string shown, prev;
+        static Uint32 at = 0;
+        int fms = AnimOn() ? gTheme.layout.bgFadeMs : 0;
+        std::string now = t ? a.lastBack : "";
+        if (fms > 0 && now != shown) { prev = shown; shown = now; at = SDL_GetTicks(); }
+        SDL_Texture *pt = fms > 0 && !prev.empty() && SDL_GetTicks() - at < (Uint32)fms ? a.backs.Find(prev) : nullptr;
+        if (pt && t) {
+            DrawFit(a, pt, e.x, e.y, e.w, e.h, e.fit);
+            Uint8 k = (Uint8)(255 * Ease((SDL_GetTicks() - at) / (float)fms));
+            SDL_SetTextureAlphaMod(t, k);
             DrawFit(a, t, e.x, e.y, e.w, e.h, e.fit);
+            SDL_SetTextureAlphaMod(t, 255);
+        } else if (t) {
+            DrawFit(a, t, e.x, e.y, e.w, e.h, e.fit);
+        }
+        if (t) {
             int dim = e.dim >= 0 ? e.dim : gTheme.dim;
             if (dim > 0) Fill(a, e.x, e.y, e.w, e.h, {0, 0, 0, (Uint8)dim});
         }
@@ -1392,8 +1837,8 @@ static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
     }
     std::string path;
     bool gameImg = false;
-    if (e.source == "logo") path = c.col ? ThemeFind(gTheme.logo, c.col) : "";
-    else if (e.source == "icon") path = c.col ? ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), c.col) : "";
+    if (e.source == "logo") path = c.col ? ThemeFind(gTheme.logo, c.col, "logos") : "";
+    else if (e.source == "icon") path = c.col ? ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), c.col, e.folder.empty() ? "icons" : e.folder.c_str()) : "";
     else if (e.source == "boxart") { path = c.game ? c.game->boxart : ""; gameImg = true; }
     else if (e.source == "screenshot") { path = c.game ? GameShot(*c.game, SDL_GetTicks() - a.selChanged > 250) : ""; gameImg = true; }
     else path = ThemeFile(e.file);
@@ -1421,11 +1866,13 @@ static void DrawElemImage(App &a, const Elem &e, const DrawCtx &c) {
 
 static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
     if (e.logo && c.col) {
-        std::string logo = ThemeFind(gTheme.logo, c.col);
+        std::string logo = ThemeFind(gTheme.logo, c.col, "logos");
         SDL_Texture *lt = logo.empty() ? nullptr : a.images.Load(logo);
         if (lt) { DrawImage(a, lt, e.lx, e.ly, e.lw, e.lh); return; }
     }
-    std::string s = Expand(a, e.text, c);
+    // [strings] 에 글 전체가 있으면 바꾼 말로 (영어 화면용 [strings.en] 으로 테마 글자 번역)
+    const char *ov = StringOverride(e.text.c_str());
+    std::string s = Expand(a, ov ? std::string(ov) : e.text, c);
     if (s.empty()) return;
     TTF_Font *f = FontFor(e.bold, e.size, s);
     if (!f) return;
@@ -1444,6 +1891,10 @@ static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
 
 // 목록의 열·줄 수
 static void ListGeom(const Elem &e, int &cols, int &rows) {
+    if (e.style == 2) {  // 캐러셀: 선택이 늘 가운데 (맨 위 항목 = 선택)
+        cols = rows = 1;
+        return;
+    }
     if (e.style == 1) {
         cols = std::max(1, e.columns);
         int cw = std::max(1, (e.w - e.gapX * (cols - 1)) / cols);
@@ -1500,25 +1951,88 @@ static void DrawCellChildren(App &a, const Elem &e, const DrawCtx &c, int idx, i
     }
 }
 
+// 목록 움직임 상태 (화면.요소 마다): 스크롤 위치·선택 위치를 시간에 따라 부드럽게
+struct ListAnim {
+    int sel = -1, prev = -1;
+    Uint32 at = 0, last = 0;
+    float pos = 0, selPos = 0;
+    bool init = false;
+    int id = -2;
+};
+static std::map<std::string, ListAnim> gListAnim;
+static int AnimMs(const Elem &e) {
+    if (!AnimOn()) return 0;
+    return e.animMs >= 0 ? e.animMs : gTheme.layout.animMs;
+}
+// id: 목록이 바뀌면(다른 카테고리·보기) 움직임 없이 새로 시작
+static ListAnim &AnimFor(const std::string &key, int id, int sel, float target, int ms) {
+    ListAnim &st = gListAnim[key];
+    Uint32 now = SDL_GetTicks();
+    if (!st.init || st.id != id) {
+        st = ListAnim();
+        st.init = true;
+        st.id = id;
+        st.sel = sel;
+        st.pos = target;
+        st.selPos = (float)sel;
+        st.last = now;
+        st.at = now - 100000;
+        return st;
+    }
+    if (sel != st.sel) {
+        st.prev = st.sel;
+        st.sel = sel;
+        st.at = now;
+    }
+    float dt = (float)(now - st.last);
+    st.last = now;
+    st.pos = Approach(st.pos, target, dt, ms);
+    st.selPos = Approach(st.selPos, (float)sel, dt, ms);
+    return st;
+}
+
 static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
     int cols, rows;
     ListGeom(e, cols, rows);
     int n = c.games ? (c.col ? (int)c.col->games.size() : 0) : (int)a.cols.size();
     int top = c.games ? a.top : a.catTop, sel = c.games ? a.sel : a.catSel;
     SDL_Color colN = LC(e.color), colS = LC(e.selColor);
+    int ms = AnimMs(e);
+    std::string akey = (c.games ? "g." : "c.") + e.name;
+    int listId = c.games ? a.col * 4 + a.view : -1;
     auto starred = [&](int idx) {
         return c.games && ((!c.col->virt && gFavSet.count(c.col->games[idx].file)) || c.col->shortName == "hbfav");
     };
     if (e.style == 0) {
+        ListAnim &st = AnimFor(akey, listId, sel, (float)top, ms);
+        float view = st.pos;
+        bool frac = fabsf(view - roundf(view)) > 0.001f;
+        if (frac) {
+            SDL_Rect clip = {e.x, e.y, e.w, (int)(rows * e.rowH + 0.5f)};
+            SDL_RenderSetClipRect(a.r, &clip);
+        }
+        // 움직이는 선택 막대 (선택 위치를 따라 미끄러짐)
+        bool slideBar = ms > 0 && fabsf(st.selPos - sel) > 0.002f;
+        if (slideBar) {
+            int ry = e.y + (int)lroundf((st.selPos - view) * e.rowH), rh = (int)(e.rowH + 0.5f);
+            SDL_Texture *stx = e.selector.empty() ? nullptr : Thumb(a, ThemeFile(e.selector), e.w, (int)e.rowH, true, true);
+            int g = e.selectorGrow;
+            if (stx) DrawFit(a, stx, e.x - g, ry - g, e.w + g * 2, rh + g * 2, 2);
+            else Fill(a, e.x, ry, e.w, rh, LC(e.selection));
+        }
         bool showCount = e.count && !c.games;
         bool themeFont = !(e.bold ? gFonts.bold : gFonts.reg).empty();
-        for (int i = 0; i < rows && top + i < n; i++) {
-            int idx = top + i, ry = e.y + (int)(i * e.rowH + 0.5f), rh = e.y + (int)((i + 1) * e.rowH + 0.5f) - ry;
+        int first = (int)floorf(view + 0.0005f);
+        for (int i = 0; i < rows + (frac ? 1 : 0); i++) {
+            int idx = first + i;
+            if (idx < 0 || idx >= n) continue;
+            float rel = idx - view;
+            int ry = e.y + (int)floorf(rel * e.rowH + 0.5f), rh = e.y + (int)floorf((rel + 1) * e.rowH + 0.5f) - ry;
             bool s = idx == sel;
-            if (s) {
-                SDL_Texture *st = e.selector.empty() ? nullptr : Thumb(a, ThemeFile(e.selector), e.w, (int)e.rowH, true, true);
+            if (s && !slideBar) {
+                SDL_Texture *stx = e.selector.empty() ? nullptr : Thumb(a, ThemeFile(e.selector), e.w, (int)e.rowH, true, true);
                 int g = e.selectorGrow;
-                if (st) DrawFit(a, st, e.x - g, ry - g, e.w + g * 2, rh + g * 2, 2);
+                if (stx) DrawFit(a, stx, e.x - g, ry - g, e.w + g * 2, rh + g * 2, 2);
                 else Fill(a, e.x, ry, e.w, rh, LC(e.selection));
             }
             SDL_Rect rowRc = {e.x, ry, e.w, rh};
@@ -1560,30 +2074,44 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
             }
             if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rowRc, 1.0f, false);
         }
+        if (frac) SDL_RenderSetClipRect(a.r, nullptr);
         return;
     }
-    // 격자
-    int cw = std::max(1, (e.w - e.gapX * (cols - 1)) / cols), ch = std::max(1, (e.h - e.gapY * (rows - 1)) / rows);
+    // 격자·캐러셀 칸
+    bool carousel = e.style == 2;
+    int cw, ch;
+    if (carousel) {
+        bool hz = e.direction == 0;
+        cw = e.itemW > 0 ? e.itemW : hz ? (int)(e.h / std::max(1.0f, e.centerScale)) : (int)(e.w / std::max(1.0f, e.centerScale));
+        ch = e.itemH > 0 ? e.itemH : hz ? (int)(e.h / std::max(1.0f, e.centerScale)) : std::max(8, cw / 3);
+    } else {
+        cw = std::max(1, (e.w - e.gapX * (cols - 1)) / cols);
+        ch = std::max(1, (e.h - e.gapY * (rows - 1)) / rows);
+    }
     std::string kind = e.image.empty() ? (c.games ? "boxart" : "icon") : e.image;
+    float maxSc = carousel ? std::max(1.0f, std::max(e.centerScale, e.sideScale)) : 1.0f;
     int iw = std::max(1, cw - e.pad[0] - e.pad[2]), ih = std::max(1, ch - e.pad[1] - e.pad[3] - (e.label == 1 ? e.labelH : 0));
+    int tw = (int)(iw * maxSc), th = (int)(ih * maxSc);  // 읽어 둘 그림 크기 (캐러셀은 가장 크게 보일 때 기준)
     auto cellPath = [&](int idx) -> std::string {
-        if (c.games) return kind == "boxart" ? c.col->games[idx].boxart : "";
+        if (c.games) return kind == "boxart" ? c.col->games[idx].boxart : kind == "screenshot" ? c.col->games[idx].screenshot : "";
         const Collection &cc = a.cols[idx];
-        if (kind == "icon") return ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), &cc);
-        if (kind == "logo") return ThemeFind(gTheme.logo, &cc);
+        if (kind == "icon") return ThemeFind(ThemeFolder(e.folder.empty() ? "icons" : e.folder), &cc, e.folder.empty() ? "icons" : e.folder.c_str());
+        if (kind == "logo") return ThemeFind(gTheme.logo, &cc, "logos");
+        if (kind == "background") return ThemeFind(gTheme.bg, &cc, "backgrounds");
         if (kind == "boxart")
             for (const auto &g : cc.games)
                 if (!g.boxart.empty()) return g.boxart;
         return "";
     };
-    auto cell = [&](int idx, bool s) {
-        int k = idx - top;
-        SDL_Rect rc = {e.x + (k % cols) * (cw + e.gapX), e.y + (k / cols) * (ch + e.gapY), cw, ch};
-        float sc = s ? e.selScale : 1.0f;
+    // base: 확대 전 칸 자리, sc: 확대 배율(가운데 기준), alpha: 흐리게
+    auto cell = [&](int idx, bool s, SDL_Rect base, float sc, int alpha) {
+        SDL_Rect rc = base;
         if (sc != 1.0f) {
-            int nw = (int)(cw * sc), nh = (int)(ch * sc);
-            rc = {rc.x - (nw - cw) / 2, rc.y - (nh - ch) / 2, nw, nh};
+            int nw = (int)(base.w * sc), nh = (int)(base.h * sc);
+            rc = {base.x - (nw - base.w) / 2, base.y - (nh - base.h) / 2, nw, nh};
         }
+        int oldAlpha = gAlpha;
+        gAlpha = gAlpha * alpha / 255;
         auto px = [&](int v) { return (int)(v * sc); };
         if (s && e.selector.empty()) Fill(a, rc.x - 4, rc.y - 4, rc.w + 8, rc.h + 8, LC(e.selection));
         if (e.hasCardColor) Fill(a, rc.x, rc.y, rc.w, rc.h, LC(e.cardColor));
@@ -1598,29 +2126,80 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
         else name = CatName(a.cols[idx]);
         SDL_Rect in = {rc.x + px(e.pad[0]), rc.y + px(e.pad[1]), rc.w - px(e.pad[0] + e.pad[2]), rc.h - px(e.pad[1] + e.pad[3])};
         int lh = e.label == 1 ? px(e.labelH) : 0;
-        SDL_Texture *t = path.empty() ? nullptr : Thumb(a, path, iw, ih, false, false);
+        SDL_Texture *t = path.empty() ? nullptr : Thumb(a, path, carousel ? tw : iw, carousel ? th : ih, false, false);
         if (t && in.w > 0 && in.h - lh > 0) DrawFit(a, t, in.x, in.y, in.w, in.h - lh, 0);
         if (e.label == 1 || (e.label == 0 && path.empty())) {
-            if (TTF_Font *f = FontFor(e.bold, e.size, name)) {
-                int th = TTF_FontHeight(f);
-                int ty = e.label == 1 ? in.y + in.h - lh + (lh - th) / 2 : in.y + (in.h - th) / 2;
+            int fs = carousel ? std::max(6, (int)(e.size * sc)) : e.size;
+            if (TTF_Font *f = FontFor(e.bold, fs, name)) {
+                int fh = TTF_FontHeight(f);
+                int ty = e.label == 1 ? in.y + in.h - lh + (lh - fh) / 2 : in.y + (in.h - fh) / 2;
                 DrawText(a, f, name, in.x + in.w / 2, ty, s ? colS : colN, in.w, 1, 0, 0, s ? kScroll : 0);
             }
         }
         if (s && !e.selector.empty())
-            if (SDL_Texture *st = Thumb(a, ThemeFile(e.selector), cw + e.selectorGrow * 2, ch + e.selectorGrow * 2, true, true)) {
+            if (SDL_Texture *stx = Thumb(a, ThemeFile(e.selector), cw + e.selectorGrow * 2, ch + e.selectorGrow * 2, true, true)) {
                 int g = px(e.selectorGrow);
-                DrawFit(a, st, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
+                DrawFit(a, stx, rc.x - g, rc.y - g, rc.w + g * 2, rc.h + g * 2, 2);
             }
         if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rc, sc, false);
+        gAlpha = oldAlpha;
     };
-    int end = std::min(n, top + cols * rows);
-    for (int idx = top; idx < end; idx++)
-        if (idx != sel) cell(idx, false);
-    if (sel >= top && sel < end) cell(sel, true);  // 선택된 칸은 맨 위에 (확대했을 때 옆 칸을 덮음)
+    if (carousel) {
+        ListAnim &st = AnimFor(akey, listId, sel, (float)sel, ms);
+        float pos = st.pos, half = e.visibleItems / 2.0f;
+        bool hz = e.direction == 0;
+        int spacing = e.spacing > 0 ? e.spacing : (hz ? cw + e.gapX : ch + e.gapY);
+        int cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+        std::vector<std::pair<float, int>> order;  // 멀리 있는 것부터 그림
+        for (int idx = std::max(0, (int)floorf(pos - half - 1)); idx <= std::min(n - 1, (int)ceilf(pos + half + 1)); idx++) {
+            float d = idx - pos;
+            if (fabsf(d) > half + 0.5f) continue;
+            order.push_back({fabsf(d), idx});
+        }
+        std::sort(order.begin(), order.end(), [](const std::pair<float, int> &x, const std::pair<float, int> &y) { return x.first > y.first; });
+        for (const auto &o : order) {
+            float d = o.second - pos, f = std::min(1.0f, fabsf(d));
+            float sc = e.centerScale + (e.sideScale - e.centerScale) * f;
+            int alpha = (int)(255 + (e.sideAlpha - 255) * f);
+            int ox = hz ? (int)lroundf(d * spacing) : 0, oy = hz ? 0 : (int)lroundf(d * spacing);
+            SDL_Rect base = {cx + ox - cw / 2, cy + oy - ch / 2, cw, ch};
+            cell(o.second, o.second == sel, base, sc, alpha);
+        }
+        // 다음·이전 그림 미리 읽기
+        for (int k = 1; k <= (int)half + 2 && gLoadBudget > 0; k++)
+            for (int idx : {sel + (int)half + k, sel - (int)half - k})
+                if (idx >= 0 && idx < n) Thumb(a, cellPath(idx), tw, th, false, false);
+        return;
+    }
+    ListAnim &st = AnimFor(akey, listId, sel, (float)(top / std::max(1, cols)), ms);
+    float vrow = st.pos;
+    bool frac = fabsf(vrow - roundf(vrow)) > 0.001f;
+    float tsel = ms > 0 ? Ease((SDL_GetTicks() - st.at) / (float)ms) : 1.0f;
+    auto scaleOf = [&](int idx) {
+        if (idx == sel) return 1.0f + (e.selScale - 1.0f) * tsel;
+        if (idx == st.prev && tsel < 1.0f) return e.selScale - (e.selScale - 1.0f) * tsel;
+        return 1.0f;
+    };
+    if (frac) {
+        int m = std::max(e.selectorGrow, e.cardGrow) + (int)((e.selScale - 1.0f) * std::max(cw, ch) / 2) + 6;
+        SDL_Rect clip = {e.x - m, e.y - m, e.w + m * 2, e.h + m * 2};
+        SDL_RenderSetClipRect(a.r, &clip);
+    }
+    int firstRow = (int)floorf(vrow + 0.0005f);
+    int start = std::max(0, firstRow * cols), end = std::min(n, (firstRow + rows + (frac ? 1 : 0)) * cols);
+    auto baseOf = [&](int idx) {
+        float rowf = idx / cols - vrow;
+        return SDL_Rect{e.x + (idx % cols) * (cw + e.gapX), e.y + (int)floorf(rowf * (ch + e.gapY) + 0.5f), cw, ch};
+    };
+    bool prevAnim = st.prev >= start && st.prev < end && st.prev != sel && tsel < 1.0f;
+    for (int idx = start; idx < end; idx++)
+        if (idx != sel && !(prevAnim && idx == st.prev)) cell(idx, false, baseOf(idx), 1.0f, 255);
+    if (prevAnim) cell(st.prev, false, baseOf(st.prev), scaleOf(st.prev), 255);
+    if (sel >= start && sel < end) cell(sel, true, baseOf(sel), scaleOf(sel), 255);  // 선택된 칸은 맨 위에 (확대했을 때 옆 칸을 덮음)
+    if (frac) SDL_RenderSetClipRect(a.r, nullptr);
     // 보이는 칸을 다 읽었으면 다음·이전 쪽 그림을 미리 읽어 둔다 (넘길 때 바로 보이게)
     for (int idx = end; idx < std::min(n, end + cols * rows) && gLoadBudget > 0; idx++) Thumb(a, cellPath(idx), iw, ih, false, false);
-    for (int idx = top - 1; idx >= std::max(0, top - cols * rows) && gLoadBudget > 0; idx--) Thumb(a, cellPath(idx), iw, ih, false, false);
+    for (int idx = start - 1; idx >= std::max(0, start - cols * rows) && gLoadBudget > 0; idx--) Thumb(a, cellPath(idx), iw, ih, false, false);
 }
 
 // 카테고리 화면: 커서가 있는 카테고리의 게임 박스 사진 미리보기
@@ -1713,7 +2292,7 @@ static void RenderScreen(App &a, const Screen &sc, const DrawCtx &c) {
     else SDL_SetRenderDrawColor(a.r, 30, 30, 38, 255);
     SDL_RenderClear(a.r);
     gBackDrawn = false;
-    gLoadBudget = gShotMode ? 100000 : 1;
+    gLoadBudget = gShotMode || gAsyncImg ? 100000 : 1;
     a.thumbs.tick++;
     for (const Elem &e : sc.elems) {
         if (!ElemShown(a, e, c)) continue;
@@ -1751,6 +2330,7 @@ static void RenderCategories(App &a) {
     c.count = (int)a.cols.size();
     int cols, rows;
     ScreenGeom(false, cols, rows);
+    if (const Elem *l = gTheme.layout.categories.List()) if (l->style == 2) cols = 2;  // 캐러셀: ▲▼◀▶ 모두 씀
     const char *ov = StringOverride(cols > 1 ? "hint.categories_grid" : "hint.categories");
     if (!ov && cols > 1) ov = StringOverride("hint.categories");
     c.hint = ov ? ov : cols > 1 ? T("[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼◀▶ 선택")
@@ -1759,7 +2339,7 @@ static void RenderCategories(App &a) {
 }
 
 static void RenderGames(App &a) {
-    const Collection &col = a.cols[a.col];
+    const Collection &col = CurCol(a);
     DrawCtx c;
     c.games = true;
     c.col = &col;
@@ -1768,11 +2348,14 @@ static void RenderGames(App &a) {
     c.count = (int)col.games.size();
     int cols, rows;
     ScreenGeom(true, cols, rows);
+    if (const Elem *l = gTheme.layout.games.List()) if (l->style == 2) cols = 2;
     const char *ov = StringOverride(cols > 1 ? "hint.games_grid" : "hint.games");
     if (!ov && cols > 1) ov = StringOverride("hint.games");
     c.hint = ov ? ov : cols > 1 ? T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ▲▼◀▶ 선택  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션")
                                 : T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션");
     RenderScreen(a, gTheme.layout.games, c);
+    if (a.view != 0 && col.games.empty())
+        DrawText(a, a.fList, a.view == 1 ? T("즐겨찾기한 게임이 없습니다") : T("실행한 게임이 없습니다"), W / 2, 330, kWhite, 0, 1);
 }
 
 // 테마 목록 끝의 "<팩> 내려받기" 항목: 이 글 뒤에 팩 폴더 이름이 붙는다
@@ -1839,7 +2422,7 @@ static void RenderHbPick(App &a) {
 }
 
 static bool Adjustable(MenuAct m) {
-    return m == MenuAct::Language || m == MenuAct::Bgm || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
+    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::Bgm || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
 }
 
 // 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비
@@ -1998,7 +2581,7 @@ static void RebuildHbFavorites(App &a, bool keepPos) {
         a.col = c;
     }
     a.catSel = s >= 0 ? s : std::min(a.catSel, (int)a.cols.size() - 1);
-    a.sel = std::min(a.sel, std::max(0, (int)a.cols[a.col].games.size() - 1));
+    a.sel = std::min(a.sel, std::max(0, (int)CurCol(a).games.size() - 1));
 }
 
 static void LoadGames(App &a, bool force, std::string &log) {
@@ -2022,6 +2605,11 @@ static void LoadGames(App &a, bool force, std::string &log) {
         SaveLibraryCache(cache, sig, a.cols);
         log += "[scan] " + std::to_string(SDL_GetTicks() - t0) + " ms\n";
     }
+#ifdef JOY_BUILDER
+    gBaseCols = a.cols;
+#endif
+    LoadCustomCategories();
+    ApplyCustomCategories(a.cols);
     CountFramesPending(a.cols);
     BuildMenu();
     RebuildHbFavorites(a, false);
@@ -2029,6 +2617,7 @@ static void LoadGames(App &a, bool force, std::string &log) {
 }
 
 static void Render(App &a) {
+    ImgPump(a.r);
     MarqueeNextFrame();
     if (a.cols.empty()) {
         Frame(a, "Joy Launcher", T("[B] 종료"));
@@ -2062,6 +2651,71 @@ static void Render(App &a) {
     }
 }
 
+// 화면 전환 효과 (layout.txt [theme] transition): 직전 화면을 한 장으로 남겨 새 화면과 섞거나 밀어냄.
+// out: 최종으로 그릴 곳 (nullptr = 화면). 전환이 없으면 그대로 Render
+static SDL_Texture *gTrCur = nullptr, *gTrPrev = nullptr;
+static Uint32 gTrAt = 0;
+static int gTrDir = 1, gTrCol = -1, gTrView = 0;
+static Mode gTrMode = Mode::Categories;
+static bool gTrInit = false, gTrPrevOk = false;
+static void RenderFrame(App &a, SDL_Texture *out) {
+    const Layout &l = gTheme.layout;
+    bool on = l.transition > 0 && l.transitionMs > 0 && AnimOn();
+    if (!on) {
+        gTrInit = false;
+        SDL_SetRenderTarget(a.r, out);
+        Render(a);
+        return;
+    }
+    if (!gTrCur) {
+        gTrCur = SDL_CreateTexture(a.r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
+        gTrPrev = SDL_CreateTexture(a.r, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, W, H);
+        if (!gTrCur || !gTrPrev) {  // 렌더 대상 그림을 못 만들면 전환 없이
+            gTheme.layout.transition = 0;
+            SDL_SetRenderTarget(a.r, out);
+            Render(a);
+            return;
+        }
+    }
+    Uint32 now = SDL_GetTicks();
+    if (gTrInit && (a.mode != gTrMode || (a.mode == Mode::Games && (a.col != gTrCol || a.view != gTrView)))) {
+        std::swap(gTrCur, gTrPrev);  // 직전 프레임 = 지난 화면
+        gTrPrevOk = true;
+        gTrAt = now;
+        int n = std::max(1, (int)a.cols.size());
+        if (a.mode != gTrMode) gTrDir = a.mode == Mode::Games ? 1 : -1;
+        else if (a.col != gTrCol) gTrDir = ((a.col - gTrCol + n) % n) == 1 ? 1 : -1;
+        else gTrDir = ((a.view - gTrView + 3) % 3) == 1 ? 1 : -1;
+    }
+    gTrInit = true;
+    gTrMode = a.mode;
+    gTrCol = a.col;
+    gTrView = a.view;
+    SDL_SetRenderTarget(a.r, gTrCur);
+    Render(a);
+    SDL_SetRenderTarget(a.r, out);
+    float t = (now - gTrAt) / (float)l.transitionMs;
+    SDL_SetTextureBlendMode(gTrCur, SDL_BLENDMODE_NONE);
+    if (gTrPrevOk && t < 1.0f) {
+        float k = Ease(t);
+        SDL_SetTextureBlendMode(gTrPrev, SDL_BLENDMODE_NONE);
+        if (l.transition == 1) {
+            SDL_RenderCopy(a.r, gTrPrev, nullptr, nullptr);
+            SDL_SetTextureBlendMode(gTrCur, SDL_BLENDMODE_BLEND);
+            SDL_SetTextureAlphaMod(gTrCur, (Uint8)(255 * k));
+            SDL_RenderCopy(a.r, gTrCur, nullptr, nullptr);
+            SDL_SetTextureAlphaMod(gTrCur, 255);
+        } else {
+            int off = (int)(W * k);
+            SDL_Rect pr = {-gTrDir * off, 0, W, H}, cr = {gTrDir * (W - off), 0, W, H};
+            SDL_RenderCopy(a.r, gTrPrev, nullptr, &pr);
+            SDL_RenderCopy(a.r, gTrCur, nullptr, &cr);
+        }
+    } else {
+        SDL_RenderCopy(a.r, gTrCur, nullptr, nullptr);
+    }
+}
+
 static void Clamp(App &a) {
     if (a.cols.empty()) return;
     int total = (int)a.cols.size();
@@ -2076,7 +2730,7 @@ static void Clamp(App &a) {
         if (sel >= top + cols * rows) top = (sel / cols - rows + 1) * cols;
     };
     keep(a.catSel, a.catTop, false);
-    int n = (int)a.cols[a.col].games.size();
+    int n = (int)CurCol(a).games.size();
     a.sel = std::max(0, std::min(a.sel, n - 1));
     keep(a.sel, a.top, true);
 }
@@ -2100,6 +2754,16 @@ static int CenterTop(int sel, bool games) {
 static int MoveSel(int sel, int n, bool games, int b) {
     int cols, rows;
     ScreenGeom(games, cols, rows);
+    // 캐러셀: 방향대로 한 칸, 다른 방향은 보이는 칸 수만큼
+    if (const Elem *l = (games ? gTheme.layout.games : gTheme.layout.categories).List())
+        if (l->style == 2) {
+            bool hz = l->direction == 0;
+            int page = std::max(1, l->visibleItems);
+            if (b == (hz ? 12 : 13)) return sel - 1;
+            if (b == (hz ? 14 : 15)) return sel + 1;
+            if (b == (hz ? 13 : 12)) return sel - page;
+            return sel + page;
+        }
     if (cols <= 1) return sel + (b == 13 ? -1 : b == 15 ? 1 : b == 12 ? -rows : rows);
     if (b == 12) return sel - 1;
     if (b == 14) return sel + 1;
@@ -2115,7 +2779,7 @@ static void SaveState(App &a, bool resume = false) {
     mkdir(gHome.c_str(), 0777);
     std::ofstream o(gHome + "/state.txt");
     o << a.cols[a.col].name << "\n"
-      << a.cols[a.col].games[a.sel].file << "\n"
+      << (CurCol(a).games.empty() ? std::string() : CurCol(a).games[a.sel].file) << "\n"
       << (a.mode == Mode::Games ? "games" : "categories") << "\n"
       << a.catSel << "\n"
       << (resume ? "resume" : "") << "\n";
@@ -2240,7 +2904,8 @@ static bool LaunchNro(App &a, const Game &g) {
 }
 
 static bool LaunchGame(App &a) {
-    const Game &g = a.cols[a.col].games[a.sel];
+    if (CurCol(a).games.empty()) return false;
+    const Game &g = CurCol(a).games[a.sel];
     if (g.launch == kLaunchNro) return LaunchNro(a, g);
     std::string nro, args;
     if (!BuildLaunch(g, nro, args)) {
@@ -2385,9 +3050,12 @@ int main(int argc, char **argv) {
     MakeUserFolders();
     BgmScan(gHome + "/bgm");
     gShotMode = !shot.empty();
+    gAnimAllowed = !gShotMode;
+    LoadUserImages();
     if (!gShotMode) ApplyBgm();
     if (!gShotMode && gVideoFrames == "auto") FrameWorkerStart();
     if (!gShotMode && gAutoUpdate == "on") UpdateCheckStart();
+    if (!gShotMode) ImgLoaderStart();
     // 이전에 중단된 임시 파일 정리
     if (DIR *d = opendir((gHome + "/cache").c_str())) {
         while (dirent *e = readdir(d)) {
@@ -2474,7 +3142,7 @@ int main(int argc, char **argv) {
                 int b = atoi(tok.c_str());
                 if (b >= 12 && b <= 15) {
                     if (a.mode == Mode::Categories) a.catSel = MoveSel(a.catSel, (int)a.cols.size(), false, b);
-                    else a.sel = MoveSel(a.sel, (int)a.cols[a.col].games.size(), true, b);
+                    else a.sel = MoveSel(a.sel, (int)CurCol(a).games.size(), true, b);
                 } else if (b == 0 && a.mode == Mode::Categories) {
                     if (a.col != a.catSel) { a.col = a.catSel; a.sel = a.top = 0; }
                     a.mode = Mode::Games;
@@ -2644,6 +3312,8 @@ int main(int argc, char **argv) {
             int cur = gLanguage == "ko" ? 1 : gLanguage == "en" ? 2 : 0;
             gLanguage = kLangs[(cur + 3 + dir) % 3];
             ApplyLanguage();
+        } else if (act == MenuAct::Effects) {
+            gEffects = !gEffects;
         } else if (act == MenuAct::Bgm) {
             gBgmOn = !gBgmOn;
         } else if (act == MenuAct::BgmVolume) {
@@ -2685,7 +3355,7 @@ int main(int argc, char **argv) {
             a.optPick = false;
         } else if (m.act == MenuAct::Update) {
             runUpdate(idx);
-        } else if (m.act == MenuAct::Language) {
+        } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects) {
             adjust(m.act, 1);
         } else if (m.act == MenuAct::HbFav) {
             a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;
@@ -2836,14 +3506,21 @@ int main(int argc, char **argv) {
         } else {
             switch (b) {
             case 12: case 13: case 14: case 15:
-                a.sel = MoveSel(a.sel, (int)a.cols[a.col].games.size(), true, b);
+                a.sel = MoveSel(a.sel, (int)CurCol(a).games.size(), true, b);
                 break;
             case 6: a.col = (a.col + ncol - 1) % ncol; a.catSel = a.col; a.sel = a.top = 0; break;
             case 7: a.col = (a.col + 1) % ncol; a.catSel = a.col; a.sel = a.top = 0; break;
             case 0: if (LaunchGame(a)) running = false; break;
             case 1: a.mode = Mode::Categories; a.catSel = a.col; break;
+            case 8: case 9:  // ZL / ZR: 보기 (전체 → 즐겨찾기 → 최근 실행)
+                CurCol(a);
+                a.view = (a.view + (b == 9 ? 1 : 2)) % 3;
+                a.viewFor = a.col;
+                a.sel = a.top = 0;
+                break;
             case 11: {  // −: 즐겨찾기 넣기/빼기
-                std::string file = a.cols[a.col].games[a.sel].file;
+                if (CurCol(a).games.empty()) break;
+                std::string file = CurCol(a).games[a.sel].file;
                 if (a.cols[a.col].shortName == "hbfav") {  // 홈브루 즐겨찾기에서는 빼기만 (넣기는 옵션 창)
                     gHbFav.erase(std::remove(gHbFav.begin(), gHbFav.end(), file), gHbFav.end());
                     SaveHbFav();
@@ -2858,6 +3535,7 @@ int main(int argc, char **argv) {
                 if (add) gFavSet.insert(file);
                 else gFavSet.erase(file);
                 SaveFavorites();
+                gViewVersion++;
                 RebuildFavorites(a, true);
                 a.message = add ? T("즐겨찾기에 넣었습니다") : T("즐겨찾기에서 뺐습니다");
                 a.messageColor = {60, 70, 120, 240};
@@ -2956,6 +3634,8 @@ int main(int argc, char **argv) {
                 case SDLK_ESCAPE: act(1); break;
                 case SDLK_t: act(2); break;
                 case SDLK_f: act(11); break;
+                case SDLK_z: act(8); break;
+                case SDLK_x: act(9); break;
                 }
             }
         }
@@ -2964,7 +3644,7 @@ int main(int argc, char **argv) {
             nextRepeat = SDL_GetTicks() + 70;
         }
         BgmUpdate();
-        Render(a);
+        RenderFrame(a, nullptr);
         SDL_RenderPresent(a.r);
     }
     // 다음 프로그램(게임·홈브루)으로 넘어가기 전에 소리를 줄이고 오디오·스레드·서비스를 모두 닫는다
@@ -2973,6 +3653,7 @@ int main(int argc, char **argv) {
     appletUnhook(&hookCookie);
     if (psmOk) psmExit();
 #endif
+    ImgLoaderStop();
     FrameWorkerStop();
     UpdaterShutdown();
     a.text.Clear();

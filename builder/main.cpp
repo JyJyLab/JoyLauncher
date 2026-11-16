@@ -18,6 +18,9 @@
 #include "joy_api.h"
 #include "schema.h"
 #include "util.h"
+#include "ftp.h"
+
+#include <thread>
 
 static const int SW = 1280, SH = 720;
 
@@ -62,6 +65,8 @@ struct Builder {
     uintmax_t themeSize = 0;
     Uint32 sizeAt = 0;
     std::string tabReq;   // 처음 열 아래 탭 (시험용 --panel)
+    bool assetUser = false;  // 그림 넣을 곳: false 테마 / true 내 그림 폴더 (work/categories, 모든 테마 공통)
+    int catSel = -1;
     std::string rawText;  // layout.txt 직접 편집
     bool rawDirty = false;
 };
@@ -166,11 +171,15 @@ static void OpenTheme(const std::string &name) {
     Status("열림: " + name);
 }
 // 그림 파일을 바꾼 뒤 (런처가 그림 목록을 다시 읽게)
+static void JoyReloadCategoriesSafe();
 static void AssetsChanged() {
+    if (B.assetUser) JoyReloadCategoriesSafe();
     JoyLoadTheme(B.theme);
     Apply();
     B.sizeAt = 0;
 }
+
+static void JoyReloadCategoriesSafe() { JoyReloadCategories(); }
 
 // ---------------------------------------------------------------- 요소 찾기
 static const Elem *FindElemKey(const std::string &key) {
@@ -225,7 +234,15 @@ static std::string EffVal(const Elem &e, const std::string &k) {
     if (k == "alpha") return std::to_string(e.alpha);
     if (k == "dim") return std::to_string(std::max(0, e.dim));
     if (k == "tint") return e.hasTint ? ColorStr(e.tint) : "";
-    if (k == "style") return e.style ? "grid" : "text";
+    if (k == "style") return e.style == 2 ? "carousel" : e.style ? "grid" : "text";
+    if (k == "direction") return e.direction ? "vertical" : "horizontal";
+    if (k == "visible_items") return std::to_string(e.visibleItems);
+    if (k == "item_size") { snprintf(b, sizeof(b), "%d,%d", e.itemW, e.itemH); return b; }
+    if (k == "spacing") return std::to_string(e.spacing);
+    if (k == "center_scale") { snprintf(b, sizeof(b), "%g", e.centerScale); return b; }
+    if (k == "side_scale") { snprintf(b, sizeof(b), "%g", e.sideScale); return b; }
+    if (k == "side_alpha") return std::to_string(e.sideAlpha);
+    if (k == "anim_ms") return std::to_string(e.animMs);
     if (k == "rows") return std::to_string(e.rows);
     if (k == "columns") return std::to_string(e.columns);
     if (k == "row_height") { snprintf(b, sizeof(b), "%g", e.rowH); return b; }
@@ -352,10 +369,12 @@ static void ScanLibrary() {
                 if (IsImageName(f) || kind == "fonts") B.lib[set][kind][Lower(Stem(f))] = B.library + "/" + set + "/" + kind + "/" + f;
     if (B.bulkSet.empty() && !B.libSets.empty()) B.bulkSet = B.libSets[0];
 }
+// 그림을 넣을 곳: 테마 폴더 / 내 그림 폴더 (work/categories/<종류>, 모든 테마 공통)
+static std::string AssetDir(const std::string &kind) { return (B.assetUser ? B.home + "/categories" : ThemeDir()) + "/" + kind; }
 // 테마 폴더의 그림 (종류 폴더 안 이름(소문자) -> 경로)
 static std::map<std::string, std::string> ThemeImages(const std::string &kind) {
     std::map<std::string, std::string> m;
-    std::string dir = ThemeDir() + "/" + kind;
+    std::string dir = AssetDir(kind);
     for (const auto &f : ListDir(dir, false))
         if (IsImageName(f)) m[Lower(Stem(f))] = dir + "/" + f;
     return m;
@@ -369,14 +388,14 @@ static bool AssignAsset(const std::string &kind, const std::string &stem, const 
     // 라이브러리 그림은 이미 알맞은 크기: 그대로 복사 (다시 저장하면 화질이 떨어짐)
     if (src.rfind(B.library + "/", 0) == 0 && kind != "ui") {
         std::error_code ec;
-        std::string dir = ThemeDir() + "/" + kind;
+        std::string dir = AssetDir(kind);
         fs::create_directories(P(dir), ec);
         for (const char *e : {".png", ".jpg", ".jpeg", ".PNG", ".JPG"}) fs::remove(P(dir + "/" + stem + e), ec);
         fs::copy_file(P(src), P(dir + "/" + stem + "." + Ext(src)), fs::copy_options::overwrite_existing, ec);
         if (!ec) return true;
     }
     std::string err;
-    std::string out = ImportImage(src, ThemeDir() + "/" + kind, stem, kind, err);
+    std::string out = ImportImage(src, AssetDir(kind), stem, kind, err);
     if (out.empty()) { Status("그림을 읽지 못함: " + err); return false; }
     return true;
 }
@@ -761,10 +780,17 @@ static void Canvas() {
     ImGui::SetNextItemWidth(90);
     if (ImGui::InputInt("게임", &gi)) JoySetGameIndex(gi);
     ImGui::SameLine();
-    for (auto [lbl, bt] : std::initializer_list<std::pair<const char *, int>>{{"◀", 12}, {"▲", 13}, {"▼", 15}, {"▶", 14}, {"L", 20}, {"R", 21}}) {
-        if (ImGui::Button(lbl)) JoyNav(bt);
+    for (auto [lbl, bt] : std::initializer_list<std::pair<const char *, int>>{{"◀", 12}, {"▲", 13}, {"▼", 15}, {"▶", 14}, {"L", 20}, {"R", 21}, {"ZL", 22}, {"ZR", 23}}) {
+        if (ImGui::Button(lbl)) { if (bt >= 22) B.games = true; JoyNav(bt); }
         ImGui::SameLine();
     }
+    if (ImGui::Button("A")) { if (!B.games) { JoyNav(0); B.games = true; } }
+    ImGui::SameLine();
+    if (ImGui::Button("B")) { if (B.games) { JoyNav(1); B.games = false; } }
+    ImGui::SameLine();
+    static const char *kViews[] = {"전체", "즐겨찾기", "최근 실행"};
+    ImGui::TextDisabled("보기:%s", kViews[JoyView() % 3]);
+    ImGui::SameLine();
     if (ImGui::Button("★ 즐겨찾기")) { B.games = true; JoyNav(30); }
     ImGui::SameLine();
     if (ImGui::Checkbox("English", &B.en)) JoySetLang(B.en);
@@ -874,10 +900,327 @@ static void Canvas() {
     if (hovered) ImGui::GetIO().WantCaptureKeyboard = true;
 }
 
+// ---------------------------------------------------------------- 나만의 카테고리 (work/categories.txt — 런처 설정, 테마와 별개)
+struct CatDef {
+    std::string name, image, include, exclude, genre, games, position = "top";
+    bool hideIncluded = true;
+};
+static std::vector<CatDef> gCats;
+static std::vector<std::string> gCatHide;
+static std::string CatPath() { return B.home + "/categories.txt"; }
+static void LoadCats() {
+    gCats.clear();
+    gCatHide.clear();
+    std::string text;
+    ReadFile(CatPath(), text);
+    ThemeTxt t;
+    t.Parse(text);
+    bool hide = false;
+    for (const auto &l0 : t.lines) {
+        std::string l = Trim(l0);
+        if (l.empty() || l[0] == '#' || l[0] == ';') continue;
+        if (l[0] == '[') {
+            std::string n = l.substr(1, l.find(']') == std::string::npos ? std::string::npos : l.find(']') - 1);
+            hide = Lower(n) == "hide";
+            if (!hide) { gCats.push_back(CatDef()); gCats.back().name = n; }
+            continue;
+        }
+        if (hide) { gCatHide.push_back(l); continue; }
+        std::string k, v;
+        if (gCats.empty() || !ThemeTxt::Split(l, k, v)) continue;
+        CatDef &c = gCats.back();
+        k = Lower(k);
+        if (k == "image") c.image = v;
+        else if (k == "include") c.include = v;
+        else if (k == "exclude") c.exclude = v;
+        else if (k == "genre") c.genre = v;
+        else if (k == "games") c.games = v;
+        else if (k == "position") c.position = v;
+        else if (k == "hide_included") c.hideIncluded = Lower(v) != "off";
+    }
+}
+static void SaveCats() {
+    std::string o = "# Joy Launcher 나만의 카테고리 (테마 빌더에서 만듦). 설명: 테마_레이아웃.md 12장\n";
+    for (const auto &c : gCats) {
+        o += "\n[" + c.name + "]\n";
+        if (!c.image.empty()) o += "image = " + c.image + "\n";
+        if (!c.include.empty()) o += "include = " + c.include + "\n";
+        if (!c.exclude.empty()) o += "exclude = " + c.exclude + "\n";
+        if (!c.genre.empty()) o += "genre = " + c.genre + "\n";
+        if (!c.games.empty()) o += "games = " + c.games + "\n";
+        o += std::string("hide_included = ") + (c.hideIncluded ? "on" : "off") + "\n";
+        o += "position = " + c.position + "\n";
+    }
+    if (!gCatHide.empty()) {
+        o += "\n[hide]\n";
+        for (const auto &h : gCatHide) o += h + "\n";
+    }
+    WriteFile(CatPath(), o);
+    JoyReloadCategories();
+}
+static std::vector<std::string> SplitComma(const std::string &v) {
+    std::vector<std::string> out;
+    size_t p = 0;
+    while (p <= v.size()) {
+        size_t q = v.find(',', p);
+        std::string part = Trim(v.substr(p, q == std::string::npos ? std::string::npos : q - p));
+        if (!part.empty()) out.push_back(part);
+        if (q == std::string::npos) break;
+        p = q + 1;
+    }
+    return out;
+}
+static std::string JoinComma(const std::vector<std::string> &v) {
+    std::string o;
+    for (const auto &s : v) o += (o.empty() ? "" : ", ") + s;
+    return o;
+}
+static std::string CatImageId(const CatDef &c) { return Lower(c.image.empty() ? c.name : c.image); }
+
+static void CategoriesPanel() {
+    ImGui::TextWrapped("여러 롬 폴더·카테고리를 묶은 내 카테고리 (예: PlayStation = PS1 + PS2 + PSP). 테마와 별개로 스위치의 /JoyLauncher/categories.txt 에 저장됩니다. 그림은 [그림] 탭에서 \"내 그림 폴더\" 를 고르고 넣으면 모든 테마에서 쓰입니다.");
+    ImGui::BeginChild("catlist", ImVec2(230, 0), true);
+    for (int i = 0; i < (int)gCats.size(); i++)
+        if (ImGui::Selectable((gCats[i].name + "##" + std::to_string(i)).c_str(), B.catSel == i)) B.catSel = i;
+    ImGui::Separator();
+    if (ImGui::Button("+ 추가")) {
+        CatDef c;
+        c.name = "새 카테고리 " + std::to_string(gCats.size() + 1);
+        c.image = "mycat" + std::to_string(gCats.size() + 1);
+        gCats.push_back(c);
+        B.catSel = (int)gCats.size() - 1;
+        SaveCats();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("삭제") && B.catSel >= 0 && B.catSel < (int)gCats.size()) {
+        gCats.erase(gCats.begin() + B.catSel);
+        B.catSel = std::min(B.catSel, (int)gCats.size() - 1);
+        SaveCats();
+    }
+    if (B.catSel > 0 && ImGui::Button("위로")) { std::swap(gCats[B.catSel], gCats[B.catSel - 1]); B.catSel--; SaveCats(); }
+    ImGui::SameLine();
+    if (B.catSel >= 0 && B.catSel + 1 < (int)gCats.size() && ImGui::Button("아래로")) { std::swap(gCats[B.catSel], gCats[B.catSel + 1]); B.catSel++; SaveCats(); }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("catedit", ImVec2(0, 0), true);
+    auto base = JoyBaseCollections();
+    if (B.catSel >= 0 && B.catSel < (int)gCats.size()) {
+        CatDef &c = gCats[B.catSel];
+        bool ch = false;
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputText("이름 (화면에 보임)", &c.name);
+        ch |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputText("그림 이름 (영문)", &c.image);
+        ch |= ImGui::IsItemDeactivatedAfterEdit();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("테마·내 그림 폴더에서 이 이름의 배경·로고·아이콘을 찾음. 없으면 묶은 첫 기종의 그림");
+        ImGui::SetNextItemWidth(260);
+        ImGui::InputTextWithHint("장르로 모으기", "예: RPG, 슈팅 (비우면 장르 상관없음)", &c.genre);
+        ch |= ImGui::IsItemDeactivatedAfterEdit();
+        ch |= ImGui::Checkbox("묶은 원래 카테고리는 목록에서 숨김", &c.hideIncluded);
+        const char *posName = c.position == "bottom" ? "맨 아래" : c.position.rfind("after:", 0) == 0 ? c.position.c_str() : "맨 위";
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::BeginCombo("목록 자리", posName)) {
+            if (ImGui::Selectable("맨 위")) { c.position = "top"; ch = true; }
+            if (ImGui::Selectable("맨 아래")) { c.position = "bottom"; ch = true; }
+            for (const auto &b : base)
+                if (ImGui::Selectable(("after:" + b.name).c_str())) { c.position = "after:" + b.name; ch = true; }
+            ImGui::EndCombo();
+        }
+        ImGui::SeparatorText("묶을 카테고리");
+        auto inc = SplitComma(c.include);
+        bool all = std::find(inc.begin(), inc.end(), "*") != inc.end();
+        if (ImGui::Checkbox("모든 카테고리 (*)", &all)) { c.include = all ? "*" : ""; ch = true; inc = SplitComma(c.include); }
+        if (!all) {
+            if (ImGui::BeginTable("inc", 3)) {
+                for (const auto &b : base) {
+                    ImGui::TableNextColumn();
+                    bool on = std::find(inc.begin(), inc.end(), b.name) != inc.end();
+                    std::string lbl = b.name + " (" + std::to_string(b.games) + ")";
+                    if (ImGui::Checkbox(lbl.c_str(), &on)) {
+                        if (on) inc.push_back(b.name);
+                        else inc.erase(std::remove(inc.begin(), inc.end(), b.name), inc.end());
+                        c.include = JoinComma(inc);
+                        ch = true;
+                    }
+                }
+                ImGui::EndTable();
+            }
+        }
+        if (ch) SaveCats();
+    } else {
+        ImGui::TextDisabled("왼쪽에서 고르거나 + 추가");
+    }
+    ImGui::SeparatorText("목록에서 숨길 카테고리 ([hide])");
+    if (ImGui::BeginTable("hide", 3)) {
+        for (const auto &b : base) {
+            ImGui::TableNextColumn();
+            bool on = std::find(gCatHide.begin(), gCatHide.end(), b.name) != gCatHide.end();
+            if (ImGui::Checkbox(("##h" + b.name).c_str(), &on)) {
+                if (on) gCatHide.push_back(b.name);
+                else gCatHide.erase(std::remove(gCatHide.begin(), gCatHide.end(), b.name), gCatHide.end());
+                SaveCats();
+            }
+            ImGui::SameLine();
+            ImGui::TextUnformatted(b.name.c_str());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+}
+
+// ---------------------------------------------------------------- 스위치로 보내기 (FTP)
+struct FtpState {
+    std::string host = "192.168.0.10", user, pass, base = "/JoyLauncher";
+    int port = 5000;
+    bool onlyChanged = true, withCats = true;
+    std::mutex m;
+    std::vector<std::string> log;
+    std::atomic<int> done{0}, total{0};
+    std::atomic<bool> running{false};
+};
+static FtpState gFtp;
+static void FtpLog(const std::string &s) {
+    std::lock_guard<std::mutex> l(gFtp.m);
+    gFtp.log.push_back(s);
+    if (gFtp.log.size() > 300) gFtp.log.erase(gFtp.log.begin());
+}
+static void LoadFtpSettings() {
+    std::string t;
+    if (!ReadFile(B.home + "/builder_ftp.txt", t)) return;
+    ThemeTxt f;
+    f.Parse(t);
+    if (!f.Get("host").empty()) gFtp.host = f.Get("host");
+    if (!f.Get("port").empty()) gFtp.port = atoi(f.Get("port").c_str());
+    gFtp.user = f.Get("user");
+    gFtp.pass = f.Get("pass");
+    if (!f.Get("base").empty()) gFtp.base = f.Get("base");
+}
+static void SaveFtpSettings() {
+    WriteFile(B.home + "/builder_ftp.txt", "host=" + gFtp.host + "\nport=" + std::to_string(gFtp.port) + "\nuser=" + gFtp.user +
+                                               "\npass=" + gFtp.pass + "\nbase=" + gFtp.base + "\n");
+}
+// (로컬 경로, 원격 경로) 목록
+static void FtpCollect(const std::string &dir, const std::string &remote, std::vector<std::pair<std::string, std::string>> &out) {
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(P(dir), ec), end; !ec && it != end; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        std::string rel = U8(fs::relative(it->path(), P(dir), ec));
+        std::replace(rel.begin(), rel.end(), '\\', '/');
+        if (rel == "layout_errors.txt" || rel == "builder_fill.txt") continue;
+        out.push_back({U8(it->path()), remote + "/" + rel});
+    }
+}
+static void FtpSendTheme() {
+    if (gFtp.running || B.theme.empty()) return;
+    SaveFiles();
+    SaveFtpSettings();
+    std::vector<std::pair<std::string, std::string>> files;
+    std::string base = gFtp.base;
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    FtpCollect(ThemeDir(), base + "/themes/" + B.theme, files);
+    if (gFtp.withCats) {
+        if (Exists(CatPath())) files.push_back({CatPath(), base + "/categories.txt"});
+        if (IsDir(B.home + "/categories")) FtpCollect(B.home + "/categories", base + "/categories", files);
+    }
+    gFtp.total = (int)files.size();
+    gFtp.done = 0;
+    gFtp.running = true;
+    {
+        std::lock_guard<std::mutex> l(gFtp.m);
+        gFtp.log.clear();
+    }
+    std::string host = gFtp.host, user = gFtp.user, pass = gFtp.pass;
+    int port = gFtp.port;
+    bool onlyChanged = gFtp.onlyChanged;
+    std::thread([files, host, port, user, pass, onlyChanged]() {
+        Ftp f;
+        std::string err;
+        FtpLog("연결: " + host + ":" + std::to_string(port));
+        if (!f.Login(host, port, user, pass, err)) {
+            FtpLog("실패: " + err);
+            gFtp.running = false;
+            return;
+        }
+        std::set<std::string> made;
+        int sent = 0, skipped = 0, failed = 0;
+        for (const auto &fp : files) {
+            // 폴더 만들기 (있으면 무시)
+            std::string r = fp.second;
+            for (size_t p = r.find('/', 1); p != std::string::npos; p = r.find('/', p + 1)) {
+                std::string d = r.substr(0, p);
+                if (made.insert(d).second) f.Mkd(d);
+            }
+            std::string data;
+            if (!ReadFile(fp.first, data)) { failed++; FtpLog("읽기 실패: " + fp.first); gFtp.done++; continue; }
+            if (onlyChanged && f.Size(fp.second) == (long long)data.size()) { skipped++; gFtp.done++; continue; }
+            if (f.Stor(fp.second, data, err)) {
+                sent++;
+                FtpLog("보냄: " + fp.second);
+            } else {
+                failed++;
+                FtpLog("실패: " + err);
+                if (f.c == INVALID_SOCKET || err.find("PASV") != std::string::npos) break;
+            }
+            gFtp.done++;
+        }
+        f.Cmd("QUIT");
+        FtpLog("끝: 보냄 " + std::to_string(sent) + ", 같아서 건너뜀 " + std::to_string(skipped) + ", 실패 " + std::to_string(failed) +
+               "  →  스위치에서 Y 옵션 → 테마 설정 → 이 테마 → A");
+        gFtp.running = false;
+    }).detach();
+}
+static void FtpWindow(bool open) {
+    if (open) ImGui::OpenPopup("스위치로 보내기");
+    ImGui::SetNextWindowSize(ImVec2(720, 520), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("스위치로 보내기")) {
+        ImGui::TextWrapped("스위치에서 ftpd(또는 sys-ftpd)를 켜고 화면에 보이는 주소·포트를 적으세요. 테마 폴더만 /JoyLauncher/themes/%s 로 보냅니다 (런처·설정은 건드리지 않음).",
+                           B.theme.c_str());
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputText("주소", &gFtp.host);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100);
+        ImGui::InputInt("포트", &gFtp.port, 0);
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputTextWithHint("사용자", "비우면 익명", &gFtp.user);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160);
+        ImGui::InputText("비밀번호", &gFtp.pass, ImGuiInputTextFlags_Password);
+        ImGui::SetNextItemWidth(220);
+        ImGui::InputText("Joy Launcher 폴더", &gFtp.base);
+        ImGui::Checkbox("바뀐 파일만 (크기 비교)", &gFtp.onlyChanged);
+        ImGui::SameLine();
+        ImGui::Checkbox("내 카테고리도 (categories.txt + categories 폴더)", &gFtp.withCats);
+        ImGui::BeginDisabled(gFtp.running);
+        if (ImGui::Button("보내기")) FtpSendTheme();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        int tot = gFtp.total, dn = gFtp.done;
+        ImGui::ProgressBar(tot ? dn / (float)tot : 0.0f, ImVec2(-90, 0), (std::to_string(dn) + " / " + std::to_string(tot)).c_str());
+        ImGui::SameLine();
+        if (ImGui::Button("닫기")) ImGui::CloseCurrentPopup();
+        ImGui::BeginChild("ftplog", ImVec2(0, 0), true);
+        {
+            std::lock_guard<std::mutex> l(gFtp.m);
+            for (const auto &s : gFtp.log) ImGui::TextUnformatted(s.c_str());
+            if (gFtp.running) ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
+        ImGui::EndPopup();
+    }
+}
+
 // ---------------------------------------------------------------- 그림 창
 static void AssetsPanel() {
     if (B.theme.empty()) return;
+    if (ImGui::RadioButton("이 테마에 넣기", !B.assetUser)) B.assetUser = false;
+    ImGui::SameLine();
+    if (ImGui::RadioButton("내 그림 폴더 (모든 테마 공통)", B.assetUser)) B.assetUser = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("스위치의 /JoyLauncher/categories/<종류>/ — 테마에 그림이 없을 때 씀 (나만의 카테고리는 기종 그림보다 먼저)");
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
     std::vector<std::string> kinds = {"backgrounds", "logos", "icons"};
+    if (!B.assetUser)
     for (const auto &d : ListDir(ThemeDir(), true))
         if (std::find(kinds.begin(), kinds.end(), d) == kinds.end() && d != "fonts" && d != "credits") kinds.push_back(d);
     for (const auto &k : kinds) {
@@ -927,7 +1270,10 @@ static void AssetsPanel() {
     // 행: 기종 표 + 테마에만 있는 이름
     std::vector<std::pair<std::string, std::string>> rows;
     std::set<std::string> listed;
-    for (const auto &s : EsdeSystems()) { rows.push_back({s.id, s.ko}); listed.insert(s.id); }
+    for (const auto &c : gCats)
+        if (listed.insert(CatImageId(c)).second) rows.push_back({CatImageId(c), "내 카테고리: " + c.name});
+    for (const auto &s : EsdeSystems())
+        if (listed.insert(s.id).second) rows.push_back({s.id, s.ko});
     for (const auto &kv : have)
         if (!listed.count(kv.first)) { rows.push_back({kv.first, ""}); listed.insert(kv.first); }
     for (const auto &set : B.libSets)
@@ -949,7 +1295,7 @@ static void AssetsPanel() {
                 continue;
             bool any = have.count(id);
             for (const auto &set : B.libSets) any = any || B.lib[set][B.assetKind].count(id);
-            if (!any && B.assetFilter.empty()) continue;  // 어디에도 그림이 없는 기종은 숨김 (찾으면 보임)
+            if (!any && B.assetFilter.empty() && row.second.rfind("내 카테고리", 0) != 0) continue;  // 어디에도 그림이 없는 기종은 숨김 (찾으면 보임)
             ImGui::TableNextRow(0, th + 4);
             ImGui::PushID(id.c_str());
             ImGui::TableNextColumn();
@@ -1099,6 +1445,38 @@ static void ThemePanel() {
     ImGui::InputText("##nc", &newColor);
     ImGui::SameLine();
     if (ImGui::Button("색 이름 추가") && !newColor.empty()) { PushUndo(); B.doc.Set("theme", "color." + Lower(newColor), "#3b4191"); Changed(); }
+    ImGui::SeparatorText("화면 효과 (움직임·전환)");
+    auto msRow = [&](const char *key, const char *lbl, int def) {
+        std::string v = B.doc.Get("theme", key);
+        int x = v.empty() ? def : atoi(v.c_str());
+        ImGui::SetNextItemWidth(300);
+        if (ImGui::SliderInt(lbl, &x, 0, 1000, "%d ms")) {
+            static Uint32 at = 0;
+            if (SDL_GetTicks() - at > 800) PushUndo();
+            at = SDL_GetTicks();
+            if (x == 0) B.doc.Erase("theme", key);
+            else B.doc.Set("theme", key, std::to_string(x));
+            Changed();
+        }
+    };
+    msRow("anim_ms", "선택·스크롤 움직임", 0);
+    msRow("bg_fade_ms", "배경 바뀜 (서서히)", 0);
+    {
+        std::string tr = B.doc.Get("theme", "transition", "none");
+        ImGui::SetNextItemWidth(300);
+        if (ImGui::BeginCombo("화면 전환", tr == "fade" ? "fade (겹쳐 바뀜)" : tr == "slide" ? "slide (밀어냄)" : "none (없음)")) {
+            for (const char *o : {"none", "fade", "slide"})
+                if (ImGui::Selectable(o, tr == o)) {
+                    PushUndo();
+                    if (std::string(o) == "none") B.doc.Erase("theme", "transition");
+                    else B.doc.Set("theme", "transition", o);
+                    Changed();
+                }
+            ImGui::EndCombo();
+        }
+    }
+    msRow("transition_ms", "화면 전환 시간", 220);
+    ImGui::TextDisabled("스위치 옵션의 \"화면 효과\" 를 끄면 모두 바로 바뀜. 미리보기에서 ◀▶·A·B 로 확인");
     ImGui::SeparatorText("최소 버전");
     std::string req = B.doc.Get("theme", "requires");
     ImGui::SetNextItemWidth(160);
@@ -1260,12 +1638,13 @@ static void Frame() {
     ImGuiIO &io = ImGui::GetIO();
     float W = io.DisplaySize.x, H = io.DisplaySize.y;
     float left = 300, right = 420, menuH = ImGui::GetFrameHeight(), bottom = std::max(240.0f, H * 0.36f), statusH = 26;
-    bool openNew = false, openExport = false, openOpen = false;
+    bool openNew = false, openExport = false, openOpen = false, openFtp = false;
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("파일")) {
             if (ImGui::MenuItem("새 테마...")) openNew = true;
             if (ImGui::MenuItem("열기...")) openOpen = true;
             if (ImGui::MenuItem("내보내기...", nullptr, false, !B.theme.empty())) openExport = true;
+            if (ImGui::MenuItem("스위치로 보내기 (FTP)...", nullptr, false, !B.theme.empty())) openFtp = true;
             if (ImGui::MenuItem("테마 폴더 다시 읽기", nullptr, false, !B.theme.empty())) OpenTheme(B.theme);
             ImGui::EndMenu();
         }
@@ -1319,6 +1698,7 @@ static void Frame() {
                         {"hint.games", "게임 화면 도움말"}, {"hint.games_grid", "게임 화면 도움말 (격자)"}});
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("나만의 카테고리", nullptr, tf("cats"))) { CategoriesPanel(); ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("카테고리 이름")) { TablePanel("names", "카테고리·폴더 이름", "화면에 보일 이름", {}); ImGui::EndTabItem(); }
         if (ImGui::BeginTabItem("기종 연결")) {
             ImGui::TextWrapped("theme.txt: 카테고리·폴더 이름 = 그림 파일 이름. 내장 기종 표(FC→nes, 액션-아케이드→arcade_action …)로 찾지 못하는 이름만 적으면 됩니다.");
@@ -1454,6 +1834,7 @@ static void Frame() {
         if (ImGui::Button("취소")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
+    FtpWindow(openFtp);
     BrowseWindow();
 }
 
@@ -1474,7 +1855,8 @@ int main(int argc, char **argv) {
     std::error_code ec;
     fs::current_path(P(ExeDir(argv[0])), ec);
     std::string shot;
-    std::string openName, selArg, newArg;
+    std::string openName, selArg, newArg, ftpHost;
+    int ftpPort = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "--shot" && i + 1 < argc) shot = argv[++i];  // 시험: 빌더 화면을 그림으로 저장하고 끝
@@ -1483,6 +1865,7 @@ int main(int argc, char **argv) {
         else if (a == "--games") B.games = true;
         else if (a == "--tab" && i + 1 < argc) B.assetKind = argv[++i];
         else if (a == "--panel" && i + 1 < argc) B.tabReq = argv[++i];
+        else if (a == "--ftp-test" && i + 2 < argc) { ftpHost = argv[++i]; ftpPort = atoi(argv[++i]); }  // 시험: 테마를 FTP 로 보내고 끝
         else if (a == "--new" && i + 2 < argc) { newArg = argv[++i]; B.newTemplate = argv[++i]; }  // 시험: --new 이름 견본
     }
     fs::create_directories(P(B.home + "/themes"), ec);
@@ -1515,6 +1898,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     ScanLibrary();
+    LoadCats();
+    LoadFtpSettings();
     if (!openName.empty() && IsDir(B.home + "/themes/" + openName)) OpenTheme(openName);
     else {
         auto ts = ListDir(B.home + "/themes", true);
@@ -1522,6 +1907,14 @@ int main(int argc, char **argv) {
     }
 
     if (!newArg.empty()) { B.newName = newArg; CreateTheme(); }
+    if (!ftpHost.empty()) {
+        gFtp.host = ftpHost;
+        gFtp.port = ftpPort;
+        FtpSendTheme();
+        while (gFtp.running) SDL_Delay(50);
+        for (const auto &l : gFtp.log) printf("%s\n", l.c_str());
+        return 0;
+    }
     if (!selArg.empty()) B.sel = selArg;
     bool running = true;
     int frames = 0;
