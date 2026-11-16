@@ -1067,17 +1067,6 @@ static void SetRect(const std::string &key, int x, int y, int w, int h) {
 }
 static int Snap(int v) { return B.snap && B.grid > 1 ? (int)std::lround(v / (double)B.grid) * B.grid : v; }
 
-// 지금 카테고리의 기종 이름 (그림 찾기용)
-static std::string CurrentSystemId() {
-    auto cols = JoyCollections();
-    int c = JoyCategory();
-    if (c < 0 || c >= (int)cols.size()) return "";
-    for (const std::string &n : {cols[c].shortName, cols[c].name, cols[c].folder}) {
-        std::string id = EsdeSystemName(Lower(n));
-        if (!id.empty()) return id;
-    }
-    return Lower(cols[c].shortName.empty() ? cols[c].name : cols[c].shortName);
-}
 static void Canvas() {
     // 위 도구 줄
     auto cols = JoyCollections();
@@ -1105,7 +1094,7 @@ static void Canvas() {
     static const char *kViews[] = {"전체", "즐겨찾기", "최근 실행"};
     ImGui::TextDisabled("보기:%s", kViews[JoyView() % 3]);
     ImGui::SameLine();
-    if (ImGui::Button("카테고리·기종 설정 (F2)")) { B.winCats = true; B.assetFilter = CurrentSystemId(); B.tabReq = "assets"; }
+    if (ImGui::Button("카테고리·기종 설정 (F2)")) { B.winCats = true; B.tabReq = "assets"; }
     ImGui::SameLine();
     if (ImGui::Button("테마 설정 (F3)")) B.winTheme = true;
     ImGui::SameLine();
@@ -1130,7 +1119,6 @@ static void Canvas() {
         for (const auto &h : HitAll(mx2, my2))
             if (h.rfind("categories.list", 0) == 0) {
                 B.winCats = true;
-                B.assetFilter = CurrentSystemId();
                 B.tabReq = "assets";
                 break;
             }
@@ -2326,11 +2314,6 @@ static void ToolWindows() {
     auto tf = [](const char *n) { return B.tabReq == n ? ImGuiTabItemFlags_SetSelected : 0; };
     if (BeginTool("카테고리·기종 설정###wcats", &B.winCats, 1100, 640)) {
         if (ImGui::Begin("카테고리·기종 설정###wcats", &B.winCats)) {
-            ImGui::TextDisabled("지금 카테고리: %s", CurrentSystemId().c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("이 기종만 보기")) B.assetFilter = CurrentSystemId();
-            ImGui::SameLine();
-            if (ImGui::SmallButton("모두 보기")) B.assetFilter.clear();
             if (ImGui::BeginTabBar("cattabs")) {
                 if (ImGui::BeginTabItem("기종별 그림 (배경·로고·아이콘)", nullptr, tf("assets"))) { AssetsPanel(); ImGui::EndTabItem(); }
                 if (ImGui::BeginTabItem("나만의 카테고리", nullptr, tf("cats"))) { CategoriesPanel(); ImGui::EndTabItem(); }
