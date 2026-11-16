@@ -23,6 +23,9 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include <vector>
 
 #include "bgm.h"
@@ -583,6 +586,24 @@ static void IndexImages(const std::string &dir, std::map<std::string, std::strin
 
 static std::vector<std::string> ThemeNames() { return ListSubdirs(gHome + "/themes"); }
 
+// 폴더 통째로 지우기 (테마 삭제). 성공하면 true
+static bool RemoveTree(const std::string &path) {
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return false;
+    if (!S_ISDIR(st.st_mode)) return remove(path.c_str()) == 0;
+    bool ok = true;
+    if (DIR *d = opendir(path.c_str())) {
+        std::vector<std::string> names;
+        while (dirent *e = readdir(d)) {
+            std::string n = e->d_name;
+            if (n != "." && n != "..") names.push_back(n);
+        }
+        closedir(d);
+        for (const auto &n : names) ok = RemoveTree(path + "/" + n) && ok;
+    }
+    return rmdir(path.c_str()) == 0 && ok;
+}
+
 // 런처와 함께 배포하는 테마 팩 (릴리스의 <폴더>.zip, 테마 선택 창에서 내려받기)
 struct ThemePack {
     const char *folder, *ko, *en;
@@ -928,6 +949,7 @@ struct App {
     std::vector<std::string> themeList;  // [0] = 기본, 그다음 테마 폴더 이름, 끝에 내려받기 항목
     std::vector<std::string> themeTitles;  // themeList 와 같은 순서의 화면 이름
     int themeSel = 0;
+    int themeDelAsk = -1;        // 테마 선택 창: 지울지 묻는 중인 줄 (-1 = 아님)
     std::vector<Collection> cols;
     Mode mode = Mode::Categories;
     int catSel = 0, catTop = 0;  // 카테고리 화면 선택 (cols + 메뉴)
@@ -2395,7 +2417,16 @@ static void RenderThemePick(App &a) {
         SDL_Color c = dl ? kAccent : sel ? kWhite : kGrey;
         DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
-    DrawText(a, a.fInfo, T("[A] 적용   [B] 닫기   (테마 폴더: /JoyLauncher/themes)"), W / 2, by + bh - 34, kGrey, 0, 1);
+    DrawText(a, a.fInfo, T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)"), W / 2, by + bh - 34, kGrey, 0, 1);
+    if (a.themeDelAsk > 0 && a.themeDelAsk < n) {
+        std::string name = a.themeDelAsk < (int)a.themeTitles.size() && !a.themeTitles[a.themeDelAsk].empty() ? a.themeTitles[a.themeDelAsk]
+                                                                                                             : a.themeList[a.themeDelAsk];
+        Fill(a, 0, 0, W, H, {0, 0, 0, 120});
+        Fill(a, 240, 270, 800, 170, {120, 40, 40, 245});
+        DrawText(a, a.fList, Fmt(T("'%s' 테마를 지울까요?"), name.c_str()), W / 2, 296, kWhite, 760, 1, 0, 0, kScrollMsg);
+        DrawText(a, a.fInfo, Fmt(T("SD 의 /JoyLauncher/themes/%s 폴더가 삭제됩니다"), a.themeList[a.themeDelAsk].c_str()), W / 2, 344, kWhite, 760, 1);
+        DrawText(a, a.fInfo, T("[A] 삭제   [B] 취소"), W / 2, 392, kAccent, 0, 1);
+    }
 }
 
 // 홈브루 즐겨찾기 창: ★ = 넣음, ☆ = 안 넣음
@@ -3455,8 +3486,42 @@ int main(int argc, char **argv) {
             else if (b == 1) a.bgmPick = false;
             return;
         }
+        if (a.themePick && a.themeDelAsk >= 0) {  // 테마 지우기 확인
+            if (b == 0 && a.themeDelAsk > 0 && a.themeDelAsk < (int)a.themeList.size()) {
+                std::string folder = a.themeList[a.themeDelAsk], title = a.themeTitles[a.themeDelAsk];
+                bool wasCurrent = folder == gThemeName;
+                if (wasCurrent) LoadTheme("");  // 쓰던 테마: 먼저 놓고 지움
+                bool ok = RemoveTree(gHome + "/themes/" + folder);
+                if (wasCurrent) {
+                    // 기본테마가 남아 있으면 그것으로, 없으면 테마 없이
+                    auto names = ThemeNames();
+                    if (std::find(names.begin(), names.end(), "JoyBasic") != names.end()) LoadTheme("JoyBasic");
+                    SaveSettings();
+                    a.backs.Clear();
+                    a.lastBack.clear();
+                    BuildMenu();
+                    Clamp(a);
+                }
+                int keep = a.themeDelAsk;
+                openThemePick();
+                int lastTheme = 0;  // 내려받기 줄이 아닌 마지막 줄
+                for (int i = 0; i < (int)a.themeList.size(); i++)
+                    if (!IsThemeDownload(a.themeList[i])) lastTheme = i;
+                a.themeSel = std::min(keep, lastTheme);
+                a.message = ok ? Fmt(T("테마를 지웠습니다: %s"), (title.empty() ? folder : title).c_str())
+                               : Fmt(T("테마를 다 지우지 못했습니다: %s"), folder.c_str());
+                a.messageColor = ok ? SDL_Color{40, 100, 60, 240} : SDL_Color{120, 40, 40, 240};
+                a.messageUntil = SDL_GetTicks() + 2500;
+            }
+            if (b == 0 || b == 1) a.themeDelAsk = -1;
+            return;
+        }
         if (a.themePick) {
             int n = (int)a.themeList.size();
+            if ((b == 2 || b == 11) && a.themeSel > 0 && !IsThemeDownload(a.themeList[a.themeSel])) {  // X / −: 테마 지우기 (묻고)
+                a.themeDelAsk = a.themeSel;
+                return;
+            }
             if (b == 13) a.themeSel = (a.themeSel + n - 1) % n;
             else if (b == 15) a.themeSel = (a.themeSel + 1) % n;
             else if (b == 0 && IsThemeDownload(a.themeList[a.themeSel])) {

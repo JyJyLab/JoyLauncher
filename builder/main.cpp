@@ -60,6 +60,9 @@ struct Builder {
     std::string newName = "MyTheme", newTemplate = "JoyBasic";
     bool newCore = true, newEmpty = false;
     int wizard = 0;  // 시작 마법사 단계 (0 끔)
+    std::string delAsk;     // 지울지 묻는 테마 (빈칸 = 아님)
+    bool delThenCreate = false;  // 지운 뒤 같은 이름으로 새로 만들기
+    bool openManage = false;
     std::string exportDir;
     // 그림 가져오기 대기 (끌어 놓기·파일 고르기)
     std::string pendKind, pendStem, pendProp;  // pendProp: 속성 파일 고르기 (rect 요소의 file 등)
@@ -1969,6 +1972,99 @@ static void RunDemo() {
 #endif
 }
 
+// ---------------------------------------------------------------- 테마 지우기·관리 (함께 든 견본과 같은 이름은 지울 수 없음)
+static bool Protected(const std::string &name) { return IsDir(B.templates + "/" + name); }
+static void CreateTheme();
+static void DeleteTheme(const std::string &name) {
+    if (name.empty() || Protected(name)) return;
+    std::error_code ec;
+    uintmax_t n = fs::remove_all(P(B.home + "/themes/" + name), ec);
+    if (ec) { Status("지우지 못함: " + ec.message()); return; }
+    Status("테마를 지웠습니다: " + name + " (파일 " + std::to_string(n) + "개)");
+    if (B.theme == name) {
+        B.theme.clear();
+        B.sel.clear();
+        auto ts = ListDir(B.home + "/themes", true);
+        if (!ts.empty()) OpenTheme(ts[0]);
+        else JoyLoadTheme("");
+    }
+}
+// 지우기 확인 창 (마법사·관리 창 어디서나)
+static void DeleteConfirm() {
+    if (B.delAsk.empty()) return;
+    ImGui::OpenPopup("테마 지우기");
+    if (ImGui::BeginPopupModal("테마 지우기", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        std::string title;
+        {
+            std::string t;
+            ThemeTxt tt;
+            if (ReadFile(B.home + "/themes/" + B.delAsk + "/theme.txt", t)) tt.Parse(t);
+            title = tt.Get("name");
+        }
+        ImGui::Text("'%s'%s 테마를 지울까요?", B.delAsk.c_str(), title.empty() ? "" : (" (" + title + ")").c_str());
+        ImGui::TextDisabled("work/themes/%s 폴더가 삭제됩니다 (%s). 되돌릴 수 없습니다.", B.delAsk.c_str(),
+                            HumanSize(DirSize(B.home + "/themes/" + B.delAsk)).c_str());
+        ImGui::TextDisabled("스위치에 보낸 테마는 스위치의 테마 선택 창에서 [X] 로 따로 지웁니다.");
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.6f, .2f, .2f, 1));
+        if (ImGui::Button(B.delThenCreate ? "지우고 새로 만들기" : "지우기", ImVec2(180, 0))) {
+            DeleteTheme(B.delAsk);
+            if (B.delThenCreate) {
+                CreateTheme();
+                B.wizard = 0;
+            }
+            B.delAsk.clear();
+            B.delThenCreate = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (ImGui::Button("취소", ImVec2(120, 0))) {
+            B.delAsk.clear();
+            B.delThenCreate = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+}
+static void ManageWindow() {
+    if (B.openManage) { ImGui::OpenPopup("테마 관리"); B.openManage = false; }
+    ImGui::SetNextWindowSize(ImVec2(640, 460), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("테마 관리")) {
+        ImGui::TextDisabled("%s/themes — 함께 든 견본(잠금 표시)은 지울 수 없음", B.home.c_str());
+        ImGui::BeginChild("tl", ImVec2(0, -40), true);
+        if (ImGui::BeginTable("themes", 4, ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("폴더");
+            ImGui::TableSetupColumn("이름");
+            ImGui::TableSetupColumn("용량", ImGuiTableColumnFlags_WidthFixed, 80);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 130);
+            for (const auto &t : ListDir(B.home + "/themes", true)) {
+                ImGui::TableNextRow();
+                ImGui::PushID(t.c_str());
+                ImGui::TableNextColumn();
+                ImGui::Text("%s%s", t.c_str(), t == B.theme ? "  (편집 중)" : "");
+                ImGui::TableNextColumn();
+                std::string txt;
+                ThemeTxt tt;
+                if (ReadFile(B.home + "/themes/" + t + "/theme.txt", txt)) tt.Parse(txt);
+                ImGui::TextUnformatted(tt.Get("name").c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(HumanSize(DirSize(B.home + "/themes/" + t)).c_str());
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("열기")) { OpenTheme(t); ImGui::CloseCurrentPopup(); }
+                ImGui::SameLine();
+                if (Protected(t)) ImGui::TextDisabled("잠금");
+                else if (ImGui::SmallButton("지우기")) { B.delAsk = t; B.delThenCreate = false; }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+        if (ImGui::Button("닫기")) ImGui::CloseCurrentPopup();
+        DeleteConfirm();
+        ImGui::EndPopup();
+    }
+}
+
 // ---------------------------------------------------------------- 시작 마법사: ① 스타일 ② 자동 매칭 / 빈 테마
 struct StyleInfo { std::string id, name, desc, preview; int order = 100; };
 static std::vector<StyleInfo> Styles() {
@@ -2094,7 +2190,12 @@ static void WizardWindow() {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
         });
         if (!okName) ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "영문·숫자·_·- 만 (스위치 SD 에서 안전)");
-        else if (exists) ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "같은 이름의 테마가 있음 — 다른 이름으로");
+        else if (exists && Protected(B.newName)) ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "같은 이름의 견본 테마가 있음 — 다른 이름으로");
+        else if (exists) {
+            ImGui::TextColored(ImVec4(1, .5f, .4f, 1), "같은 이름의 테마가 있음 — 다른 이름으로 하거나");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("기존 테마 지우고 새로 만들기")) { B.delAsk = B.newName; B.delThenCreate = true; }
+        }
     }
     ImGui::EndChild();
     ImGui::Separator();
@@ -2113,6 +2214,11 @@ static void WizardWindow() {
             }
             ImGui::SameLine();
             if (ImGui::Button("열기")) { OpenTheme(pick); B.wizard = 0; }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(Protected(pick));
+            if (ImGui::Button("지우기")) { B.delAsk = pick; B.delThenCreate = false; }
+            ImGui::EndDisabled();
+            if (Protected(pick) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("함께 든 견본 테마는 지울 수 없음");
         }
         ImGui::SameLine(ImGui::GetWindowWidth() - 140);
         if (ImGui::Button("다음 ▶", ImVec2(120, 40))) B.wizard = 2;
@@ -2129,6 +2235,7 @@ static void WizardWindow() {
         }
         ImGui::EndDisabled();
     }
+    DeleteConfirm();
     ImGui::End();
 }
 
@@ -2147,6 +2254,7 @@ static void Frame() {
         if (ImGui::BeginMenu("파일")) {
             if (ImGui::MenuItem("새 테마...")) B.wizard = 1;
             if (ImGui::MenuItem("열기...")) openOpen = true;
+            if (ImGui::MenuItem("테마 관리 (지우기)...")) B.openManage = true;
             if (ImGui::MenuItem("내보내기...", nullptr, false, !B.theme.empty())) openExport = true;
             if (ImGui::MenuItem("스위치로 보내기 (FTP)...", nullptr, false, !B.theme.empty())) openFtp = true;
             if (ImGui::MenuItem("테마 폴더 다시 읽기", nullptr, false, !B.theme.empty())) OpenTheme(B.theme);
@@ -2344,6 +2452,7 @@ static void Frame() {
         ImGui::EndPopup();
     }
     FtpWindow(openFtp);
+    ManageWindow();
     BrowseWindow();
 }
 
