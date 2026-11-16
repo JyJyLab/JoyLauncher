@@ -23,6 +23,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <csignal>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -2355,6 +2356,9 @@ static std::string ExeDir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+#ifndef _WIN32
+    signal(SIGCHLD, SIG_IGN);  // 데모 창이 끝나면 좀비로 남지 않게
+#endif
     SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
     SDL_Init(SDL_INIT_VIDEO);
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);

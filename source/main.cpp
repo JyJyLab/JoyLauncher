@@ -3026,9 +3026,13 @@ int main(int argc, char **argv) {
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK);
     IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
     TTF_Init();
-    SDL_Window *win = SDL_CreateWindow(gDemo ? "Joy Launcher 데모  —  Enter/Space=A  Esc=B  T=X  Y=Y  Q/W=L/R  Z/X=ZL/ZR  F=-  방향키" : "Joy Launcher",
+    SDL_Window *win = SDL_CreateWindow(gDemo ? "Joy Launcher 데모 :  Enter/Space=A  Esc=B  T=X  Y=Y  Q/W=L/R  Z/X=ZL/ZR  F=-  방향키" : "Joy Launcher",
                                        gDemo ? SDL_WINDOWPOS_CENTERED : 0, gDemo ? SDL_WINDOWPOS_CENTERED : 0, W, H,
                                        shot.empty() ? SDL_WINDOW_SHOWN : SDL_WINDOW_HIDDEN);
+#ifndef __SWITCH__
+    // 데모 창 제목(한글): 만든 뒤 다시 정해야 X11 의 _NET_WM_NAME(UTF-8) 이 붙어 제목 표시줄에서 깨지지 않음
+    if (gDemo && win) SDL_SetWindowTitle(win, SDL_GetWindowTitle(win));
+#endif
     App a;
     a.r = SDL_CreateRenderer(win, -1, shot.empty() ? SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
                                                    : SDL_RENDERER_SOFTWARE);
