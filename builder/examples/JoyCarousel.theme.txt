@@ -1,3 +1,0 @@
-name=조이 캐러셀
-name_en=Joy Carousel
-dim=40

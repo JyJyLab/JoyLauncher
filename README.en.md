@@ -1,56 +1,48 @@
-# Joy Launcher
+# Joy Launcher (Android)
 
 [한국어](README.md) | **English**
 
-A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM pack** to the SD card as-is: Joy Launcher reads `metadata.pegasus.txt`, shows the games by category and launches them with **RetroArch cores / PPSSPP**.
+A game launcher for Android. It is a fork of [Joy Launcher](https://github.com/JyJyLab/JoyLauncher) for the Nintendo Switch: **the theme syntax and folder layout are the same, so themes work on both.**
+It reads **Pegasus metadata** or **ES-DE game lists** in your ROM folders, shows the games by category and starts them with the emulator apps you have installed.
 
 ![Categories](docs/images/en_01_categories.png)
 
 ## Features
-- Converts the Android launch settings of Pegasus lists (RetroArch cores, PPSSPP app) for the Switch (mapping rules in `/JoyLauncher/cores.txt`)
-- Finds ROMs in per-system folders even without a list file; reads ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) — formats can be mixed per folder
-- Box art and screenshots; grabs a frame from the preview video when there is no screenshot
-- Per-category background themes with four theme packs included (**Basic Theme, Retro Theme, WallStreetKim's Theme, Retro Game Gallery Theme**), launch log, cached game list (fast start)
-- Theme layouts (`layout.txt`) and extension syntax (v1.1.0+): cell elements, conditions (`visible_if`, `hidden_if`), placeholders, `[strings]` text overrides, automatic ES-DE system-name matching
-- Screen effects: smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade (can be turned off in Options)
-- **Theme builder (PC, Windows/Linux)**: make themes while seeing the Switch screen as it will look, send them to the Switch over FTP — [docs/테마_빌더.md](docs/테마_빌더.md) (Korean)
-- **Receive themes from PC (FTP)** screen in the launcher (no need to take out the SD card); delete themes in the theme picker
-- View tabs in the game list (ZL·ZR): All · Favorites · Recently played
-- Custom categories (`/JoyLauncher/categories.txt`): combine and hide categories, your own pictures folder used by every theme
-- NDS games run with the DraStic Switch port (`/switch/DrasticDS.nro`) when it is installed
-- Homebrew Favorites: nro games picked in the options (ports and others) gathered at the top of the category list
-- Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
-- Shows games only for systems that have a RetroArch core on the Switch (PSP: PPSSPP); systems too slow for the Switch are hidden by default
-- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the theme packs from "Download the 4 stock themes" in the theme picker or from the release zip
+- **No system limits**: anything with an installed emulator runs (retro systems, NDS, 3DS, PS2, GC/Wii, Switch, PS3, Xbox 360 …). The system/emulator table is the one from ES-DE for Android (195 systems, 106 emulators); files with the same syntax add new systems and emulators
+- **Emulator choice = Pegasus + ES-DE**
+  1. the launch command (`am start …`) in a ROM pack's `metadata.pegasus.txt` is used as it is
+  2. otherwise the ROM folder name gives the system and an installed emulator is picked ("Choose emulator" in Options changes it)
+- ROM folders are found automatically: `ROMs` / `Roms` / `roms` on internal storage and SD cards, Pegasus' `game_dirs.txt`, the ES-DE ROM folder
+- Settings and themes live in **`/JoyLauncher`** at the root of the storage, free to edit with any file manager
+- **App Favorites**: pick installed apps into a category (Options → Apps)
+- **Sound choice (X button)**: Common BGM, Theme BGM, Video sound or Silent, one at a time. Every theme can carry its own BGM (`themes/<theme>/bgm`)
+- **Button names follow the controller**: `+` `−` for Nintendo pads, `START` `SELECT` for the others. Option to swap A/B (select/cancel)
+- **On-screen controller**: touch buttons appear when no controller is connected
+- Box art, screenshots and **preview videos**: when the selected game has a video it plays in place of the screenshot (can be turned off in Options)
+- Themes: per-category backgrounds and logos, screen layouts with `layout.txt` (grids, carousels, fonts, colors, transitions). Four stock themes included. Also receives themes from the PC Theme Builder (Switch version) over FTP
+- Favorites and recently played tabs, custom categories, Korean / English, battery indicator
+- The screen keeps the theme's 1280x720 coordinates while text and images are drawn at the device resolution, so it stays sharp on high-resolution displays
 
-## Installation
-1. Download the latest `JoyLauncher_<version>.zip` from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and copy `switch/` and `JoyLauncher/` to the root of the SD card
-2. Install RetroArch for Switch (with cores) and PPSSPP
-3. Copy your ROM pack to `/roms` and start Joy Launcher from the Album (homebrew menu)
-   - Use ASCII names for ROM files and folders (non-ASCII names may drop out of the list or break)
-   - ES-DE packs: ROMs to `/roms`, `ES-DE/gamelists` and `downloaded_media` to `/ES-DE`
+## Install
+1. Download `JoyLauncher.apk` of the **Android release** (tag `android-v…`) from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and install it (Android 7.0 or later, arm64). Releases tagged `v…` are the Switch version
+   - Later versions are installed from "Check for updates" in Options
+2. On first start it asks for **All files access** → allow it (to read your ROM folders and to use the `/JoyLauncher` folder)
+3. Put ROMs in `ROMs` (or `Roms` / `roms`) on the storage. For other places list them in `/JoyLauncher/roots.txt`, one per line
+4. Install emulators separately (RetroArch, DuckStation, PPSSPP …)
 
-Manual: [docs/manual-en.md](docs/manual-en.md)
+Manual: [docs/manual-en.md](docs/manual-en.md) · 한국어: [docs/설명서.md](docs/설명서.md)
 
-Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md) · Changing the screen layout with a theme (`layout.txt`: grids, positions, fonts, colors): [docs/theme-layout-en.md](docs/theme-layout-en.md)
+Making themes (shared with the Switch version): [theme-guide-en.md](docs/theme-guide-en.md) · [theme-layout-en.md](docs/theme-layout-en.md)
 
-## Building
-- Switch: devkitPro (devkitA64, libnx) + portlibs `switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-sdl2_mixer switch-ffmpeg switch-curl switch-dav1d` → `make`
-- Desktop test build (Linux): `make -f Makefile.linux` (SDL2, SDL2_mixer, FFmpeg, libcurl dev packages)
-- Theme builder (PC): `cd builder && make` (Linux, SDL2, SDL2_image, SDL2_ttf dev packages → `builder/build/joythemebuilder`) · `make WIN=1` (Windows cross build with mingw-w64 `x86_64-w64-mingw32-g++-posix` and SDL2 mingw dev files in `builder/third_party/sdl-mingw` or `SDLW=<path>` → `builder/build-win/JoyThemeBuilder.exe`)
-- Theme packs: Basic Theme `python3 tools/make_joybasic.py` (Pillow) → `themes/JoyBasic` · Retro Theme `tools/make_retropack.py <Eungae theme Resource folder>` → `themes/RetroPack` · WallStreetKim's Theme pictures `tools/make_byeokgolkim.py <source folder>` → `themes/ByeokgolKim`
-- Release: pushing a `vX.Y.Z` tag makes GitHub Actions build and publish a release (`joylauncher.nro`, `.sha256`, zip). The launcher's updater uses the latest release.
-
-## Contributors
-
-| Contributor | Contribution |
-|---|---|
-| **월스트리트킴** (Wall Street Kim, Retro Game Gallery) | 30% |
+## Build
+- Android: see `android/README.md` (no Gradle: NDK + CMake, SDL2 / SDL2_image / SDL2_ttf / SDL2_mixer built from source → apk)
+- Desktop test build (Linux): `make -f Makefile.linux` → `./joylauncher_desktop` (screenshots and launch arguments; Android functions are simulated by `source/platform_desktop.cpp`)
+- Theme Builder: use the one from the Switch repository
 
 ## License
-- Joy Launcher: GPL-3.0 (`LICENSE`) — it statically links FFmpeg built with GPL options
+- Joy Launcher: GPL-3.0 (`LICENSE`)
+- System/emulator tables (`romfs/systems/es_systems.xml`, `es_find_rules.xml`): ES-DE Frontend, MIT (`romfs/systems/LICENSE.ES-DE.txt`)
+- SDL2, SDL2_image, SDL2_ttf, SDL2_mixer: zlib License; FreeType: FTL; stb / dr_libs: Public Domain / MIT
 - NanumGothic font: SIL Open Font License 1.1 (`OFL.txt`)
-- stb_image_write: Public Domain / MIT
-- No ROMs or BIOS files are included.
-- Theme packs: **Basic Theme** (`themes/JoyBasic`) is self-made and free to use and modify. **Retro Theme** (`themes/RetroPack`) is an excerpt of the Eungae pack theme pictures; **WallStreetKim's Theme** (`themes/ByeokgolKim`) was arranged by WallStreetKim from the ES-DE theme Canvas (Siddy212, CC0 1.0) and uses the font Cafe24 Ohsquare air. Console photos, logos and trademarks in those two packs belong to their owners and are separate from the launcher's GPL. **Retro Game Gallery Theme** (`themes/DcGall`) uses the font Noto Sans KR (SIL OFL 1.1, `fonts/OFL-NotoSansKR.txt`) and icons from the ES-DE theme Canvas (Siddy212, CC0); the "dcinside" text is a parody label, unrelated to DCinside. (See `README.txt` in each folder)
-- Theme builder library: the Horizon and Iconic pictures are CC BY-NC-SA (non-commercial, attribution, share-alike; `library/<set>/CREDITS-LICENSE.txt`)
+- Theme packs: same as the Switch version (`README.txt` in each theme folder)
+- No ROMs, BIOS files or emulators are included.

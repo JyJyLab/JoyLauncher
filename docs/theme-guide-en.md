@@ -43,12 +43,22 @@ Put one folder into `/JoyLauncher/themes/` on the SD card and you have one more 
    ├─ logos/                 (optional)
    │  ├─ GBA.png             logo shown instead of the game list title
    │  └─ SFC.png
+   ├─ bgm/                   (optional) theme BGM, since v1.2.0
+   │  ├─ 01.mp3              mp3 / ogg, played in name order (or shuffled)
+   │  └─ 02.ogg
    └─ theme.txt              (optional) darkness and name mapping
 ```
 
 - Only files directly inside `backgrounds` and `logos` are read. Subfolders in them are ignored.
 - Only `.jpg`, `.jpeg` and `.png` are recognized (any letter case).
 - `backgrounds` alone or `logos` alone is fine. If both are empty, choosing the theme changes nothing.
+
+### Theme BGM (since v1.2.0)
+Make a `bgm` folder inside the theme folder and put **mp3 or ogg** files in it: that is the theme's BGM. Nothing is written in `theme.txt`.
+- Choose **Theme BGM** in the launcher's **BGM / sound** window (Options; the X button on Android) and these songs play while this theme is in use. Changing the theme changes the songs; a theme without a `bgm` folder is silent.
+- With **Common BGM** the songs in `/JoyLauncher/bgm` play whatever the theme. Volume and order follow the launcher settings.
+- The Switch and Android versions work the same way, so themes with BGM are shared as they are. Launchers up to v1.1 ignore the `bgm` folder.
+- Use ASCII file names. Check the copyright of the music before sharing a theme (section 11).
 
 ## 4. Picture specs
 

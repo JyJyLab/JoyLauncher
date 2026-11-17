@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 빌드 과정 스모크 테스트용 (android/smoketest). versionCode/versionName, minSdk 24, targetSdk 34 는
+     build_apk.sh 가 aapt2 로 넣는다. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.jyjylab.joysmoke"
+    android:installLocation="auto">
+
+    <!-- SDL2 의 본보기 매니페스트와 같은 선언: GLES 2, 터치·게임패드·USB 호스트는 없어도 됨 -->
+    <uses-feature android:glEsVersion="0x00020000" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- extractNativeLibs=false: 라이브러리를 꺼내지 않고 APK 안에서 바로 읽는다. 압축하지 않고
+         페이지 단위로 정렬해 넣었을 때만 되므로 build_apk.sh 가 그렇게 묶는지까지 확인된다. -->
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:extractNativeLibs="false"
+        android:hardwareAccelerated="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <!-- configChanges: SDL 은 액티비티가 다시 만들어지면 버티지 못한다. 그래서 다시 만들게 하는
+             변화(회전, 키보드 연결 등)를 모두 "앱이 직접 처리함" 으로 적는다. -->
+        <activity
+            android:name="com.jyjylab.joysmoke.SmokeActivity"
+            android:label="@string/app_name"
+            android:alwaysRetainTaskState="true"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:preferMinimalPostProcessing="true"
+            android:screenOrientation="sensorLandscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

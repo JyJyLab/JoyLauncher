@@ -34,9 +34,6 @@ typedef int fsock;
 #define FBAD (-1)
 static int MkDir(const std::string &p) { return mkdir(p.c_str(), 0777); }
 #endif
-#ifdef __SWITCH__
-#include <switch.h>
-#endif
 
 namespace {
 
@@ -46,9 +43,6 @@ volatile bool gQuit = false;
 fsock gListen = FBAD;
 std::string gHome;
 FtpServerStatus gSt;
-#ifdef __SWITCH__
-bool gSockInit = false;
-#endif
 
 void Log(const std::string &s) {
     SDL_LockMutex(gMx);
@@ -374,14 +368,6 @@ int Run(void *) {
 }
 
 std::string LocalIp() {
-#ifdef __SWITCH__
-    struct in_addr a;
-    a.s_addr = gethostid();
-    unsigned char *b = (unsigned char *)&a.s_addr;
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
-    return buf;
-#else
     // 바깥 주소로 UDP 를 "연결"만 해 보고 내 주소를 읽음 (패킷은 보내지 않음)
     fsock s = socket(AF_INET, SOCK_DGRAM, 0);
     if (s == FBAD) return "?";
@@ -401,7 +387,6 @@ std::string LocalIp() {
     }
     FCLOSE(s);
     return out;
-#endif
 }
 
 }  // namespace
@@ -413,10 +398,6 @@ bool FtpServerStart(const std::string &home, int port, std::string &err) {
     static bool wsa = false;
     if (!wsa) { WSADATA w; WSAStartup(MAKEWORD(2, 2), &w); wsa = true; }
 #endif
-#ifdef __SWITCH__
-    if (!gSockInit) gSockInit = R_SUCCEEDED(socketInitializeDefault());
-    if (!gSockInit) { err = "네트워크를 쓸 수 없습니다"; return false; }
-#endif
     gHome = home;
     gSt = FtpServerStatus();
     gListen = socket(AF_INET, SOCK_STREAM, 0);
@@ -427,7 +408,7 @@ bool FtpServerStart(const std::string &home, int port, std::string &err) {
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_ANY);
     int used = 0;
-    for (int p : {port, port + 1, port + 2, 5021}) {  // 5000 을 다른 FTP(sys-ftpd 등)가 쓰고 있으면 다음 번호
+    for (int p : {port, port + 1, port + 2, 5021}) {  // 5000 을 다른 프로그램이 쓰고 있으면 다음 번호
         a.sin_port = htons((unsigned short)p);
         if (bind(gListen, (sockaddr *)&a, sizeof(a)) == 0) { used = p; break; }
     }
@@ -454,9 +435,6 @@ void FtpServerStop() {
     if (gListen != FBAD) FCLOSE(gListen);
     gListen = FBAD;
     gSt.running = false;
-#ifdef __SWITCH__
-    if (gSockInit) { socketExit(); gSockInit = false; }
-#endif
 }
 
 FtpServerStatus FtpServerGet() {

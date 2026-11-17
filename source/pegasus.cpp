@@ -1,9 +1,14 @@
 // 게임 목록 읽기
-//  1) 페가수스 metadata.pegasus.txt (안드로이드용 launch 는 스위치용으로 변환)
+//  1) 페가수스 metadata.pegasus.txt (launch 의 am start … 를 그대로 실행)
 //  2) ES-DE / EmulationStation gamelist.xml
 //  3) 목록 파일이 없는 롬 폴더 (폴더 이름·확장자로 기종 자동 인식)
 // 같은 롬 파일은 먼저 읽은 쪽 하나만 사용한다.
+// 어떤 에뮬레이터로 실행할지는 여기서 정하지 않고 실행할 때 고른다 (emulators.cpp):
+// 목록에는 페가수스 launch 원문 또는 "@sys:<기종>" 만 적어 둔다.
 #include "pegasus.h"
+
+#include "emulators.h"
+#include "esde.h"
 
 #include <algorithm>
 #include <cctype>
@@ -31,8 +36,8 @@ bool gDirCacheOn = false;
 std::unordered_map<std::string, std::unordered_map<std::string, DirEntry>> gDirCache;
 
 std::string EntryKey(const std::string &name) {
-#ifdef __SWITCH__
-    std::string k = name;  // SD 카드(FAT/exFAT)는 대소문자 구분 없음
+#ifdef __ANDROID__
+    std::string k = name;  // 안드로이드 공용 저장소·SD 카드는 대소문자 구분 없음
     for (auto &ch : k) ch = (char)std::tolower((unsigned char)ch);
     return k;
 #else
@@ -201,7 +206,7 @@ std::string FindScreenshot(const std::string &dir, const std::string &rel) {
     return "";
 }
 
-// 미리보기 영상 찾기 (화면 사진이 없을 때 한 장면을 뽑아 쓰기 위해)
+// 미리보기 영상 찾기 (게임 화면에서 재생)
 std::string FindVideo(const std::string &dir, const std::string &rel) {
     std::string stem = Stem(rel);
     static const char *vexts[] = {".mp4", ".MP4", ".mkv", ".webm", ".avi", ".m4v"};
@@ -221,6 +226,7 @@ std::string FolderKey(const std::string &name);
 // ES-DE 는 목록을 ES-DE/gamelists/<기종 폴더>/gamelist.xml 에, 그림·영상을
 // ES-DE/downloaded_media/<기종 폴더>/<종류>/<롬 경로(확장자 뺌)>.png 에 둔다 (목록에는 그림 경로가 없음).
 std::string gEsdeHint;   // roots.txt 의 esde=<경로>
+std::vector<std::string> gEsdeMore;  // 그 밖에 찾아볼 자리
 std::string gEsdeDir;    // 찾은 ES-DE 폴더 ("" = 없음)
 std::string gEsdeMedia;  // 그림·영상 폴더 (기본 <ES-DE>/downloaded_media)
 std::map<std::string, std::string> gEsdeSysDirs;  // "<상위 폴더>|<기종 폴더 이름>" -> 실제 폴더 ("" = 없음)
@@ -272,6 +278,7 @@ void FindEsde(const std::vector<std::string> &rootDirs) {
     if (!gEsdeHint.empty()) cand.push_back(gEsdeHint);
     for (const auto &r : rootDirs) cand.push_back(ParentDir(r) + "/ES-DE");
     for (const auto &r : rootDirs) cand.push_back(r + "/ES-DE");
+    for (const auto &c : gEsdeMore) cand.push_back(c);  // 저장소 루트의 /ES-DE (ES-DE 앱의 기본 자리)
     for (const auto &c : cand) {
         if (!IsDir(c + "/gamelists") && !IsDir(c + "/downloaded_media")) continue;
         gEsdeDir = c;
@@ -320,427 +327,15 @@ void AddEsdeMedia(const std::string &dir, const std::string &rel, Game &g) {
     if (gEsdeMedia.empty()) return;
     if (g.boxart.empty()) g.boxart = EsdeMediaFile(dir, rel, 0);
     if (g.screenshot.empty()) g.screenshot = EsdeMediaFile(dir, rel, 1);
-    if (g.screenshot.empty() && g.video.empty()) g.video = EsdeMediaFile(dir, rel, 2);
+    if (g.video.empty()) g.video = EsdeMediaFile(dir, rel, 2);
 }
 
-// ES-DE 에뮬레이터 표시 이름("MAME 2003-Plus", "PCSX ReARMed", "PPSSPP (Standalone)")을 실행 설정으로.
-// 안드로이드 코어 이름 형식으로 만들어 페가수스와 같은 변환(cores.txt 등)을 거친다. 모르면 ""
-std::string EsdeEmulatorLaunch(const std::string &label) {
-    static const std::vector<std::pair<const char *, const char *>> t = {
-        {"ppsspp", "org.ppsspp.ppsspp"},
-        {"mame2003plus", "mame2003_plus"}, {"mame2003", "mame2003"}, {"mame2010", "mame2010"}, {"mame2000", "mame2000"},
-        {"fbalpha2012neogeo", "fbalpha2012_neogeo"}, {"fbalpha2012cps1", "fbalpha2012_cps1"},
-        {"fbalpha2012cps2", "fbalpha2012_cps2"}, {"fbalpha2012cps3", "fbalpha2012_cps3"},
-        {"fbalpha2012", "fbalpha2012"}, {"finalburnalpha2012", "fbalpha2012"}, {"fbalpha", "fbalpha"},
-        {"finalburnneo", "fbneo"}, {"fbneo", "fbneo"},
-        {"pcsxrearmed", "pcsx_rearmed"}, {"beetlepsxhw", "mednafen_psx_hw"}, {"beetlepsx", "mednafen_psx"}, {"swanstation", "swanstation"},
-        {"genesisplusgxwide", "genesis_plus_gx_wide"}, {"genesisplusgx", "genesis_plus_gx"}, {"picodrive", "picodrive"},
-        {"blastem", "blastem"}, {"gearsystem", "gearsystem"}, {"smsplus", "smsplus"},
-        {"mgba", "mgba"}, {"gpsp", "gpsp"}, {"vbam", "vbam"}, {"vbanext", "vba_next"},
-        {"snes9x2010", "snes9x2010"}, {"snes9x2005plus", "snes9x2005_plus"}, {"snes9x2005", "snes9x2005"},
-        {"snes9x2002", "snes9x2002"}, {"snes9x", "snes9x"}, {"bsnes", "bsnes"}, {"mesens", "mesen-s"},
-        {"mesen", "mesen"}, {"fceumm", "fceumm"}, {"nestopia", "nestopia"}, {"quicknes", "quicknes"},
-        {"gambatte", "gambatte"}, {"sameboy", "sameboy"}, {"gearboy", "gearboy"},
-        {"beetlepcefast", "mednafen_pce_fast"}, {"beetlesupergrafx", "mednafen_supergrafx"}, {"beetlepce", "mednafen_pce"},
-        {"beetlewonderswan", "mednafen_wswan"}, {"beetleneopop", "mednafen_ngp"}, {"race", "race"},
-        {"beetlelynx", "mednafen_lynx"}, {"handy", "handy"}, {"beetlevb", "mednafen_vb"},
-        {"bluemsx", "bluemsx"}, {"fmsx", "fmsx"}, {"dosboxpure", "dosbox_pure"}, {"np2kai", "np2kai"},
-        {"flycast", "flycast"}, {"mupen64plusnext", "mupen64plus_next"}, {"melonds", "melonds"}, {"desmume", "desmume"},
-        {"beetlesaturn", "mednafen_saturn"}, {"yabasanshiro", "yabasanshiro"}, {"yabause", "yabause"}, {"kronos", "kronos"},
-        {"mamecurrent", "mame"},
-    };
-    std::string key = FolderKey(label);
-    if (key.empty()) return "";
-    for (const auto &kv : t)
-        if (key.find(kv.first) != std::string::npos)
-            return std::string(kv.second).find('.') != std::string::npos ? kv.second
-                                                                         : std::string("/cores/") + kv.second + "_libretro_android.so";
-    return "";
-}
-
-bool CoreExists(const std::string &nro) {
-#ifdef __SWITCH__
-    return Exists(nro);
-#else
-    // 데스크톱 테스트: JOY_SDROOT 가 있으면 그 아래에서 확인, 없으면 모두 있다고 가정
-    const char *root = getenv("JOY_SDROOT");
-    if (!root) return true;
-    return Exists(std::string(root) + nro);
-#endif
-}
-
-std::string Quote(const std::string &nro) { return "\"" + nro + "\" \"{file.path}\""; }
-
-// DraStic 스위치판 (DrasticDS_nx). 롬 경로를 넘기면 바로 그 게임을 실행
-const char *const kDrastic = "/switch/DrasticDS.nro";
-const char *const kDrastic2 = "/switch/drastic/DrasticDS.nro";
-
-// ---------------------------------------------------------------- 기종 표
-struct System {
-    const char *name;                 // 자동 인식 시 카테고리 이름
-    std::vector<std::string> folders; // 폴더 이름 (소문자, 영숫자만). '*' 로 끝나면 접두어
-    std::vector<std::string> exts;    // 이 기종 롬 확장자
-    std::vector<std::string> targets; // 코어 이름 또는 nro 절대경로 (앞에서부터 있는 것 사용)
-};
-
-const std::vector<System> &Systems() {
-    static const std::vector<System> s = {
-        {"아케이드 (FBA2012)", {"fba2012*", "fbalpha2012*"}, {"zip", "7z"}, {"fbalpha2012", "fbneo"}},
-        {"아케이드 (FBNeo)", {"fbneo*", "fba*", "arcade*", "cps1", "cps2", "cps3", "neogeo", "finalburn*"}, {"zip", "7z"}, {"fbneo", "fbalpha2012"}},
-        {"아케이드 (MAME)", {"mame*"}, {"zip", "7z"}, {"mame2003_plus", "mame2003"}},
-        {"NAOMI", {"naomi*", "atomiswave*"}, {"zip", "7z", "lst", "dat"}, {"flycast"}},
-        {"드림캐스트", {"dc", "dreamcast", "segadreamcast"}, {"cdi", "gdi", "chd", "cue", "m3u"}, {"flycast"}},
-        {"PlayStation", {"psx", "ps1", "playstation", "playstation1", "ps"}, {"chd", "cue", "pbp", "m3u", "iso", "img", "ccd", "bin"}, {"pcsx_rearmed"}},
-        {"PSP", {"psp", "pspminis"}, {"iso", "cso", "chd", "pbp", "elf"}, {"/switch/ppsspp/PPSSPP.nro", "ppsspp"}},
-        {"GBA", {"gba", "gameboyadvance"}, {"gba", "zip", "7z"}, {"mgba", "vba_next", "gpsp"}},
-        {"게임보이", {"gb", "gbc", "gameboy", "gameboycolor"}, {"gb", "gbc", "sgb", "zip", "7z"}, {"gambatte", "sameboy", "mgba"}},
-        {"패미컴", {"nes", "fc", "famicom", "fds"}, {"nes", "fds", "unf", "unif", "zip", "7z"}, {"fceumm", "nestopia", "mesen"}},
-        {"슈퍼패미컴", {"snes", "sfc", "superfamicom", "supernintendo"}, {"sfc", "smc", "swc", "fig", "bs", "zip", "7z"}, {"snes9x", "snes9x2010"}},
-        {"메가드라이브", {"md", "megadrive", "genesis", "segacd", "megacd", "mdcd"}, {"md", "gen", "smd", "68k", "sgd", "zip", "7z"}, {"genesis_plus_gx", "picodrive"}},
-        {"32X", {"32x", "sega32x"}, {"32x", "zip", "7z"}, {"picodrive"}},
-        {"마스터시스템", {"sms", "mastersystem", "mark3", "segamastersystem"}, {"sms", "zip", "7z"}, {"genesis_plus_gx", "smsplus", "gearsystem"}},
-        {"게임기어", {"gg", "gamegear"}, {"gg", "zip", "7z"}, {"genesis_plus_gx", "gearsystem"}},
-        {"PC엔진", {"pce", "pcengine", "tg16", "turbografx*", "pcecd", "supergrafx", "sgx"}, {"pce", "sgx", "zip", "7z"}, {"mednafen_pce_fast", "mednafen_pce", "geargrafx"}},
-        {"원더스완", {"ws", "wsc", "wonderswan*"}, {"ws", "wsc", "pc2", "zip", "7z"}, {"mednafen_wswan"}},
-        {"네오지오 포켓", {"ngp", "ngpc", "neogeopocket*"}, {"ngp", "ngc", "zip", "7z"}, {"mednafen_ngp", "race"}},
-        {"NDS", {"nds", "nintendods"}, {"nds", "zip", "7z", "rar"}, {kDrastic, kDrastic2, "melonds", "desmume"}},
-        {"N64", {"n64", "nintendo64"}, {"n64", "z64", "v64", "zip", "7z"}, {"mupen64plus_next"}},
-        {"새턴", {"ss", "saturn", "segasaturn"}, {}, {"yabause"}},
-        {"PC-98", {"pc98", "pc9801"}, {"hdi", "fdi", "d88", "hdm", "nhd"}, {"np2kai"}},
-        {"DOS", {"dos", "msdos"}, {"dosz", "exe", "bat", "com"}, {"dosbox_pure"}},
-        {"MSX", {"msx", "msx1", "msx2"}, {"mx1", "mx2", "rom", "dsk", "zip", "7z"}, {"bluemsx", "fmsx"}},
-        {"아타리 링크스", {"lynx", "atarilynx"}, {"lnx", "zip", "7z"}, {"handy", "mednafen_lynx"}},
-        {"버추얼보이", {"vb", "virtualboy"}, {"vb", "vboy", "zip", "7z"}, {"mednafen_vb"}},
-        {"PC-FX", {"pcfx"}, {}, {"mednafen_pcfx"}},
-    };
-    return s;
-}
-
-// 스위치 성능/에뮬레이터 부재로 제외하는 폴더
-bool ExcludedFolder(const std::string &key) {
-    static const std::set<std::string> ex = {"ps2", "playstation2", "3ds", "n3ds", "gc", "gamecube", "ngc", "wii", "wiiu",
-                                             "psvita", "vita", "switch", "ps3", "xbox", "xbox360", "apk", "app", "android",
-                                             "win", "windows", "pc"};
-    if (ex.count(key)) return true;
-    // CPS2·CPS3(캡콤 아케이드)는 이름 안에 ps2·ps3 가 들어 있어도 제외 대상이 아님
-    if (key.find("cps") != std::string::npos) return false;
-    // "Sony PlayStation 2", "Nintendo 3DS" 처럼 이름 안에 들어 있는 경우
-    static const char *part[] = {"playstation2", "playstation3", "playstation4", "ps2", "ps3", "ps4", "3ds", "gamecube",
-                                 "wiiu", "psvita", "nintendoswitch", "xbox"};
-    for (const char *p : part)
-        if (key.find(p) != std::string::npos) return true;
-    return false;
-}
 
 std::string FolderKey(const std::string &name) {
     std::string k;
     for (char c : Lower(name))
         if (std::isalnum((unsigned char)c)) k += c;
     return k;
-}
-
-// 폴더 이름(또는 상위 폴더 이름)으로 기종 찾기. 못 찾으면 -1, 제외 폴더면 -2
-int SystemByFolder(const std::string &dirName) {
-    std::string key = FolderKey(dirName);
-    if (key.empty()) return -1;
-    if (ExcludedFolder(key)) return -2;
-    // "FBNEO ACT" 처럼 단어가 붙은 경우 첫 단어도 확인
-    std::string first = FolderKey(dirName.substr(0, dirName.find_first_of(" _-(")));
-    if (ExcludedFolder(first)) return -2;
-    const auto &sys = Systems();
-    for (size_t i = 0; i < sys.size(); i++)
-        for (const auto &f : sys[i].folders) {
-            bool prefix = !f.empty() && f.back() == '*';
-            std::string ff = prefix ? f.substr(0, f.size() - 1) : f;
-            if (key == ff || first == ff || (prefix && (key.rfind(ff, 0) == 0 || first.rfind(ff, 0) == 0))) return (int)i;
-        }
-    return -1;
-}
-
-// 확장자만으로 기종 찾기 (확장자가 한 기종에만 쓰이는 경우)
-int SystemByExt(const std::string &ext) {
-    static const std::map<std::string, std::string> uniq = {
-        {"gba", "GBA"}, {"gb", "게임보이"}, {"gbc", "게임보이"}, {"nes", "패미컴"}, {"fds", "패미컴"}, {"sfc", "슈퍼패미컴"},
-        {"smc", "슈퍼패미컴"}, {"md", "메가드라이브"}, {"gen", "메가드라이브"}, {"smd", "메가드라이브"}, {"32x", "32X"},
-        {"sms", "마스터시스템"}, {"gg", "게임기어"}, {"pce", "PC엔진"}, {"ws", "원더스완"}, {"wsc", "원더스완"},
-        {"ngp", "네오지오 포켓"}, {"ngc", "네오지오 포켓"}, {"nds", "NDS"}, {"n64", "N64"}, {"z64", "N64"}, {"v64", "N64"},
-        {"cso", "PSP"}, {"pbp", "PlayStation"}, {"cue", "PlayStation"}, {"chd", "PlayStation"}, {"lnx", "아타리 링크스"},
-        {"vb", "버추얼보이"}, {"cdi", "드림캐스트"}, {"gdi", "드림캐스트"}, {"hdi", "PC-98"}, {"fdi", "PC-98"}, {"d88", "PC-98"},
-        {"dosz", "DOS"}, {"zip", "아케이드 (FBNeo)"}, {"7z", "아케이드 (FBNeo)"},
-    };
-    auto it = uniq.find(ext);
-    if (it == uniq.end()) return -1;
-    const auto &sys = Systems();
-    for (size_t i = 0; i < sys.size(); i++)
-        if (it->second == sys[i].name) return (int)i;
-    return -1;
-}
-
-// 메타데이터의 코어 이름 또는 안드로이드 앱 패키지명으로 기종 찾기.
-// 못 찾으면 -1, 스위치 대상에서 제외한 기종의 에뮬레이터면 -2.
-// (위에서부터 부분 일치. 더 구체적인 이름을 먼저)
-int SystemByIdent(const std::string &ident) {
-    static const std::vector<std::pair<const char *, const char *>> t = {
-        // 제외 기종: PS2·PS3·3DS·GC/Wii/WiiU·스위치·비타·엑스박스·윈도우
-        {"aethersx2", "-"}, {"nethersx2", "-"}, {"armsx2", "-"}, {"pcsx2", "-"}, {"lrps2", "-"}, {"virtualapplications.play", "-"},
-        {"rpcs3", "-"}, {"aps3e", "-"}, {"citra", "-"}, {"lime3ds", "-"}, {"azahar", "-"}, {"mandarine", "-"},
-        {"panda3ds", "-"}, {"dolphin", "-"}, {"cemu", "-"}, {"yuzu", "-"}, {"suyu", "-"}, {"sudachi", "-"},
-        {"citron", "-"}, {"dev.eden", "-"}, {"strato", "-"}, {"skyline", "-"}, {"ryujinx", "-"}, {"vita3k", "-"},
-        {"xenia", "-"}, {"winlator", "-"}, {"mobox", "-"}, {"exagear", "-"}, {"gamehub", "-"},
-        // 성능상 기본 숨김 기종 (settings.txt 의 hide_cores 로 표시 가능)
-        {"melonds", "NDS"}, {"desmume", "NDS"}, {"drastic", "NDS"}, {"nds4droid", "NDS"},
-        {"mupen64", "N64"}, {"parallel_n64", "N64"}, {"m64plus", "N64"},
-        {"yabause", "새턴"}, {"yabasanshiro", "새턴"}, {"yabasanshioro", "새턴"}, {"kronos", "새턴"},
-        {"mednafen_saturn", "새턴"}, {"beetle_saturn", "새턴"},
-        {"flycast", "드림캐스트"}, {"reicast", "드림캐스트"}, {"redream", "드림캐스트"},
-        // 스위치 대상 기종
-        {"duckstation", "PlayStation"}, {"swanstation", "PlayStation"}, {"pcsx", "PlayStation"},
-        {"mednafen_psx", "PlayStation"}, {"beetle_psx", "PlayStation"}, {"epsxe", "PlayStation"}, {"fpse", "PlayStation"},
-        {"ppsspp", "PSP"},
-        {"mesen-s", "슈퍼패미컴"}, {"mesen_s", "슈퍼패미컴"}, {"snes9x", "슈퍼패미컴"}, {"bsnes", "슈퍼패미컴"},
-        {"fceumm", "패미컴"}, {"nestopia", "패미컴"}, {"quicknes", "패미컴"}, {"mesen", "패미컴"},
-        {"gambatte", "게임보이"}, {"sameboy", "게임보이"}, {"gearboy", "게임보이"}, {"tgbdual", "게임보이"},
-        {"gpsp", "GBA"}, {"vba", "GBA"}, {"meteor", "GBA"}, {"myboy", "GBA"}, {"pizzaboy", "GBA"},
-        {"blastem", "메가드라이브"}, {"md.emu", "메가드라이브"},
-        {"mednafen_pce", "PC엔진"}, {"mednafen_supergrafx", "PC엔진"}, {"beetle_pce", "PC엔진"}, {"geargrafx", "PC엔진"},
-        {"mednafen_wswan", "원더스완"}, {"beetle_wswan", "원더스완"},
-        {"mednafen_ngp", "네오지오 포켓"}, {"beetle_ngp", "네오지오 포켓"},
-        {"mame", "아케이드 (MAME)"}, {"fbneo", "아케이드 (FBNeo)"}, {"fbalpha", "아케이드 (FBNeo)"},
-        {"dosbox", "DOS"}, {"np2", "PC-98"}, {"nekop2", "PC-98"}, {"bluemsx", "MSX"}, {"fmsx", "MSX"},
-        {"handy", "아타리 링크스"}, {"mednafen_lynx", "아타리 링크스"}, {"mednafen_vb", "버추얼보이"},
-        {"mednafen_pcfx", "PC-FX"},
-    };
-    std::string id = Lower(ident);
-    if (id.empty()) return -1;
-    for (const auto &kv : t) {
-        if (id.find(kv.first) == std::string::npos) continue;
-        if (kv.second[0] == '-') return -2;
-        const auto &sys = Systems();
-        for (size_t i = 0; i < sys.size(); i++)
-            if (sys[i].name == std::string(kv.second)) return (int)i;
-        return -1;
-    }
-    return -1;
-}
-
-std::string TargetFor(int sysIdx) {
-    if (sysIdx < 0) return "";
-    for (const auto &t : Systems()[sysIdx].targets) {
-        std::string nro = t[0] == '/' ? t : "/retroarch/cores/" + t + "_libretro_libnx.nro";
-        if (CoreExists(nro)) return Quote(nro);
-    }
-    return "";
-}
-
-// 롬 파일이 들어 있는 폴더 경로로 실행 설정 추정 (폴더 -> 상위 폴더 -> 확장자)
-std::string AutoLaunch(const std::string &dir, const std::string &file) {
-    std::string d = dir;
-    for (int up = 0; up < 2 && !d.empty(); up++) {
-        int s = SystemByFolder(Base(d));
-        if (s == -2) return "";
-        if (s >= 0) return TargetFor(s);
-        size_t slash = d.find_last_of('/');
-        d = slash == std::string::npos ? "" : d.substr(0, slash);
-    }
-    return TargetFor(SystemByExt(Ext(file)));
-}
-
-// 안드로이드용 launch(am start ...)를 스위치 실행 템플릿으로 바꾼다. 변환 불가면 빈 문자열.
-// 숨길 코어 (스위치 성능 범위 밖). SetHiddenCores 로 바꿀 수 있음
-std::vector<std::string> gHiddenCores = {"flycast", "mupen64plus_next", "melonds", "desmume", "yabause", "kronos",
-                                         "yabasanshiro", "citra", "dolphin"};
-
-// ---------------------------------------------------------------- MAME 계열 롬셋 확인
-// 롬셋 이름(zip 이름)이 코어가 지원하는 목록에 있는지 보고 코어를 고른다 (romfs:/sets/<코어>.txt).
-#ifdef __SWITCH__
-static const char *kSetsDir = "romfs:/sets/";
-#else
-static const char *kSetsDir = "romfs/sets/";
-#endif
-
-const std::set<std::string> *CoreSets(const std::string &core) {
-    static std::map<std::string, std::set<std::string>> cache;
-    auto it = cache.find(core);
-    if (it == cache.end()) {
-        std::set<std::string> sets;
-        std::ifstream in(std::string(kSetsDir) + core + ".txt");
-        std::string line;
-        while (std::getline(in, line)) {
-            line = Trim(line);
-            if (!line.empty()) sets.insert(line);
-        }
-        it = cache.emplace(core, std::move(sets)).first;
-    }
-    return it->second.empty() ? nullptr : &it->second;
-}
-
-// launch 가 MAME 계열이면 롬셋을 지원하는 코어로 바꾼다. 지원하는 코어가 없으면 "" (숨김).
-// prefer: 원래 지정된 코어 (없으면 가벼운 mame2003_plus 부터)
-std::string PickMameCore(const std::string &launch, const std::string &file) {
-    static const char *mames[] = {"mame2003_plus", "mame2010"};
-    std::string prefer;
-    for (const char *m : mames)
-        if (launch.find(std::string("/") + m + "_libretro") != std::string::npos) prefer = m;
-    bool latest = launch.find("mamearcade_libretro") != std::string::npos ||
-                  launch.find("/mame_libretro") != std::string::npos;
-    if (prefer.empty() && !latest) return launch;  // MAME 계열 아님
-    std::string ext = Ext(file);
-    if (ext != "zip" && ext != "7z") return launch;
-    std::string set = Lower(Stem(file));
-    std::vector<std::string> order;
-    if (!prefer.empty()) order.push_back(prefer);
-    for (const char *m : mames)
-        if (prefer != m) order.push_back(m);
-    bool anyList = false;
-    for (const auto &c : order) {
-        const std::set<std::string> *sets = CoreSets(c);
-        std::string nro = "/retroarch/cores/" + c + "_libretro_libnx.nro";
-        if (!sets) continue;
-        anyList = true;
-        if (sets->count(set) && CoreExists(nro)) return Quote(nro);
-    }
-    // 목록 파일이 없으면 판단하지 않고 원래대로
-    if (!anyList) return launch;
-    return "";
-}
-
-// ---------------------------------------------------------------- 코어 대체 설정 (/JoyLauncher/cores.txt)
-// [auto] 런처 기본값 (실행할 때마다 다시 씀), [user] 사용자 지정 (런처가 건드리지 않음, auto 보다 우선)
-//   형식: <안드로이드 코어 이름 또는 앱 패키지명>=<스위치 코어 이름>[,<다음 후보>...]
-//         값이 / 로 시작하면 nro 경로, none 이면 그 코어의 게임을 숨김
-typedef std::vector<std::pair<std::string, std::string>> CoreMap;  // 순서 유지
-
-const CoreMap &BuiltinCoreMap() {
-    static const CoreMap m = {
-        {"snes9x2005_plus", "snes9x2010,snes9x"},
-        {"snes9x2005", "snes9x2010,snes9x"},
-        {"mednafen_pce", "mednafen_pce,mednafen_pce_fast"},
-        {"mame2010", "mame2010,mame2003_plus"},
-        {"mamearcade", "mame2003_plus,mame2010"},
-        {"mame", "mame2003_plus,mame2010"},
-        {"org.ppsspp.ppsspp", "/switch/ppsspp/PPSSPP.nro,ppsspp"},
-        {"melonds", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
-        {"desmume", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,desmume,melonds"},
-        {"com.dsemu.drastic", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
-        {"me.magnum.melonds", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
-    };
-    return m;
-}
-
-CoreMap gUserCores;
-
-// 코어 이름 정리: 경로·파일 이름 꼬리를 떼고 소문자로 ("/retroarch/cores/fbalpha2012_libretro_libnx.nro" -> "fbalpha2012").
-// 코어가 아닌 nro 경로는 소문자 경로 그대로
-std::string NormCoreKey(const std::string &s) {
-    std::string t = Lower(Trim(s));
-    for (const char *suf : {"_libretro_libnx.nro", "_libretro_android.so", "_libretro.so", "_libretro"}) {
-        size_t p = t.find(suf);
-        if (p == std::string::npos) continue;
-        size_t b = t.rfind('/', p);
-        b = b == std::string::npos ? 0 : b + 1;
-        return t.substr(b, p - b);
-    }
-    return t;
-}
-
-// [user] 에 key 가 있으면 그 값, 없으면 nullptr
-const std::string *UserSetting(const std::string &key) {
-    std::string k = NormCoreKey(key);
-    if (k.empty()) return nullptr;
-    for (const auto &kv : gUserCores)
-        if (NormCoreKey(kv.first) == k) return &kv.second;
-    return nullptr;
-}
-
-std::vector<std::string> SplitList(const std::string &v) {
-    std::vector<std::string> out;
-    std::string cur;
-    for (char c : v + ",") {
-        if (c == ',') {
-            cur = Trim(cur);
-            if (!cur.empty()) out.push_back(cur);
-            cur.clear();
-        } else {
-            cur += c;
-        }
-    }
-    return out;
-}
-
-// 후보 목록에서 스위치에 있는 첫 번째 실행 파일. none 이면 "-" (숨김)
-std::string ResolveCores(const std::string &list) {
-    for (const auto &c : SplitList(list)) {
-        if (Lower(c) == "none") return "-";
-        std::string nro = c[0] == '/' ? c : "/retroarch/cores/" + NormCoreKey(c) + "_libretro_libnx.nro";
-        if (CoreExists(nro)) return Quote(nro);
-    }
-    return "";
-}
-
-// key 에 대한 설정값 (user 우선). 없으면 ""
-std::string CoreSetting(const std::string &key, bool &fromUser) {
-    if (const std::string *v = UserSetting(key)) { fromUser = true; return *v; }
-    for (const auto &kv : BuiltinCoreMap())
-        if (kv.first == key) { fromUser = false; return kv.second; }
-    return "";
-}
-
-std::vector<std::string> Tokenize(const std::string &s);
-
-// 실행 설정에 적힌 코어 이름 (xxx_libretro_android.so -> xxx), 없으면 앱 패키지/nro 경로, 그것도 없으면 ""
-std::string LaunchCoreName(const std::string &launch) {
-    size_t p = launch.find("_libretro_android");
-    if (p != std::string::npos) {
-        size_t b = launch.rfind('/', p);
-        return launch.substr(b + 1, p - b - 1);
-    }
-    for (const auto &t : Tokenize(launch)) {
-        if (t.find(".nro") != std::string::npos) return t;
-        size_t s = t.find('/');  // -n 패키지/액티비티
-        if (t.find('.') != std::string::npos && s != std::string::npos && t[0] != '/') return t.substr(0, s);
-    }
-    return "";
-}
-
-// 실행 설정 변환. fromUser: [user] 설정을 썼는지. 반환 "" = 변환 불가, "-" = 숨김
-std::string TranslateLaunch(const std::string &launch, bool &fromUser) {
-    fromUser = false;
-    if (launch.find(".nro") != std::string::npos) return launch;  // 이미 스위치용
-    size_t p = launch.find("_libretro_android");
-    if (p != std::string::npos) {
-        size_t b = launch.rfind('/', p);
-        std::string name = launch.substr(b + 1, p - b - 1);
-        std::string set = CoreSetting(name, fromUser);
-        return ResolveCores(set.empty() ? name : set);
-    }
-    // 단독 에뮬레이터 앱 (패키지명). user 설정 먼저, 그다음 기본값
-    for (int pass = 0; pass < 2; pass++) {
-        const CoreMap &m = pass == 0 ? gUserCores : BuiltinCoreMap();
-        for (const auto &kv : m)
-            if (kv.first.find('.') != std::string::npos && launch.find(kv.first) != std::string::npos) {
-                fromUser = pass == 0;
-                return ResolveCores(kv.second);
-            }
-    }
-    return "";
-}
-
-// 실행 대상(스위치 nro)의 코어 이름으로 [user] 적용. 메타데이터가 이미 스위치 nro 이거나 폴더로 추정한 게임용.
-// 반환 true = 바꿈(hide 면 none). 적힌 코어가 스위치에 하나도 없으면 miss 에 그 값
-bool ApplyUserToTarget(Game &g, bool &hide, std::string &miss) {
-    hide = false;
-    if (gUserCores.empty() || g.launch.empty()) return false;
-    std::string nro;
-    for (const auto &t : Tokenize(g.launch))
-        if (t.find(".nro") != std::string::npos) { nro = t; break; }
-    const std::string *v = UserSetting(nro);
-    if (!v) return false;
-    std::string r = ResolveCores(*v);
-    if (r == "-") { hide = true; return true; }
-    if (r.empty()) { miss = *v; return false; }
-    g.launch = r;
-    g.how = "cores.txt [user]";
-    return true;
 }
 
 // 바이오스 등 게임이 아닌 아케이드 롬
@@ -776,62 +371,55 @@ struct Library {
     }
 };
 
-// 메타데이터의 실행 설정(launch)으로 스위치에서 실행할 대상을 정한다 (cur.launch·metaCore·how).
-// 실행할 수 없으면(숨김) false. ident: launch 가 없을 때 기종 판단에 쓸 에뮬레이터 이름 (ES-DE 표시 이름 등)
-bool ResolveLaunch(const std::string &dir, const std::string &launch, Game &cur, const std::string &ident = "") {
-    bool userCore = false;
-    cur.launch = launch.empty() ? "" : TranslateLaunch(launch, userCore);
-    if (cur.launch == "-") return false;  // cores.txt 에서 none
-    cur.metaCore = launch.empty() ? ident : LaunchCoreName(launch);
-    // [user] 에 적었지만 그 코어가 스위치에 없음 → 아래 기본 판단으로 넘어가고 실행 기록에 남김
-    std::string miss;
-    if (cur.launch.empty() && userCore) {
-        bool dummy = false;
-        miss = CoreSetting(cur.metaCore, dummy);
-        userCore = false;
+// 롬 폴더(또는 그 위 폴더)의 이름으로 기종 찾기. 모르면 nullptr
+const EmuSystem *SystemForDir(const std::string &dir) {
+    std::string d = dir;
+    for (int up = 0; up < 2 && !d.empty(); up++, d = ParentDir(d))
+        if (const EmuSystem *s = EmuSystemForFolder(Base(d))) return s;
+    return nullptr;
+}
+
+// 화면에 보일 기종 이름: 런처의 한글 이름 표에 있으면 그것, 없으면 ES-DE 의 긴 이름
+std::string SystemTitle(const EmuSystem &s) {
+    for (const auto &e : EsdeSystems())
+        if (s.name == e.id || (!s.theme.empty() && s.theme == e.id)) return e.ko;
+    return s.fullname.empty() ? s.name : s.fullname;
+}
+
+// 게임의 실행 방법을 적어 둔다 (cur.launch·metaCore·how). 실제 에뮬레이터는 실행할 때 고른다.
+//   launch: 목록(페가수스)에 적힌 실행 명령 — 있으면 그대로 (1차)
+//   없으면 롬 폴더 이름 → 카테고리 이름 → 확장자로 기종을 정함 (2차, ES-DE 방식). alt: ES-DE 목록이 정한 에뮬레이터 이름
+// 실행할 길이 없으면 false (목록에서 뺌)
+bool ResolveLaunch(const std::string &dir, const std::string &launch, Game &cur, const std::string &colName, const std::string &alt = "") {
+    if (!launch.empty()) {
+        cur.launch = launch;
+        cur.metaCore = EmuLaunchIdent(launch);
+        cur.how = "메타데이터의 실행 명령";
+        return true;
     }
-    if (cur.launch.empty()) cur.how = "폴더 이름/확장자로 추정";
-    else if (launch.find(".nro") != std::string::npos) cur.how = "메타데이터의 nro 그대로";
-    else if (userCore) cur.how = "cores.txt [user]";
-    else {
-        bool dummy = false;
-        cur.how = CoreSetting(cur.metaCore, dummy).empty() && launch.find("_libretro_android") != std::string::npos
-                      ? "같은 이름 코어"
-                      : "cores.txt [auto]";
+    const EmuSystem *s = SystemForDir(dir);
+    std::string how = "폴더 이름으로 기종 판단";
+    if (!s && !colName.empty()) {
+        s = EmuSystemForFolder(colName);
+        how = "카테고리 이름으로 기종 판단";
     }
-    if (cur.launch.empty()) {
-        // 변환 불가: 원래 코어/에뮬레이터 이름으로 기종을 먼저 판단, 모르면 폴더/확장자로 추정
-        int s = SystemByIdent(cur.metaCore);
-        if (s == -2) return false;  // 제외 기종 에뮬레이터 (PS2·3DS·GC/Wii·스위치·비타 등)
-        if (s >= 0) {
-            cur.launch = TargetFor(s);
-            cur.how = std::string("코어 이름으로 기종 판단 (") + Systems()[s].name + ")";
-        } else {
-            cur.launch = AutoLaunch(dir, cur.file);
-        }
+    if (!s) {
+        s = EmuSystemForExt(Ext(cur.file));
+        how = "확장자로 기종 판단";
     }
-    if (cur.launch.empty()) return false;
-    // 정해진 스위치 코어 이름으로 [user] 한 번 더 (스위치판 팩의 nro·폴더 추정 게임)
-    if (!userCore) {
-        bool hide = false;
-        std::string m;
-        if (ApplyUserToTarget(cur, hide, m)) {
-            if (hide) return false;
-            userCore = true;
-        } else if (miss.empty()) {
-            miss = m;
-        }
+    if (s) {
+        cur.launch = std::string(kLaunchSys) + s->name + (alt.empty() ? "" : "|" + alt);
+        cur.metaCore = alt;
+        cur.how = how + " (" + s->name + ")";
+        return true;
     }
-    if (!miss.empty()) cur.how += " · cores.txt [user] 무시: 코어 없음 (" + miss + ")";
-    // MAME 계열: 최신 MAME 용 목록이면 latest 표시를 남겨 롬셋으로 코어 선택
-    // (cores.txt [user] 로 직접 정한 코어는 그대로)
-    if (!userCore) {
-        std::string before = cur.launch;
-        cur.launch = PickMameCore(launch.find("mamearcade_libretro") != std::string::npos ? launch : cur.launch, cur.file);
-        if (cur.launch != before) cur.how += " + MAME 롬셋 목록으로 선택";
+    // 기종은 모르지만 emulators.txt 에 이 폴더·카테고리의 줄이 있으면 실행할 때 그 설정을 쓴다
+    if (EmuUserHas(Base(dir)) || EmuUserHas(colName)) {
+        cur.launch = kLaunchSys;
+        cur.how = "emulators.txt";
+        return true;
     }
-    if (cur.launch.empty()) return false;
-    return true;
+    return false;
 }
 
 // ---------------------------------------------------------------- 1) 페가수스
@@ -871,11 +459,6 @@ std::vector<Entry> ReadEntries(const std::string &path) {
 }
 
 void ParsePegasus(const std::string &dir, Library &lib) {
-    // 제외 기종 폴더(ps2, 3ds, win 등)는 목록이 있어도 읽지 않음
-    if (ExcludedFolder(FolderKey(Base(dir)))) {
-        lib.log += "[skip] " + dir + "\n";
-        return;
-    }
     std::vector<Entry> entries = ReadEntries(dir + "/metadata.pegasus.txt");
     std::string colName, colLaunch, colSort;
     std::set<std::string> ignored;
@@ -904,10 +487,9 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         if (rel.find(' ') != std::string::npos && !Exists(Join(dir, rel))) rel = rel.substr(0, rel.find(' '));
         cur.file = Join(dir, rel);
         if (ignored.count(Base(cur.file))) return;
-        if (Ext(cur.file) == "custom" || Ext(cur.file) == "apk") { unsupported++; return; }  // 안드로이드 앱 실행용 항목
         if (!Exists(cur.file)) { missing++; return; }
         std::string launch = cur.launch.empty() ? colLaunch : cur.launch;
-        if (!ResolveLaunch(dir, launch, cur)) { unsupported++; return; }
+        if (!ResolveLaunch(dir, launch, cur, colName)) { unsupported++; return; }
         // assets.* 중 실제로 있는 이미지 중 우선순위가 가장 높은 것, 없으면 폴더 탐색
         cur.boxart.clear();
         for (const std::string &a : assets)
@@ -917,11 +499,8 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         for (const std::string &a : shots)
             if (!a.empty() && Exists(Join(dir, a))) { cur.screenshot = Join(dir, a); break; }
         if (cur.screenshot.empty()) cur.screenshot = FindScreenshot(dir, rel);
-        cur.video.clear();
-        if (cur.screenshot.empty()) {
-            if (!videoAsset.empty() && Exists(Join(dir, videoAsset))) cur.video = Join(dir, videoAsset);
-            else cur.video = FindVideo(dir, rel);
-        }
+        if (!videoAsset.empty() && Exists(Join(dir, videoAsset))) cur.video = Join(dir, videoAsset);
+        else cur.video = FindVideo(dir, rel);
         AddEsdeMedia(dir, rel, cur);
         std::string name = colName.empty() ? Base(dir) : colName;
         if (lib.Add(name, colSort, cur)) added++;
@@ -967,7 +546,7 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         else if (e.key == "sort-title" || e.key == "sort_title") cur.sortKey = e.value;
         else if (e.key.compare(0, 7, "assets.") == 0) {
             for (int i = 0; i < kAssetN; i++)
-                if (e.key == kAssetKeys[i] && assets[i].empty()) assets[i] = e.value;  // video 등은 무시
+                if (e.key == kAssetKeys[i] && assets[i].empty()) assets[i] = e.value;
             for (int i = 0; i < kShotN; i++)
                 if (e.key == kShotKeys[i] && shots[i].empty()) shots[i] = e.value;
             if ((e.key == "assets.video" || e.key == "assets.videos") && videoAsset.empty()) videoAsset = e.value;
@@ -1002,10 +581,6 @@ std::string XmlTag(const std::string &block, const char *tag) {
 // xmlPath: 롬 폴더 밖의 목록 (ES-DE/gamelists/<폴더>/gamelist.xml). 비어 있으면 <dir>/gamelist.xml
 void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlPath = "") {
     bool esde = !xmlPath.empty();
-    if (ExcludedFolder(FolderKey(Base(dir)))) {
-        lib.log += "[skip] " + dir + "\n";
-        return;
-    }
     std::ifstream in(esde ? xmlPath : dir + "/gamelist.xml", std::ios::binary);
     std::stringstream ss;
     ss << in.rdbuf();
@@ -1018,8 +593,8 @@ void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlP
         sysEmu = XmlTag(xml.substr(ae, aeEnd == std::string::npos ? std::string::npos : aeEnd - ae), "label");
     }
     // ES-DE 는 폴더 이름이 곧 기종 이름(gba, megadrive) → 카테고리는 런처의 기종 이름으로
-    int sys = SystemByFolder(Base(dir));
-    std::string col = esde && sys >= 0 ? Systems()[sys].name : Base(dir);
+    const EmuSystem *sys = EmuSystemForFolder(Base(dir));
+    std::string col = esde && sys ? SystemTitle(*sys) : Base(dir);
     int added = 0, missing = 0, unsupported = 0;
     size_t pos = 0;
     while ((pos = xml.find("<game", pos)) != std::string::npos) {
@@ -1044,13 +619,14 @@ void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlP
         if (rd.size() >= 4) g.release = rd.substr(0, 4);
         std::string emu = XmlTag(blk, "altemulator");
         if (emu.empty()) emu = sysEmu;
-        if (!ResolveLaunch(dir, EsdeEmulatorLaunch(emu), g, Lower(emu))) { unsupported++; continue; }
+        if (!ResolveLaunch(dir, "", g, "", emu)) { unsupported++; continue; }
         g.how = std::string(esde ? "ES-DE gamelist" : "gamelist.xml") + (emu.empty() ? "" : " (" + emu + ")") + ", " + g.how;
         std::string img = XmlTag(blk, "image");
         if (img.empty()) img = XmlTag(blk, "thumbnail");
         g.boxart = !img.empty() && Exists(Join(dir, img)) ? Join(dir, img) : FindBoxart(dir, rel);
         g.screenshot = FindScreenshot(dir, rel);
-        if (g.screenshot.empty()) g.video = FindVideo(dir, rel);
+        std::string vid = XmlTag(blk, "video");
+        g.video = !vid.empty() && Exists(Join(dir, vid)) ? Join(dir, vid) : FindVideo(dir, rel);
         AddEsdeMedia(dir, rel, g);
         if (lib.Add(col, "", g)) added++;
     }
@@ -1061,27 +637,27 @@ void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlP
 }
 
 // ---------------------------------------------------------------- 3) 목록 없는 롬 폴더
-bool IsRomFile(const std::string &file, int sysIdx) {
+// sys: 폴더의 기종 (nullptr = 모름: 확장자가 한 기종에만 쓰이는 파일만). any: 기종을 몰라도 모든 파일을 게임으로 (emulators.txt 로 정한 폴더)
+bool IsRomFile(const std::string &file, const EmuSystem *sys, bool any) {
     std::string e = Ext(file);
     if (e.empty()) return false;
     static const std::set<std::string> never = {"txt", "xml", "json", "png", "jpg", "jpeg", "gif", "bmp", "mp4", "mkv",
                                                 "avi", "pdf", "nfo", "dat", "ini", "cfg", "srm", "sav", "state", "db",
                                                 "lpl", "log", "htm", "html", "ips", "bps", "ups", "xdelta", "sha1",
-                                                "md5", "sfv", "url", "lnk", "pegasus"};
+                                                "md5", "sfv", "url", "lnk", "pegasus", "tmp", "part", "bak"};
     if (never.count(e)) return false;
+    if (sys) return std::find(sys->exts.begin(), sys->exts.end(), e) != sys->exts.end();
+    if (any) return true;
     // .md 는 메가드라이브 폴더에서만 롬 (그 밖에서는 README.md 같은 문서)
-    if (e == "md" && (sysIdx < 0 || std::string(Systems()[sysIdx].name) != "메가드라이브")) return false;
-    if (sysIdx >= 0) {
-        const auto &ex = Systems()[sysIdx].exts;
-        if (ex.empty()) return e == "chd" || e == "cue" || e == "iso" || e == "m3u" || e == "ccd";
-        return std::find(ex.begin(), ex.end(), e) != ex.end();
-    }
-    return SystemByExt(e) >= 0;
+    if (e == "md") return false;
+    // 압축 파일은 기종을 모르는 폴더에서는 롬으로 보지 않음 (세이브·게임 데이터 묶음일 수 있음 — JoiPlay 폴더의 save.zip 등)
+    if (e == "zip" || e == "7z" || e == "rar") return false;
+    return EmuSystemForExt(e) != nullptr;
 }
 
 void ScanAuto(const std::string &dir, Library &lib) {
-    int sys = SystemByFolder(Base(dir));
-    if (sys == -2) return;
+    const EmuSystem *sys = SystemForDir(dir);
+    bool user = !sys && EmuUserHas(Base(dir));
     std::vector<std::string> files = ListDir(dir, false);
     // m3u 가 가리키는 디스크 파일, cue 와 짝인 bin 은 숨김
     std::set<std::string> hide;
@@ -1101,32 +677,24 @@ void ScanAuto(const std::string &dir, Library &lib) {
                 if (Ext(g) == "bin" && Lower(g).rfind(st, 0) == 0) hide.insert(Lower(g));
         }
     }
+    // 폴더 하나가 게임 하나인 기종 (PS3 의 "게임.ps3" 폴더 등): 이름 끝이 그 기종 확장자인 폴더
+    if (sys)
+        for (const auto &d : ListDir(dir, true)) {
+            std::string e = Ext(d);
+            if (!e.empty() && e != "zip" && e != "7z" && std::find(sys->exts.begin(), sys->exts.end(), e) != sys->exts.end()) files.push_back(d);
+        }
     int added = 0;
     for (const auto &f : files) {
-        if (hide.count(Lower(f)) || !IsRomFile(f, sys)) continue;
+        if (hide.count(Lower(f)) || !IsRomFile(f, sys, user)) continue;
         if (Ext(f) == "zip" && IsBiosName(Stem(f))) continue;
         Game g;
         g.file = dir + "/" + f;
         g.title = Stem(f);
-        g.launch = sys >= 0 ? TargetFor(sys) : AutoLaunch(dir, g.file);
-        g.how = "메타데이터 없음, 폴더 이름/확장자로 추정";
-        bool hide = false, user = false;
-        std::string miss;
-        if (!g.launch.empty()) {
-            user = ApplyUserToTarget(g, hide, miss);
-            if (hide) continue;
-            if (user) g.how = "메타데이터 없음, cores.txt [user]";
-            if (!miss.empty()) g.how += " · cores.txt [user] 무시: 코어 없음 (" + miss + ")";
-        }
-        if (!g.launch.empty() && !user) {
-            std::string before = g.launch;
-            g.launch = PickMameCore(g.launch, g.file);
-            if (g.launch != before) g.how += " + MAME 롬셋 목록으로 선택";
-        }
-        if (g.launch.empty()) continue;
+        if (!ResolveLaunch(dir, "", g, "")) continue;
+        g.how = "메타데이터 없음, " + g.how;
         g.boxart = FindBoxart(dir, f);
         g.screenshot = FindScreenshot(dir, f);
-        if (g.screenshot.empty()) g.video = FindVideo(dir, f);
+        g.video = FindVideo(dir, f);
         AddEsdeMedia(dir, f, g);
         std::string col = Base(dir);
         if (lib.Add(col, "~" + col, g)) added++;  // 자동 인식 카테고리는 뒤쪽으로
@@ -1164,77 +732,7 @@ void Scan(const std::string &dir, int depth, Library &lib, bool parentHasMeta = 
     for (const auto &s : ListDir(dir, true)) Scan(dir + "/" + s, depth - 1, lib, meta || parentHasMeta);
 }
 
-
-std::vector<std::string> Tokenize(const std::string &s) {
-    std::vector<std::string> out;
-    std::string cur;
-    bool quote = false, any = false;
-    for (char c : s) {
-        if (c == '"') { quote = !quote; any = true; continue; }
-        if (!quote && (c == ' ' || c == '\t')) {
-            if (any) out.push_back(cur);
-            cur.clear();
-            any = false;
-            continue;
-        }
-        cur += c;
-        any = true;
-    }
-    if (any) out.push_back(cur);
-    return out;
-}
-
 }  // namespace
-
-void SetHiddenCores(const std::vector<std::string> &cores) { gHiddenCores = cores; }
-
-void LoadCoreConfig(const std::string &path) {
-    // [user] 구역은 그대로 보존하고, [auto] 구역은 현재 기본값으로 다시 쓴다
-    std::vector<std::string> userLines;
-    gUserCores.clear();
-    {
-        std::ifstream in(path);
-        std::string line;
-        bool inUser = false, first = true;
-        while (std::getline(in, line)) {
-            if (first && line.size() >= 3 && (unsigned char)line[0] == 0xEF) line = line.substr(3);  // BOM
-            first = false;
-            while (!line.empty() && line.back() == '\r') line.pop_back();
-            std::string t = Trim(line);
-            if (!t.empty() && t[0] == '[') { inUser = Lower(t) == "[user]"; continue; }
-            if (!inUser) continue;
-            if (t.rfind("# 사용자 지정 (런처가 바꾸지 않음)", 0) == 0) continue;  // 구역 머리말은 매번 새로 씀
-            userLines.push_back(line);
-            if (t.empty() || t[0] == '#' || t[0] == ';') continue;
-            size_t eq = t.find('=');
-            if (eq == std::string::npos) continue;
-            std::string k = Trim(t.substr(0, eq)), v = Trim(t.substr(eq + 1));
-            if (!k.empty()) gUserCores.push_back({k, v});
-        }
-    }
-    while (!userLines.empty() && Trim(userLines.back()).empty()) userLines.pop_back();
-    if (userLines.empty())
-        userLines = {"# 예) 슈퍼패미컴을 최신 snes9x 로 실행:  snes9x2005_plus=snes9x",
-                     "# 예) 아케이드를 FB Alpha 2012 로 실행:  fbneo=fbalpha2012",
-                     "# 예) 특정 코어의 게임 숨기기:          mednafen_wswan=none"};
-    std::ofstream out(path);
-    if (!out) return;
-    out << "# Joy Launcher 코어 대체 설정\n"
-           "# 안드로이드 목록의 코어(또는 에뮬레이터 앱 패키지명)를 스위치에서 어떤 코어로 실행할지 정합니다.\n"
-           "# 형식: <안드로이드 코어 이름>=<스위치 코어 이름>[,<없을 때 다음 후보>...]\n"
-           "#       스위치 코어 이름은 /retroarch/cores/<이름>_libretro_libnx.nro 의 <이름>\n"
-           "#       / 로 시작하면 nro 경로,  none 이면 그 코어의 게임을 목록에서 숨김\n"
-           "# 적혀 있지 않은 코어는 같은 이름의 스위치 코어를 찾고, 없으면 폴더 이름·확장자로 기종을 추정합니다.\n"
-           "# [user] 는 목록에 스위치 코어(nro)가 적힌 팩·폴더로 인식한 게임에도 적용됩니다 (예: fbneo=fbalpha2012).\n"
-           "# 적은 코어가 스위치에 없으면 무시하고 기본 코어로 실행하며, 시작할 때 알려 줍니다.\n"
-           "\n"
-           "[auto]\n"
-           "# 런처 기본값입니다. 런처를 실행할 때마다 다시 써지므로 여기는 고치지 마세요.\n";
-    for (const auto &kv : BuiltinCoreMap()) out << kv.first << "=" << kv.second << "\n";
-    out << "\n[user]\n"
-           "# 사용자 지정 (런처가 바꾸지 않음). [auto] 보다 우선합니다.\n";
-    for (const auto &l : userLines) out << l << "\n";
-}
 
 std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, std::string &log) {
     Library lib;
@@ -1245,8 +743,10 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     for (const auto &r : rootDirs) {
         if (!IsDir(r)) continue;
         // 루트 자체는 목록 파일이 있을 때만 (롬을 루트에 직접 두는 경우는 드묾)
-        if (Exists(r + "/metadata.pegasus.txt")) ParsePegasus(r, lib);
-        for (const auto &s : ListDir(r, true)) Scan(r + "/" + s, 1, lib);
+        bool rootMeta = Exists(r + "/metadata.pegasus.txt");
+        if (rootMeta) ParsePegasus(r, lib);
+        // 루트에 목록이 있으면 (페가수스 game_dirs.txt 의 게임 폴더 등) 그 하위 폴더는 게임 데이터 — 자동 등록하지 않는다
+        for (const auto &s : ListDir(r, true)) Scan(r + "/" + s, 1, lib, rootMeta);
     }
     gDirCacheOn = false;
     gDirCache.clear();
@@ -1254,30 +754,6 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     std::vector<Collection> out;
     for (auto &kv : lib.cols) {
         Collection c = kv.second;
-        // DrasticDS 는 .7z 를 못 읽음
-        c.games.erase(std::remove_if(c.games.begin(), c.games.end(),
-                                     [](const Game &g) {
-                                         return Ext(g.file) == "7z" && g.launch.find("/DrasticDS.nro") != std::string::npos;
-                                     }),
-                      c.games.end());
-        // 숨길 코어(성능 범위 밖)로 실행되는 게임 빼기
-        if (!gHiddenCores.empty()) {
-            int before = (int)c.games.size();
-            c.games.erase(std::remove_if(c.games.begin(), c.games.end(),
-                                         [](const Game &g) {
-                                             for (const auto &h : gHiddenCores)
-                                                 if (g.launch.find("/" + h + "_libretro") != std::string::npos ||
-                                                     g.launch.find("/" + h + ".nro") != std::string::npos)
-                                                     return true;
-                                             return false;
-                                         }),
-                          c.games.end());
-            if ((int)c.games.size() != before) {
-                char buf[256];
-                snprintf(buf, sizeof(buf), "[hide] %s: %d\n", c.name.c_str(), before - (int)c.games.size());
-                log += buf;
-            }
-        }
         if (c.games.empty()) continue;
         auto sn = lib.shortNames.find(c.name);
         if (sn != lib.shortNames.end()) c.shortName = sn->second;
@@ -1288,27 +764,12 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     return out;
 }
 
-bool BuildLaunch(const Game &g, std::string &nroPath, std::string &argString) {
-    std::vector<std::string> tok = Tokenize(g.launch);
-    if (tok.empty()) return false;
-    argString.clear();
-    for (size_t i = 0; i < tok.size(); i++) {
-        std::string t = tok[i];
-        size_t p;
-        while ((p = t.find("{file.path}")) != std::string::npos) t.replace(p, 11, g.file);
-        if (i == 0) nroPath = t;
-        if (!argString.empty()) argString += " ";
-        argString += "\"" + t + "\"";
-    }
-    return Lower(nroPath).size() > 4 && Lower(nroPath).substr(Lower(nroPath).size() - 4) == ".nro";
-}
-
 // ---------------------------------------------------------------- 게임 목록 저장 (/JoyLauncher/library.cache)
 // 시작할 때마다 전체 롬 폴더를 다시 읽지 않도록 읽은 결과를 저장해 두고 그대로 쓴다.
 // 다음이 바뀌면 자동으로 다시 읽는다: 런처 버전, 롬 폴더 구성(2단계), metadata.pegasus.txt·gamelist.xml 의
-// 수정 시각·크기, 스위치 코어 목록, cores.txt [user], 숨길 코어 설정. (롬·그림만 넣고 뺀 경우는 메뉴에서 새로 고침)
+// 수정 시각·크기, 사용자 기종 표(custom_systems), emulators.txt 에 적은 이름. (롬·그림만 넣고 뺀 경우는 메뉴에서 새로 고침)
 namespace {
-const char *kCacheMagic = "JOYLIB 1";
+const char *kCacheMagic = "JOYLIB A3";  // A3: 목록이 있는 루트의 하위 폴더·압축 파일 자동 등록 규칙 바뀜 (A20)
 
 void SigDir(const std::string &dir, int depth, std::string &sig) {
     if (IsMediaFolder(dir)) return;
@@ -1361,27 +822,16 @@ std::vector<std::string> SplitTab(const std::string &line) {
 }  // namespace
 
 void SetEsdeHint(const std::string &path) { gEsdeHint = path; }
+void SetEsdeCandidates(const std::vector<std::string> &dirs) { gEsdeMore = dirs; }
 
-// [user] 에 적었지만 스위치에 코어가 하나도 없는 항목 ("키=값, ..."), 없으면 ""
-std::string UserCoreProblems() {
-    std::string out;
-    for (const auto &kv : gUserCores)
-        if (ResolveCores(kv.second).empty()) out += (out.empty() ? "" : ", ") + kv.first + "=" + kv.second;
-    return out;
+std::string EsdeLocate(const std::vector<std::string> &rootDirs) {
+    FindEsde(rootDirs);
+    return gEsdeDir;
 }
 
 std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     std::string sig = std::string(kCacheMagic) + " " + __DATE__ + " " + __TIME__ + "\n";
-    for (const auto &h : gHiddenCores) sig += "H" + h + "\n";
-    for (const auto &kv : gUserCores) sig += "U" + kv.first + "=" + kv.second + "\n";
-    std::string coreDir = "/retroarch/cores";
-#ifndef __SWITCH__
-    if (const char *sd = getenv("JOY_SDROOT")) coreDir = std::string(sd) + coreDir;
-#endif
-    for (const auto &n : ListDir(coreDir, false)) sig += "C" + n + "\n";
-    sig += CoreExists("/switch/ppsspp/PPSSPP.nro") ? "PPSSPP\n" : "";
-    sig += CoreExists(kDrastic) ? "DRASTIC\n" : "";
-    sig += CoreExists(kDrastic2) ? "DRASTIC2\n" : "";
+    sig += EmuSignature();
     // ES-DE 폴더와 그 목록들
     FindEsde(rootDirs);
     if (!gEsdeDir.empty()) {

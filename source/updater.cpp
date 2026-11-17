@@ -1,10 +1,9 @@
 #include "updater.h"
 
-#include "hbmenu.h"
 #include "i18n.h"
+#include "platform.h"
 
 #include <SDL.h>
-#include <curl/curl.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -17,70 +16,33 @@
 #include <unistd.h>
 #include <vector>
 
-#ifdef __SWITCH__
-#include <switch.h>
-#endif
-
 #ifndef APP_VERSION_STR
 #define APP_VERSION_STR "0.0.0-dev"
 #endif
+// 런처(apk) 업데이트를 받을 깃헙 저장소 "소유자/이름". 비어 있으면 업데이트 기능을 끈다 (옵션 창에도 보이지 않음).
+// 스위치판과 같은 저장소(JyJyLab/JoyLauncher)에 릴리스만 따로 둔다: 스위치판 태그 v1.2.0, 안드로이드판 태그 android-v1.2.0
+#ifndef JOY_UPDATE_REPO
+#define JOY_UPDATE_REPO "JyJyLab/JoyLauncher"
+#endif
 
 namespace {
-const char *kLatestApi = "https://api.github.com/repos/JyJyLab/JoyLauncher/releases/latest";
-const char *kAssetName = "joylauncher.nro";
-const char *kUserAgent = "JoyLauncher-Updater";
+const char *kUpdateRepo = JOY_UPDATE_REPO;
+// 기본 테마 팩은 스위치판 저장소의 릴리스(<팩>.zip)에서 받는다: 테마 문법이 같아 그대로 쓸 수 있음
+const char *kThemeRepo = "JyJyLab/JoyLauncher";
+const char *kAssetName = "JoyLauncher.apk";
+const char *kAndroidTag = "android-v";  // 안드로이드판 릴리스의 태그 앞부분
+const char *kSwitchTag = "v";           // 스위치판 릴리스 (기본 테마 팩 zip 이 여기에 있음)
 
-bool gCurlReady = false;  // 백그라운드 확인이 끝난 뒤에만 설치하므로 동시 호출 없음
-volatile bool gAbort = false;  // 종료 중: 진행 중인 통신을 바로 끊음
-
-// 통신 중 주기적으로 불림. 종료 중이면 중단
-int AbortCb(void *, curl_off_t, curl_off_t, curl_off_t, curl_off_t) { return gAbort ? 1 : 0; }
-
-// ---------------------------------------------------------------- 네트워크 초기화 (스위치)
-struct NetGuard {
-    bool ok = true;
-    NetGuard() {
-#ifdef __SWITCH__
-        ok = R_SUCCEEDED(socketInitializeDefault());
-#endif
-        if (ok && !gCurlReady) { curl_global_init(CURL_GLOBAL_DEFAULT); gCurlReady = true; }
-    }
-    ~NetGuard() {
-#ifdef __SWITCH__
-        if (ok) socketExit();
-#endif
-    }
-};
-
-size_t WriteString(char *p, size_t s, size_t n, void *ud) {
-    static_cast<std::string *>(ud)->append(p, s * n);
-    return s * n;
-}
+// 최근 릴리스 목록 (새것부터). 한 저장소에 두 플랫폼의 릴리스가 섞여 있어 "latest" 하나로는 고를 수 없다
+std::string ReleasesApi(const char *repo) { return std::string("https://api.github.com/repos/") + repo + "/releases?per_page=30"; }
 
 bool HttpGet(const std::string &url, std::string &out, std::string &err) {
-    CURL *c = curl_easy_init();
-    if (!c) { err = T("curl 초기화 실패"); return false; }
-    struct curl_slist *h = nullptr;
-    h = curl_slist_append(h, "Accept: application/vnd.github+json");
-    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 6L);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 15L);
-    curl_easy_setopt(c, CURLOPT_NOPROGRESS, 0L);
-    curl_easy_setopt(c, CURLOPT_XFERINFOFUNCTION, AbortCb);
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteString);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, &out);
-    CURLcode r = curl_easy_perform(c);
-    long code = 0;
-    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
-    curl_slist_free_all(h);
-    curl_easy_cleanup(c);
-    if (r != CURLE_OK) { err = std::string(T("네트워크 오류: ")) + curl_easy_strerror(r); return false; }
-    if (code == 404) { err = T("아직 배포된 버전이 없습니다"); return false; }
-    if (code != 200) { err = T("서버 응답 ") + std::to_string(code); return false; }
-    return true;
+    std::string e;
+    if (plat::HttpGet(url, out, e)) return true;
+    if (e == "HTTP 404") err = T("아직 배포된 버전이 없습니다");
+    else if (e.rfind("HTTP ", 0) == 0) err = T("서버 응답 ") + e.substr(5);
+    else err = std::string(T("네트워크 오류: ")) + e;
+    return false;
 }
 
 // ---------------------------------------------------------------- 아주 작은 JSON 읽기 (필요한 문자열/숫자만)
@@ -201,37 +163,20 @@ struct Sha256 {
     }
 };
 
-struct DlCtx {
-    FILE *f;
+// 파일의 SHA-256 (소문자 16진수). 못 읽으면 ""
+std::string FileSha256(const std::string &path, long long &size) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return "";
     Sha256 sha;
-    long long got = 0, total = 0;
-    const std::function<bool(long long, long long)> *progress;
-    bool cancelled = false;
-};
-
-size_t WriteFileCb(char *p, size_t s, size_t n, void *ud) {
-    DlCtx *d = static_cast<DlCtx *>(ud);
-    size_t len = s * n;
-    if (fwrite(p, 1, len, d->f) != len) return 0;
-    d->sha.Update(reinterpret_cast<uint8_t *>(p), len);
-    d->got += len;
-    if (d->progress && *d->progress && !(*d->progress)(d->got, d->total)) { d->cancelled = true; return 0; }
-    return len;
-}
-
-bool CopyFile(const std::string &src, const std::string &dst) {
-    FILE *in = fopen(src.c_str(), "rb");
-    if (!in) return false;
-    FILE *out = fopen(dst.c_str(), "wb");
-    if (!out) { fclose(in); return false; }
-    std::vector<char> b(1 << 20);
+    std::vector<uint8_t> b(1 << 16);
     size_t n;
-    bool ok = true;
-    while ((n = fread(b.data(), 1, b.size(), in)) > 0)
-        if (fwrite(b.data(), 1, n, out) != n) { ok = false; break; }
-    fclose(in);
-    if (fclose(out) != 0) ok = false;
-    return ok;
+    size = 0;
+    while ((n = fread(b.data(), 1, b.size(), f)) > 0) {
+        sha.Update(b.data(), n);
+        size += (long long)n;
+    }
+    fclose(f);
+    return sha.Hex();
 }
 
 // ---------------------------------------------------------------- 릴리스 자산
@@ -240,13 +185,30 @@ struct Asset {
     long long size = 0;
 };
 
-// 최신 릴리스의 자산 목록 (version: 태그의 v 를 뺀 값)
-bool FetchAssets(std::vector<Asset> &out, std::string &version, std::string &err) {
-    std::string j;
-    if (!HttpGet(kLatestApi, j, err)) return false;
-    size_t p = FindKey(j, "tag_name", 0, j.size());
-    if (p != std::string::npos) version = ReadJsonString(j, p);
-    if (!version.empty() && (version[0] == 'v' || version[0] == 'V')) version.erase(0, 1);
+// 태그가 tagPrefix + 숫자로 시작하는 가장 새 릴리스(초안·시험판 제외)의 자산 목록 (version: 태그에서 tagPrefix 를 뺀 값)
+bool FetchAssets(const char *repo, const char *tagPrefix, std::vector<Asset> &out, std::string &version, std::string &err) {
+    std::string all;
+    if (!HttpGet(ReleasesApi(repo), all, err)) return false;
+    size_t lp = all.find('[');
+    size_t lend = lp == std::string::npos ? std::string::npos : MatchBracket(all, lp);
+    if (lend == std::string::npos) { err = T("아직 배포된 버전이 없습니다"); return false; }
+    std::string j;  // 고른 릴리스 하나
+    std::string pre = tagPrefix;
+    for (size_t o = all.find('{', lp); o != std::string::npos && o < lend;) {
+        size_t oend = MatchBracket(all, o);
+        if (oend == std::string::npos) break;
+        size_t tp = FindKey(all, "tag_name", o, oend);
+        std::string tag = tp == std::string::npos ? "" : ReadJsonString(all, tp);
+        size_t dp = FindKey(all, "draft", o, oend), pp = FindKey(all, "prerelease", o, oend);
+        bool skip = (dp != std::string::npos && all.compare(dp, 4, "true") == 0) || (pp != std::string::npos && all.compare(pp, 4, "true") == 0);
+        if (!skip && tag.size() > pre.size() && tag.compare(0, pre.size(), pre) == 0 && isdigit((unsigned char)tag[pre.size()])) {
+            j = all.substr(o, oend - o + 1);
+            version = tag.substr(pre.size());
+            break;
+        }
+        o = all.find('{', oend + 1);
+    }
+    if (j.empty()) { err = T("아직 배포된 버전이 없습니다"); return false; }
     size_t ap = FindKey(j, "assets", 0, j.size());
     if (ap == std::string::npos || j[ap] != '[') { err = T("내려받을 파일이 없습니다"); return false; }
     size_t aend = MatchBracket(j, ap);
@@ -273,32 +235,20 @@ bool FetchAssets(std::vector<Asset> &out, std::string &version, std::string &err
 // url → path 로 받고 크기·SHA-256 확인. 실패하면 파일을 지운다
 bool DownloadVerified(const Asset &a, const std::string &path, std::string &err,
                       const std::function<bool(long long, long long)> &progress) {
-    DlCtx d;
-    d.f = fopen(path.c_str(), "wb");
-    if (!d.f) { err = T("임시 파일을 만들 수 없습니다"); return false; }
-    d.total = a.size;
-    d.progress = &progress;
-    CURL *c = curl_easy_init();
-    curl_easy_setopt(c, CURLOPT_URL, a.url.c_str());
-    curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteFileCb);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, &d);
-    CURLcode r = curl_easy_perform(c);
-    long code = 0;
-    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(c);
-    bool closed = fclose(d.f) == 0;
     auto fail = [&](const std::string &m) { remove(path.c_str()); err = m; return false; };
-    if (d.cancelled) return fail(T("취소했습니다"));
-    if (r != CURLE_OK) return fail(std::string(T("내려받기 실패: ")) + curl_easy_strerror(r));
-    if (code != 200 || !closed) return fail(Fmt(T("내려받기 실패 (응답 %d)"), (int)code));
-    if (a.size > 0 && d.got != a.size) return fail(T("파일 크기가 맞지 않습니다"));
+    std::string e;
+    // 전체 크기는 릴리스 정보의 값으로 (서버가 길이를 안 알려 줄 때도 진행률이 보이게)
+    auto prog = [&](long long got, long long total) { return !progress || progress(got, a.size > 0 ? a.size : total); };
+    if (!plat::HttpDownload(a.url, path, e, prog)) {
+        if (e == "cancel") return fail(T("취소했습니다"));
+        if (e.rfind("HTTP ", 0) == 0) return fail(Fmt(T("내려받기 실패 (응답 %d)"), atoi(e.c_str() + 5)));
+        return fail(std::string(T("내려받기 실패: ")) + e);
+    }
+    long long size = 0;
+    std::string hex = FileSha256(path, size);
+    if (a.size > 0 && size != a.size) return fail(T("파일 크기가 맞지 않습니다"));
     if (a.sha256.empty()) return fail(T("검증 정보(SHA-256)가 없어 설치하지 않았습니다"));
-    if (d.sha.Hex() != a.sha256) return fail(T("검증 실패 (SHA-256 불일치)"));
+    if (hex != a.sha256) return fail(T("검증 실패 (SHA-256 불일치)"));
     return true;
 }
 
@@ -402,6 +352,8 @@ int CheckWorker(void *) {
 
 const char *CurrentVersion() { return APP_VERSION_STR; }
 
+bool UpdaterEnabled() { return kUpdateRepo[0] != '\0'; }
+
 int CompareVersions(const std::string &a, const std::string &b) {
     size_t i = 0, j = 0;
     while (i < a.size() || j < b.size()) {
@@ -419,38 +371,19 @@ int CompareVersions(const std::string &a, const std::string &b) {
 }
 
 bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
-    NetGuard net;
-    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
-    std::string j;
-    if (!HttpGet(kLatestApi, j, err)) return false;
-    size_t p = FindKey(j, "tag_name", 0, j.size());
-    if (p == std::string::npos) { err = T("릴리스 정보를 읽을 수 없습니다"); return false; }
-    info.version = ReadJsonString(j, p);
-    if (!info.version.empty() && (info.version[0] == 'v' || info.version[0] == 'V')) info.version.erase(0, 1);
-    size_t bp = FindKey(j, "body", 0, j.size());
-    if (bp != std::string::npos) info.notes = ReadJsonString(j, bp);
-    size_t ap = FindKey(j, "assets", 0, j.size());
-    if (ap == std::string::npos || j[ap] != '[') { err = T("내려받을 파일이 없습니다"); return false; }
-    size_t aend = MatchBracket(j, ap);
+    if (!UpdaterEnabled()) { err = T("아직 배포된 버전이 없습니다"); return false; }
+    std::vector<Asset> assets;
+    if (!FetchAssets(kUpdateRepo, kAndroidTag, assets, info.version, err)) return false;
+    if (info.version.empty()) { err = T("릴리스 정보를 읽을 수 없습니다"); return false; }
     std::string shaUrl;
-    for (size_t o = j.find('{', ap); o != std::string::npos && o < aend; o = j.find('{', o + 1)) {
-        size_t oend = MatchBracket(j, o);
-        if (oend == std::string::npos || oend > aend) break;
-        size_t np = FindKey(j, "name", o, oend);
-        std::string name = np == std::string::npos ? "" : ReadJsonString(j, np);
-        size_t up = FindKey(j, "browser_download_url", o, oend);
-        std::string url = up == std::string::npos ? "" : ReadJsonString(j, up);
-        if (name == kAssetName) {
-            info.url = url;
-            size_t sp = FindKey(j, "size", o, oend);
-            if (sp != std::string::npos) info.size = atoll(j.c_str() + sp);
-            size_t dp = FindKey(j, "digest", o, oend);
-            std::string dg = dp == std::string::npos ? "" : ReadJsonString(j, dp);
-            if (dg.rfind("sha256:", 0) == 0) info.sha256 = dg.substr(7);
-        } else if (name == std::string(kAssetName) + ".sha256") {
-            shaUrl = url;
+    for (const auto &a : assets) {
+        if (a.name == kAssetName) {
+            info.url = a.url;
+            info.size = a.size;
+            info.sha256 = a.sha256;
+        } else if (a.name == std::string(kAssetName) + ".sha256") {
+            shaUrl = a.url;
         }
-        o = oend;
     }
     if (info.url.empty()) { err = Fmt(T("릴리스에 %s 가 없습니다"), kAssetName); return false; }
     if (info.sha256.empty() && !shaUrl.empty()) {
@@ -461,85 +394,21 @@ bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
     return true;
 }
 
-bool DownloadAndInstall(const UpdateInfo &info, const std::string &selfNro, bool alsoHbmenu, std::string &err,
-                        const std::function<bool(long long, long long)> &progress) {
-    NetGuard net;
-    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
-    std::string self = SdPath(selfNro);
-    std::string tmp = self + ".new";
-    DlCtx d;
-    d.f = fopen(tmp.c_str(), "wb");
-    if (!d.f) { err = T("임시 파일을 만들 수 없습니다"); return false; }
-    d.total = info.size;
-    d.progress = &progress;
-    CURL *c = curl_easy_init();
-    curl_easy_setopt(c, CURLOPT_URL, info.url.c_str());
-    curl_easy_setopt(c, CURLOPT_USERAGENT, kUserAgent);
-    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_LIMIT, 1024L);
-    curl_easy_setopt(c, CURLOPT_LOW_SPEED_TIME, 30L);
-    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteFileCb);
-    curl_easy_setopt(c, CURLOPT_WRITEDATA, &d);
-    CURLcode r = curl_easy_perform(c);
-    long code = 0;
-    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
-    curl_easy_cleanup(c);
-    bool closed = fclose(d.f) == 0;
-    auto fail = [&](const std::string &m) { remove(tmp.c_str()); err = m; return false; };
-    if (d.cancelled) return fail(T("취소했습니다"));
-    if (r != CURLE_OK) return fail(std::string(T("내려받기 실패: ")) + curl_easy_strerror(r));
-    if (code != 200 || !closed) return fail(Fmt(T("내려받기 실패 (응답 %d)"), (int)code));
-    if (info.size > 0 && d.got != info.size) return fail(T("파일 크기가 맞지 않습니다"));
-    std::string hex = d.sha.Hex();
-    if (info.sha256.empty()) return fail(T("검증 정보(SHA-256)가 없어 설치하지 않았습니다"));
-    if (hex != info.sha256) return fail(T("검증 실패 (SHA-256 불일치)"));
-    // 실행 중인 nro(자기 자신 또는 /hbmenu.nro)는 romfs 때문에 열려 있어 지우거나 바꿀 수 없다.
-    // 글꼴 등은 이미 메모리에 올라와 있으므로 romfs 를 닫고 교체한다. 실패하면 다시 연다 (성공하면 곧바로 다시 시작)
-    struct RomfsReleased {
-        bool keepClosed = false;
-        RomfsReleased() {
-#ifdef __SWITCH__
-            romfsExit();
-#endif
-        }
-        ~RomfsReleased() {
-#ifdef __SWITCH__
-            if (!keepClosed) romfsInit();
-#endif
-        }
-    } romfsGuard;
-    // 교체: 현재 파일은 .old 로 남겨 두고 새 파일로
-    std::string old = self + ".old";
-    remove(old.c_str());
-    if (rename(self.c_str(), old.c_str()) != 0) CopyFile(self, old);  // 백업 (이름 바꾸기가 안 되면 복사)
-    remove(self.c_str());
-    if (rename(tmp.c_str(), self.c_str()) != 0 && !CopyFile(tmp, self)) {
-        CopyFile(old, self);
-        return fail(T("파일 교체 실패"));
+// apk 를 받아 검증한 뒤 설치 화면을 연다 (설치는 안드로이드가 사용자에게 묻고 진행)
+bool DownloadAndInstall(const UpdateInfo &info, std::string &err, const std::function<bool(long long, long long)> &progress) {
+    Asset a;
+    a.name = kAssetName;
+    a.url = info.url;
+    a.sha256 = info.sha256;
+    a.size = info.size;
+    std::string apk = plat::PrivateDir() + "/JoyLauncher-update.apk";
+    remove(apk.c_str());
+    if (!DownloadVerified(a, apk, err, progress)) return false;
+    std::string e;
+    if (!plat::InstallApk(apk, e)) {
+        err = T("설치 화면을 열지 못했습니다: ") + e;
+        return false;
     }
-    remove(tmp.c_str());
-    if (alsoHbmenu) {
-        std::string hb = SdPath("/hbmenu.nro"), hbTmp = hb + ".new";
-        remove(hbTmp.c_str());
-        bool hbOk = CopyFile(self, hbTmp);
-        if (hbOk) {
-            remove(hb.c_str());
-            hbOk = rename(hbTmp.c_str(), hb.c_str()) == 0;
-            // 이름 바꾸기가 안 되면 내용 복사로 덮어쓰기
-            if (!hbOk) hbOk = CopyFile(hbTmp, hb);
-        }
-        remove(hbTmp.c_str());
-        if (!hbOk) {
-            err = T("런처는 업데이트했지만 기본 홈브루 메뉴(/hbmenu.nro) 교체에 실패했습니다. "
-                    "옵션 창의 \"기본 홈브루 메뉴를 Joy Launcher 로 업데이트\" 로 다시 시도하세요");
-            return false;
-        }
-    }
-#ifdef __SWITCH__
-    if (FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc")) fsFsCommit(fs);
-#endif
-    romfsGuard.keepClosed = true;
     return true;
 }
 
@@ -551,11 +420,9 @@ bool DownloadTheme(const std::string &themesDir, const std::string &pack, int &f
                    const std::function<bool(long long, long long)> &progress) {
     files = 0;
     UpdateCheckStop();  // 시작할 때의 확인 스레드와 통신이 겹치지 않게
-    NetGuard net;
-    if (!net.ok) { err = T("네트워크를 사용할 수 없습니다"); return false; }
     std::vector<Asset> assets;
     std::string version;
-    if (!FetchAssets(assets, version, err)) return false;
+    if (!FetchAssets(kThemeRepo, kSwitchTag, assets, version, err)) return false;
     const Asset *pick = nullptr;
     std::string prefix;
     for (const auto &a : assets)
@@ -572,9 +439,6 @@ bool DownloadTheme(const std::string &themesDir, const std::string &pack, int &f
     if (!DownloadVerified(*pick, tmp, err, progress)) return false;
     bool ok = ExtractPrefix(tmp, prefix, themesDir + "/" + pack, files, err);
     remove(tmp.c_str());
-#ifdef __SWITCH__
-    if (FsFileSystem *fs = fsdevGetDeviceFileSystem("sdmc")) fsFsCommit(fs);
-#endif
     return ok;
 }
 
@@ -602,13 +466,8 @@ void UpdateCheckStop() {
 }
 
 void UpdaterShutdown() {
-    // 스레드를 정리하지 않고 끝내면 그 스레드 스택(힙에서 빌려 다른 주소로 매핑됨)이 풀리지 않아,
-    // 같은 hbloader 에서 다음에 실행되는 프로그램(게임 코어·sphaira·ezremote 등)의 메모리가 깨진다.
-    gAbort = true;
+    // 끝내는 중: 진행 중인 통신을 바로 끊고 확인 스레드를 기다린다
+    plat::HttpAbort(true);
     UpdateCheckStop();
-    gAbort = false;
-    if (gCurlReady) {
-        curl_global_cleanup();  // curl 이 연 ssl·nifm·csrng 서비스 닫기
-        gCurlReady = false;
-    }
+    plat::HttpAbort(false);
 }

@@ -1,8 +1,20 @@
-# 데스크톱(리눅스) 테스트 빌드: 화면 스냅샷과 실행 인자 확인용
-APP_VERSION := $(shell sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' Makefile)
-PKGS = sdl2 SDL2_ttf SDL2_image SDL2_mixer zlib libavformat libavcodec libswscale libavutil libcurl
+# 데스크톱(리눅스) 시험판: 화면 스냅샷과 게임 실행 인자 확인용.
+# 안드로이드 기능(앱 목록·인텐트 실행·저장소)은 source/platform_desktop.cpp 가 흉내 낸다 (환경 변수는 그 파일 머리말).
+#   make -f Makefile.linux            → ./joylauncher_desktop
+APP_VERSION := $(shell cat VERSION)
+PKGS = sdl2 SDL2_ttf SDL2_image SDL2_mixer zlib libcurl
 CXXFLAGS = -O2 -Wall -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(shell pkg-config --cflags $(PKGS))
 LIBS = $(shell pkg-config --libs $(PKGS))
-SRCS = source/main.cpp source/layout.cpp source/pegasus.cpp source/hbmenu.cpp source/videoframe.cpp source/updater.cpp source/i18n.cpp source/bgm.cpp source/installed.cpp source/debuglog.cpp source/esde.cpp source/ftpserver.cpp
-joylauncher_desktop: $(SRCS) $(wildcard source/*.h) Makefile
-	g++ $(CXXFLAGS) -o $@ $(SRCS) $(LIBS)
+SRCS = $(wildcard source/*.cpp)
+OBJDIR = build-desktop
+OBJS = $(patsubst source/%.cpp,$(OBJDIR)/%.o,$(SRCS))
+
+joylauncher_desktop: $(OBJS)
+	g++ -o $@ $(OBJS) $(LIBS)
+
+$(OBJDIR)/%.o: source/%.cpp $(wildcard source/*.h) Makefile.linux VERSION
+	@mkdir -p $(OBJDIR)
+	g++ $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -rf $(OBJDIR) joylauncher_desktop

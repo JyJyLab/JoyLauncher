@@ -5,7 +5,7 @@
 namespace {
 // ES-DE 기종 이름, 한글 이름, 영어 이름 (테마 빌더가 보여 주는 순서)
 const std::vector<EsdeSystem> kSystems = {
-    {"default", "기본(전체)", "Default"}, {"favorites", "즐겨찾기", "Favorites"}, {"hbfav", "홈브루 즐겨찾기", "Homebrew favorites"},
+    {"default", "기본(전체)", "Default"}, {"favorites", "즐겨찾기", "Favorites"}, {"hbfav", "앱 즐겨찾기", "App Favorites"},
     {"arcade", "아케이드", "Arcade"}, {"arcade_action", "액션-아케이드", "Arcade (action)"},
     {"arcade_casual", "캐주얼-아케이드", "Arcade (casual)"}, {"arcade_fighting", "대전-아케이드", "Arcade (fighting)"},
     {"arcade_flying", "비행-아케이드", "Arcade (flying)"}, {"arcade_shooting", "슈팅-아케이드", "Arcade (shooting)"},
@@ -28,6 +28,11 @@ const std::vector<EsdeSystem> kSystems = {
     {"intellivision", "인텔리비전", "Intellivision"}, {"vectrex", "벡트렉스", "Vectrex"}, {"amiga", "아미가", "Amiga"},
     {"c64", "코모도어 64", "Commodore 64"}, {"zxspectrum", "ZX 스펙트럼", "ZX Spectrum"}, {"amstradcpc", "암스트래드 CPC", "Amstrad CPC"},
     {"pico8", "PICO-8", "PICO-8"}, {"openbor", "OpenBOR", "OpenBOR"}, {"ports", "포트", "Ports"}, {"switch", "스위치", "Switch"},
+    // 안드로이드판에서 더한 기종 (그림 이름은 ES-DE 와 같음)
+    {"n3ds", "닌텐도 3DS", "Nintendo 3DS"}, {"wii", "Wii", "Wii"}, {"wiiu", "Wii U", "Wii U"}, {"ps3", "플레이스테이션 3", "PlayStation 3"},
+    {"ps4", "플레이스테이션 4", "PlayStation 4"}, {"psvita", "PS 비타", "PS Vita"}, {"xbox", "엑스박스", "Xbox"},
+    {"xbox360", "엑스박스 360", "Xbox 360"}, {"windows", "윈도우", "Windows"}, {"androidapps", "안드로이드 앱", "Android Apps"},
+    {"androidgames", "안드로이드 게임", "Android Games"},
 };
 
 // 소문자 별칭 -> ES-DE 이름
@@ -45,11 +50,15 @@ const std::map<std::string, std::string> kAlias = {
     {"game watch", "gameandwatch"}, {"gw", "gameandwatch"}, {"lynx", "atarilynx"}, {"atari", "atari2600"}, {"cd-i", "cdimono1"},
     {"cdi", "cdimono1"}, {"pico-8", "pico8"}, {"neogeo-cd", "neogeocd"}, {"fba", "arcade"}, {"fbneo", "arcade"}, {"mame", "arcade"},
     {"mame2003plus", "arcade"}, {"mame2010", "arcade"}, {"fbalpha2012", "arcade"}, {"all", "default"}, {"main", "default"},
+    {"3ds", "n3ds"}, {"nintendo3ds", "n3ds"}, {"ns", "switch"}, {"nsw", "switch"}, {"nintendoswitch", "switch"}, {"vita", "psvita"},
+    {"ps vita", "psvita"}, {"wii u", "wiiu"}, {"x360", "xbox360"}, {"xbox 360", "xbox360"}, {"playstation2", "ps2"},
+    {"playstation 2", "ps2"}, {"playstation3", "ps3"}, {"playstation 3", "ps3"}, {"playstation4", "ps4"}, {"playstation 4", "ps4"},
+    {"win", "windows"},
     // 응애팩 카테고리 / 런처가 붙이는 이름 (한글)
     {"액션-아케이드", "arcade_action"}, {"캐주얼-아케이드", "arcade_casual"}, {"대전-아케이드", "arcade_fighting"},
     {"비행-아케이드", "arcade_flying"}, {"슈팅-아케이드", "arcade_shooting"}, {"아케이드", "arcade"}, {"아케이드 (fbneo)", "arcade"},
     {"아케이드 (mame)", "arcade"}, {"아케이드 (fba2012)", "arcade"}, {"전체게임", "default"}, {"모든게임", "default"},
-    {"즐겨찾기", "favorites"}, {"홈브루 즐겨찾기", "hbfav"}, {"패미컴", "nes"}, {"패미컴 디스크 시스템", "fds"}, {"디스크 시스템", "fds"},
+    {"즐겨찾기", "favorites"}, {"홈브루 즐겨찾기", "hbfav"}, {"앱 즐겨찾기", "hbfav"}, {"appfav", "hbfav"}, {"패미컴", "nes"}, {"패미컴 디스크 시스템", "fds"}, {"디스크 시스템", "fds"},
     {"슈퍼패미컴", "snes"}, {"게임보이", "gb"}, {"게임보이 컬러", "gbc"}, {"게임보이 어드밴스", "gba"}, {"닌텐도 ds", "nds"},
     {"메가드라이브", "megadrive"}, {"메가드라이브 32x", "sega32x"}, {"메가 cd", "segacd"}, {"마스터시스템", "mastersystem"},
     {"마스터 시스템", "mastersystem"}, {"게임기어", "gamegear"}, {"pc엔진", "pcengine"}, {"pc 엔진", "pcengine"},
@@ -68,3 +77,20 @@ const char *EsdeSystemName(const std::string &lowerName) {
 }
 
 const std::vector<EsdeSystem> &EsdeSystems() { return kSystems; }
+
+const char *EsdeArtFallback(const std::string &id) {
+    // ES-DE 에는 같은 기계의 지역판이 따로 있다 (megadrivejp, snesna …): 그림은 본래 기종 것으로
+    static const std::map<std::string, std::string> kBase = {
+        {"famicom", "nes"}, {"sfc", "snes"}, {"snesna", "snes"}, {"sufami", "snes"}, {"sgb", "gb"}, {"genesis", "megadrive"},
+        {"megadrivejp", "megadrive"}, {"megacd", "segacd"}, {"megacdjp", "segacd"}, {"sega32xjp", "sega32x"},
+        {"sega32xna", "sega32x"}, {"mark3", "mastersystem"}, {"saturnjp", "saturn"}, {"tg16", "pcengine"},
+        {"tg-cd", "pcenginecd"}, {"neogeocdjp", "neogeocd"}, {"wonderswan", "wswan"}, {"wonderswancolor", "wswanc"},
+        {"msx", "msx1"}, {"msxturbor", "msx2"}, {"naomi2", "naomi"}, {"naomigd", "naomi"}, {"atomiswave", "naomi"},
+        {"mame", "arcade"}, {"fbneo", "arcade"}, {"fba", "arcade"}, {"cps", "arcade"}, {"cps1", "arcade"}, {"cps2", "arcade"},
+        {"cps3", "arcade"}, {"neogeo", "arcade"}, {"consolearcade", "arcade"}, {"stv", "arcade"}, {"model2", "arcade"},
+        {"model3", "arcade"}, {"naomi", "arcade"}, {"triforce", "arcade"}, {"n64dd", "n64"}, {"amiga600", "amiga"},
+        {"amiga1200", "amiga"}, {"amigacd32", "amiga"}, {"androidgames", "androidapps"}, {"android", "androidapps"},
+    };
+    auto it = kBase.find(id);
+    return it == kBase.end() ? "" : it->second.c_str();
+}

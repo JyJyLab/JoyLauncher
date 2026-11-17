@@ -208,7 +208,7 @@ Filled with `color`; use it for translucent panels.
 | `dim` | 0-255 | black layer over the picture. For `background` the default is `dim` from theme.txt |
 | `tint` | color | colorize the picture (e.g. recolor a white logo) |
 
-`source` values: `background` (the highlighted/open category's `backgrounds/` picture), `logo` (`logos/`), `icon` (`icons/` or `folder`), `boxart` and `screenshot` (the selected game, game screen only; `screenshot` falls back to a video frame).
+`source` values: `background` (the highlighted/open category's `backgrounds/` picture), `logo` (`logos/`), `icon` (`icons/` or `folder`), `boxart` and `screenshot` (the selected game, game screen only; `screenshot` falls back to a video frame; the Android version plays the preview video there instead).
 
 - `backgrounds/`, `logos/` and `icons/` pictures are all found with the **name rules** in [section 5 of the theme guide](theme-guide-en.md) (ROM folder name, theme.txt mapping).
 - With `w` and `h` 0 the picture is drawn at its own size.
@@ -273,7 +273,7 @@ One per screen. `style` picks the look.
 ### `preview`, `media`, `info`, `battery`, `pager`
 
 - `preview` (category screen): box art of the highlighted category in `columns` × `rows` cells, `gap = x,y`.
-- `media` (game screen): large screenshot (or video frame) with the box art small at the bottom right; only the box art when there is no screenshot. `overlay = off` hides the small box art. For separate pictures hide `media` and add `image` elements with `source = boxart` / `screenshot`.
+- `media` (game screen): large screenshot (or video frame; on Android the preview video plays here) with the box art small at the bottom right; only the box art when there is no screenshot. `overlay = off` hides the small box art. For separate pictures hide `media` and add `image` elements with `source = boxart` / `screenshot`.
 - `info` (game screen): title → developer · year · players → genre → description, top to bottom. `title_color`, `title_size` (27), `color`, `size` (22), `desc_size` (20). For separate texts hide `info` and add `text` elements.
 - `battery`: drawn at the **right edge** of `rect`; `color` changes its color.
 - `pager` (game screen): "2 / 13   R ▶", right-aligned to `rect`, or left of the battery when no `rect` is set.
@@ -422,7 +422,7 @@ rect = 952,684,0,0
 
 Themes that use these should set `requires = 1.1.0` in `[theme]` (the theme builder adds it on export).
 
-Button icons (v1.1.1+): `[A]` `[B]` `[X]` `[Y]` `[L]` `[R]` `[ZL]` `[ZR]` `[+]` `[-]` `[L/R]` in hints and messages are drawn as Switch button shapes (circles / rounded bars, letters cut out) in the text color and size. Turn it off with `button_icons = off` in `[theme]`.
+Button icons (v1.2.0+): `[A]` `[B]` `[X]` `[Y]` `[L]` `[R]` `[ZL]` `[ZR]` `[+]` `[-]` `[L/R]` in hints and messages are drawn as Switch button shapes (circles / rounded bars, letters cut out) in the text color and size. Turn it off with `button_icons = off` in `[theme]`.
 
 - **Cell elements** `[screen.<list>.<name>]`: drawn in every cell (grid) or row (text list). `rect` is relative to the cell; width/height ≤ 0 = to the cell edge (negative = that much less). `type` defaults to text. `state = all | selected | normal`, `selected_color`, negative `z` = below the cell content. `label = off` on the list hides the built-in name.
 - **Conditions**: `visible_if = <placeholder>` / `hidden_if` (empty or `0` = false).

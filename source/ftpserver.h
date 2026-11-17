@@ -15,7 +15,7 @@ struct FtpServerStatus {
     std::vector<std::string> log;  // 최근 기록 (최신이 뒤)
 };
 
-// home: Joy Launcher 폴더 (스위치 "/JoyLauncher"). FTP 에서는 /JoyLauncher 로 보인다
+// home: Joy Launcher 폴더 (<공용 저장소>/JoyLauncher). FTP 에서는 /JoyLauncher 로 보인다
 bool FtpServerStart(const std::string &home, int port, std::string &err);
 void FtpServerStop();
 FtpServerStatus FtpServerGet();

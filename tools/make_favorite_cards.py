@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""벽골김씨테마의 '즐겨찾기'·'홈브루 즐겨찾기' 카드 그림 원본(SVG)을 만든다. 자체 제작 그림.
+"""벽골김씨테마의 '즐겨찾기'·'홈브루 즐겨찾기'·'앱 즐겨찾기' 카드 그림 원본(SVG)을 만든다. 자체 제작 그림.
 
     python3 tools/make_favorite_cards.py favorites favorites.svg
     python3 tools/make_favorite_cards.py hbfav hbfav.svg
+    python3 tools/make_favorite_cards.py appfav appfav.svg     (안드로이드판: 휴대 게임기 + 앱 타일 + 별)
 
 - 카드 규격은 themes/ByeokgolKim/icons 의 다른 카드와 같다 (400x500, 흰 바탕 불투명도 65%, 모서리 25).
 - SVG 를 PNG 로 바꿀 때는 Montserrat (SIL OFL 1.1) 글꼴이 있는 환경에서 4배(1600x2000)로 그린 뒤 400x500 으로 줄인다.
@@ -91,7 +92,8 @@ def build_favorites(card=True):
     o.append('</svg>')
     return "\n".join(o)
 
-def build(card=True):
+def build(card=True, app=False):
+    """app: 안드로이드판의 앱 즐겨찾기 (양쪽 손잡이가 같은 색인 휴대 게임기, 글자 APP / FAVORITES)"""
     o = []
     o.append('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500" viewBox="0 0 400 500">')
     o.append('''<defs>
@@ -110,8 +112,10 @@ def build(card=True):
         o.append(CARD)
     # ---- 스위치 본체 (50..350 x 145..273)
     o.append('<g filter="url(#sh)">')
-    o.append('<path d="M96,145H82A32,32 0 0 0 50,177V241A32,32 0 0 0 82,273H96Z" fill="url(#jl)"/>')
-    o.append('<path d="M304,145H318A32,32 0 0 1 350,177V241A32,32 0 0 1 318,273H304Z" fill="url(#jr)"/>')
+    if app:
+        o.append('<linearGradient id="grip" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7d8798"/><stop offset="1" stop-color="#565f70"/></linearGradient>')
+    o.append('<path d="M96,145H82A32,32 0 0 0 50,177V241A32,32 0 0 0 82,273H96Z" fill="url(#%s)"/>' % ("grip" if app else "jl"))
+    o.append('<path d="M304,145H318A32,32 0 0 1 350,177V241A32,32 0 0 1 318,273H304Z" fill="url(#%s)"/>' % ("grip" if app else "jr"))
     o.append('<rect x="96" y="145" width="208" height="128" rx="3" fill="url(#body)"/>')
     o.append('</g>')
     # 조이콘 윗면 반사
@@ -144,9 +148,10 @@ def build(card=True):
         o.append(glyph(i, x, y, s))
     o.append('<path d="M114,160H230L170,258H114Z" fill="#fff" fill-opacity=".05" clip-path="url(#scrclip)"/>')
     o.append(badge(291, 262))
-    o.append(words("HOMEBREW", "FAVORITES"))
+    o.append(words("APP", "FAVORITES") if app else words("HOMEBREW", "FAVORITES"))
     o.append('</svg>')
     return "\n".join(o)
 
 if __name__ == "__main__":
-    open(sys.argv[2], "w").write(build_favorites() if sys.argv[1] == "favorites" else build())
+    kind = sys.argv[1]
+    open(sys.argv[2], "w").write(build_favorites() if kind == "favorites" else build(app=kind == "appfav"))
