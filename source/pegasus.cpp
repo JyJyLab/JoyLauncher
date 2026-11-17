@@ -112,6 +112,22 @@ std::string Lower(std::string s) {
     return s;
 }
 
+// 목록에 글자 그대로 적힌 \n (줄바꿈)·\t 를 실제 글자로 (페가수스 테마들이 그렇게 보여 줌)
+std::string Unescape(const std::string &s) {
+    if (s.find('\\') == std::string::npos) return s;
+    std::string o;
+    o.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && (s[i + 1] == 'n' || s[i + 1] == 't')) {
+            o += s[i + 1] == 'n' ? '\n' : ' ';
+            i++;
+        } else {
+            o += s[i];
+        }
+    }
+    return o;
+}
+
 std::string Join(const std::string &dir, const std::string &rel) {
     if (rel.empty() || rel[0] == '/') return rel;
     std::string r = rel;
@@ -165,7 +181,8 @@ std::vector<std::string> ListDir(const std::string &dir, bool dirs) {
     return out;
 }
 
-const char *kImgExts[] = {".png", ".jpg", ".jpeg", ".PNG", ".JPG"};
+// webp: 페가수스 JoiPlay 목록 등 (안드로이드는 기기 해석기로 읽음)
+const char *kImgExts[] = {".png", ".jpg", ".jpeg", ".webp", ".PNG", ".JPG", ".WEBP"};
 
 // 박스아트 찾기: media/<이름>/boxFront.*, 그리고 흔한 이미지 폴더들(<폴더>/<이름>.*)
 std::string FindBoxart(const std::string &dir, const std::string &rel) {
@@ -542,7 +559,7 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         else if (e.key == "genre") cur.genre = e.value;
         else if (e.key == "release") cur.release = e.value;
         else if (e.key == "players") cur.players = e.value;
-        else if (e.key == "description" || e.key == "summary") cur.description = e.value;
+        else if (e.key == "description" || e.key == "summary") cur.description = Unescape(e.value);
         else if (e.key == "sort-title" || e.key == "sort_title") cur.sortKey = e.value;
         else if (e.key.compare(0, 7, "assets.") == 0) {
             for (int i = 0; i < kAssetN; i++)
@@ -769,7 +786,7 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
 // 다음이 바뀌면 자동으로 다시 읽는다: 런처 버전, 롬 폴더 구성(2단계), metadata.pegasus.txt·gamelist.xml 의
 // 수정 시각·크기, 사용자 기종 표(custom_systems), emulators.txt 에 적은 이름. (롬·그림만 넣고 뺀 경우는 메뉴에서 새로 고침)
 namespace {
-const char *kCacheMagic = "JOYLIB A3";  // A3: 목록이 있는 루트의 하위 폴더·압축 파일 자동 등록 규칙 바뀜 (A20)
+const char *kCacheMagic = "JOYLIB A4";  // A3: 목록 루트 하위 폴더·압축 파일 규칙 (A20), A4: webp 그림·설명의 \\n (A24)
 
 void SigDir(const std::string &dir, int depth, std::string &sig) {
     if (IsMediaFolder(dir)) return;

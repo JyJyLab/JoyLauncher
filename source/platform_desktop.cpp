@@ -201,6 +201,8 @@ bool SystemKorean() {
     return l.compare(0, 2, "ko") == 0;
 }
 
+SDL_Surface *DecodeImage(const std::string &, int) { return nullptr; }  // 데스크톱은 SDL2_image 가 webp 도 읽음
+
 // 미리보기 영상: ffprobe 로 크기를 알아내고, ffmpeg 가 제 속도로(-re) 풀어 주는 장면(yuv420p)을 읽는다.
 // 소리는 내지 않는다 (그리기 확인용)
 void VideoOpen(const std::string &path, bool, int token) {

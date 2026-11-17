@@ -508,6 +508,40 @@ public class JoyActivity extends SDLActivity {
         return Locale.getDefault().getLanguage();
     }
 
+    // ------------------------------------------------------------ 그림 해석 (SDL2_image 가 못 읽는 webp·avif·heif 등)
+    // 돌려주는 값: [너비, 높이, 점들(0xAARRGGBB, 알파 미리 곱하지 않음)…]. 긴 변이 maxSide 를 넘으면 2의 배수로 줄여 읽음
+    public static int[] decodeImage(String path, int maxSide) {
+        try {
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(path, o);
+            if (o.outWidth <= 0 || o.outHeight <= 0) return null;
+            int sample = 1;
+            while (maxSide > 0 && Math.max(o.outWidth, o.outHeight) / sample > maxSide) sample *= 2;
+            o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = sample;
+            o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap b = android.graphics.BitmapFactory.decodeFile(path, o);
+            if (b == null) return null;
+            if (b.getConfig() != Bitmap.Config.ARGB_8888) {  // 하드웨어 비트맵 등
+                Bitmap c = b.copy(Bitmap.Config.ARGB_8888, false);
+                b.recycle();
+                if (c == null) return null;
+                b = c;
+            }
+            int w = b.getWidth(), h = b.getHeight();
+            int[] px = new int[w * h + 2];
+            px[0] = w;
+            px[1] = h;
+            b.getPixels(px, 2, w, 0, 0, w, h);
+            b.recycle();
+            return px;
+        } catch (Throwable t) {
+            Log.w(TAG, "decodeImage " + path + ": " + t);
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------ 미리보기 영상 (JoyVideo)
     // 풀린 장면과 상태는 영상 스레드에서 아래 native 함수로 넘어간다
     public static void videoStart(String path, boolean sound, int token) {

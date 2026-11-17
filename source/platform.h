@@ -1,6 +1,8 @@
 // 플랫폼 층: 안드로이드(JNI, platform_android.cpp) / 데스크톱 시험판(platform_desktop.cpp)
 // 런처 본체는 이 함수들만 쓰고 안드로이드 API 를 직접 부르지 않는다.
 #pragma once
+#include <SDL.h>
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -53,6 +55,10 @@ bool InstallApk(const std::string &apkPath, std::string &err);
 int Battery(bool &charging);
 // 기기 언어가 한국어인지
 bool SystemKorean();
+
+// ---- 그림: SDL2_image 가 못 읽는 형식(webp·avif·heif 등)을 기기의 해석기로. 긴 변이 maxSide 를 넘으면 줄여서.
+// 실패하면 nullptr. 다른 스레드(그림 읽기 스레드)에서도 부른다
+SDL_Surface *DecodeImage(const std::string &path, int maxSide);
 
 // ---- 미리보기 영상 재생 (video.cpp 가 씀). 바로 돌아오고, 풀린 장면과 상태는 다른 스레드에서
 // VideoSinkState / VideoSinkYuv / VideoSinkRgbx (video.h) 로 넘어온다. 영상은 끝나면 처음부터 되풀이한다.

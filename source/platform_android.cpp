@@ -192,6 +192,7 @@ void Init() {
         {"installApk", "(Ljava/lang/String;)Ljava/lang/String;"},
         {"battery", "()I"},
         {"systemLanguage", "()Ljava/lang/String;"},
+        {"decodeImage", "(Ljava/lang/String;I)[I"},
         {"videoStart", "(Ljava/lang/String;ZI)V"},
         {"videoStop", "()V"},
         {"httpGet", "(Ljava/lang/String;)[Ljava/lang/String;"},
@@ -367,6 +368,32 @@ int Battery(bool &charging) {
 }
 
 bool SystemKorean() { return CallStr("systemLanguage") == "ko"; }
+
+SDL_Surface *DecodeImage(const std::string &path, int maxSide) {
+    JNIEnv *env = Env();
+    jmethodID m = Method(env, "decodeImage", "(Ljava/lang/String;I)[I");
+    if (!m) return nullptr;
+    jstring p = J(env, path);
+    jintArray arr = (jintArray)env->CallStaticObjectMethod(gCls, m, p, (jint)maxSide);
+    env->DeleteLocalRef(p);
+    if (Failed(env) || !arr) return nullptr;
+    SDL_Surface *s = nullptr;
+    jsize n = env->GetArrayLength(arr);
+    if (n > 2) {
+        jint wh[2];
+        env->GetIntArrayRegion(arr, 0, 2, wh);
+        // 자바의 int 하나 = 0xAARRGGBB (알파 미리 곱하지 않음) = SDL_PIXELFORMAT_ARGB8888
+        if (wh[0] > 0 && wh[1] > 0 && (long long)wh[0] * wh[1] + 2 == n) {
+            s = SDL_CreateRGBSurfaceWithFormat(0, wh[0], wh[1], 32, SDL_PIXELFORMAT_ARGB8888);
+            if (s) {
+                for (int y = 0; y < wh[1]; y++)
+                    env->GetIntArrayRegion(arr, 2 + y * wh[0], wh[0], (jint *)((Uint8 *)s->pixels + (size_t)y * s->pitch));
+            }
+        }
+    }
+    env->DeleteLocalRef(arr);
+    return s;
+}
 
 void VideoOpen(const std::string &path, bool sound, int token) {
     JNIEnv *env = Env();

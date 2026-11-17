@@ -43,6 +43,8 @@ Game lists are read in three ways, mixed per folder:
 
 After adding or removing ROMs, images or videos use **Options → Refresh game list**.
 
+- Box art and screenshots can be png, jpg or **webp** (e.g. `media/<game>/boxFront.webp` of JoiPlay packs for Pegasus). `\n` in descriptions becomes a line break, and Japanese/Chinese characters missing from the launcher font are drawn with the device's CJK font.
+
 ### Preview videos
 When the selected game has a preview video it starts after a moment in place of the screenshot and loops. Until it appears the screenshot (or the box art) is shown.
 - Where videos are found: Pegasus `assets.video`, `<video>` in `gamelist.xml`, ES-DE `downloaded_media/<system>/videos`, and in the ROM folder `media/<game name>/video.mp4` or `<game name>.mp4` in `videos/`, `snap/`, `media/videos/` (mp4, mkv, webm … whatever the device can play)

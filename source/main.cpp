@@ -277,6 +277,14 @@ struct TextCache {
     }
 };
 
+// ---------------------------------------------------------------- 그림 파일 읽기
+// SDL2_image 로 읽고, 못 읽는 형식(webp·avif 등 — 페가수스 JoiPlay 목록의 그림)은 기기의 그림 해석기로 (안드로이드)
+static SDL_Surface *LoadImageFile(const std::string &path) {
+    SDL_Surface *s = IMG_Load(path.c_str());
+    if (!s) s = plat::DecodeImage(path, 2048);
+    return s;
+}
+
 // ---------------------------------------------------------------- 그림 읽기 스레드
 // 파일 읽기·풀기·줄이기는 스레드에서, 텍스처 만들기는 메인에서 (SDL 렌더러는 메인 스레드 전용).
 // 큰 그림을 넘길 때 화면이 멈칫하지 않게 한다. 데스크톱 스냅샷·테마 빌더는 바로 읽음 (gAsyncImg = false)
@@ -316,7 +324,7 @@ struct ImageCache {
             ImgRequest(j);
             return nullptr;
         }
-        SDL_Surface *s = IMG_Load(p.c_str());
+        SDL_Surface *s = LoadImageFile(p);
         SDL_Texture *t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
         if (s) SDL_FreeSurface(s);
         return Insert(p, t);
@@ -404,7 +412,7 @@ struct ThumbCache {
             ImgRequest(j);
             return nullptr;
         }
-        SDL_Surface *s = IMG_Load(p.c_str());
+        SDL_Surface *s = LoadImageFile(p);
         if (s && w > 0 && h > 0) {
             float kx = s->w / (w * gScale), ky = s->h / (h * gScale);
             s = ShrinkSurface(s, (int)(cover ? std::min(kx, ky) : std::max(kx, ky)));
@@ -459,7 +467,7 @@ static int ImgWorker(void *) {
         ImgJob j = gImgQ[pick];
         gImgQ.erase(gImgQ.begin() + pick);
         SDL_UnlockMutex(gImgMx);
-        SDL_Surface *s = IMG_Load(j.path.c_str());
+        SDL_Surface *s = LoadImageFile(j.path);
         if (s && j.thumb && j.w > 0 && j.h > 0) {
             float kx = s->w / (j.w * gScale), ky = s->h / (j.h * gScale);
             s = ShrinkSurface(s, (int)(j.cover ? std::min(kx, ky) : std::max(kx, ky)));
@@ -1755,6 +1763,7 @@ struct FontSet {
     std::vector<char> reg, bold;       // 테마 글꼴 파일 내용 (없으면 빔)
     std::map<int, TTF_Font *> fonts;   // 크기*4 + 굵게*2 + 테마
     std::map<std::string, bool> covers[2];  // 테마 글꼴에 그 글의 글자가 다 있는지 (일반 / 굵게)
+    std::map<std::string, bool> appCovers[2];  // 런처 글꼴(나눔고딕)에 다 있는지 — 없으면 한중일 대체 글꼴로
     Uint32 serial = 0xffffffffu;
 };
 static FontSet gFonts;
@@ -1770,6 +1779,8 @@ static void FontsSync(App &a) {
     gFonts.fonts.clear();
     gFonts.covers[0].clear();
     gFonts.covers[1].clear();
+    gFonts.appCovers[0].clear();
+    gFonts.appCovers[1].clear();
     gFonts.reg.clear();
     gFonts.bold.clear();
     std::string fr = ThemeFile(gTheme.layout.font), fb = ThemeFile(gTheme.layout.fontBold);
@@ -1789,34 +1800,66 @@ static TTF_Font *FontRaw(bool bold, int size, bool theme) {
 }
 
 // s 를 그릴 글꼴. 테마 글꼴에 없는 글자(한글 등)가 섞인 글은 내장 글꼴로 그린다.
-static TTF_Font *FontFor(bool bold, int size, const std::string &s) {
-    if (!(bold ? gFonts.bold : gFonts.reg).empty()) {
-        if (TTF_Font *f = FontRaw(bold, size, true)) {
-            auto &memo = gFonts.covers[bold ? 1 : 0];
-            auto it = memo.find(s);
-            bool ok;
-            if (it != memo.end()) {
-                ok = it->second;
-            } else {
-                ok = true;
-                const unsigned char *p = (const unsigned char *)s.c_str();
-                while (*p && ok) {
-                    Uint32 cp = *p;
-                    int extra = cp >= 0xF0 ? 3 : cp >= 0xE0 ? 2 : cp >= 0xC0 ? 1 : 0;
-                    if (extra) cp &= 0x3F >> extra;
-                    p++;
-                    for (int i = 0; i < extra && *p; i++) cp = (cp << 6) | (*p++ & 0x3F);
-                    if (cp > 0x20 && !TTF_GlyphIsProvided32(f, cp)) ok = false;
-                }
-                if (memo.size() > 4000) memo.clear();
-                memo[s] = ok;
-            }
-            if (ok) return f;
-        }
+// 글꼴에 그 글의 글자가 모두 있는지 (결과를 기억)
+static bool FontCovers(TTF_Font *f, std::map<std::string, bool> &memo, const std::string &s) {
+    auto it = memo.find(s);
+    if (it != memo.end()) return it->second;
+    bool ok = true;
+    const unsigned char *p = (const unsigned char *)s.c_str();
+    while (*p && ok) {
+        Uint32 cp = *p;
+        int extra = cp >= 0xF0 ? 3 : cp >= 0xE0 ? 2 : cp >= 0xC0 ? 1 : 0;
+        if (extra) cp &= 0x3F >> extra;
+        p++;
+        for (int i = 0; i < extra && *p; i++) cp = (cp << 6) | (*p++ & 0x3F);
+        if (cp > 0x20 && !TTF_GlyphIsProvided32(f, cp)) ok = false;
     }
-    return FontRaw(bold, size, false);
+    if (memo.size() > 4000) memo.clear();
+    memo[s] = ok;
+    return ok;
 }
 
+// 한중일 대체 글꼴: 런처 글꼴(나눔고딕)에 없는 일본어 가나·한자 등이 든 글. 기기에 있는 글꼴을 쓴다 (앱에 넣지 않음)
+static std::string FallbackFontPath() {
+    static std::string path = [] {
+        static const char *cands[] = {
+#ifdef __ANDROID__
+            "/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoSansCJKjp-Regular.otf", "/system/fonts/NotoSansJP-Regular.otf",
+            "/system/fonts/DroidSansFallbackFull.ttf", "/system/fonts/DroidSansFallback.ttf",
+#else
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+#endif
+        };
+        for (const char *c : cands) {
+            struct stat st;
+            if (stat(c, &st) == 0 && S_ISREG(st.st_mode)) return std::string(c);
+        }
+        return std::string();
+    }();
+    return path;
+}
+
+static TTF_Font *FallbackFont(int size) {
+    int key = 1000000 + size;
+    auto it = gFonts.fonts.find(key);
+    if (it != gFonts.fonts.end()) return it->second;
+    std::string p = FallbackFontPath();
+    TTF_Font *f = p.empty() ? nullptr : TTF_OpenFontIndex(p.c_str(), ToPx(size), 0);  // .ttc 의 0번 = 일본어 판(JP)
+    gFonts.fonts[key] = f;
+    return f;
+}
+
+// 글에 맞는 글꼴: 테마 글꼴(글자가 다 있으면) → 런처 글꼴 → 런처 글꼴에도 없는 글자(일본어 등)가 있으면 기기의 한중일 글꼴
+static TTF_Font *FontFor(bool bold, int size, const std::string &s) {
+    if (!(bold ? gFonts.bold : gFonts.reg).empty())
+        if (TTF_Font *f = FontRaw(bold, size, true))
+            if (FontCovers(f, gFonts.covers[bold ? 1 : 0], s)) return f;
+    TTF_Font *app = FontRaw(bold, size, false);
+    if (app && !FontCovers(app, gFonts.appCovers[bold ? 1 : 0], s))
+        if (TTF_Font *c = FallbackFont(size)) return c;
+    return app;
+}
 // 이번 프레임에 디스크에서 새로 읽을 수 있는 작은 그림 수 (격자를 처음 그릴 때 끊기지 않게 나눠 읽음)
 static int gLoadBudget = 1;
 
