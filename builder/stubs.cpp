@@ -38,6 +38,7 @@ int FrameWorkerState(const std::string &) { return -1; }
 
 void BgmScan(const std::string &) {}
 int BgmCount() { return 0; }
+int BgmCountIn(const std::string &) { return 0; }
 void BgmConfigure(bool, int, bool) {}
 void BgmUpdate() {}
 void BgmSkip() {}

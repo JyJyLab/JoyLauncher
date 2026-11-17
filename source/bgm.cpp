@@ -11,6 +11,8 @@
 #include <dirent.h>
 #include <random>
 #include <strings.h>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -99,22 +101,36 @@ bool HasExt(const std::string &n, const char *ext) {
     return n.size() > l && strcasecmp(n.c_str() + n.size() - l, ext) == 0;
 }
 
-}  // namespace
-
-void BgmScan(const std::string &dir) {
-    gSongs.clear();
+// 폴더의 mp3·ogg (이름순). 폴더가 없거나 dir 이 비면 빈 목록
+std::vector<std::string> ListSongs(const std::string &dir) {
+    std::vector<std::string> songs;
+    if (dir.empty()) return songs;
     if (DIR *d = opendir(dir.c_str())) {
         while (dirent *e = readdir(d)) {
             std::string n = e->d_name;
             if (n.empty() || n[0] == '.') continue;
-            if (HasExt(n, ".mp3") || HasExt(n, ".ogg")) gSongs.push_back(dir + "/" + n);
+            if (HasExt(n, ".mp3") || HasExt(n, ".ogg")) songs.push_back(dir + "/" + n);
         }
         closedir(d);
     }
-    std::sort(gSongs.begin(), gSongs.end());
+    std::sort(songs.begin(), songs.end());
+    return songs;
+}
+
+}  // namespace
+
+void BgmScan(const std::string &dir) {
+    std::vector<std::string> songs = ListSongs(dir);
+    if (songs == gSongs) return;
+    gSongs = std::move(songs);
+    gFailStreak = 0;
+    FreeMusic();  // 재생 중이었으면 멈춤: 다음 BgmUpdate 가 새 목록의 첫 곡을 튼다 (곡이 없으면 BgmConfigure 가 오디오를 닫음)
+    MakeOrder();
 }
 
 int BgmCount() { return (int)gSongs.size(); }
+
+int BgmCountIn(const std::string &dir) { return (int)ListSongs(dir).size(); }
 
 void BgmConfigure(bool on, int volume, bool shuffle) {
     gVolume = std::max(0, std::min(100, volume));

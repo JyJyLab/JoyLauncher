@@ -66,17 +66,17 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, Bgm, BgmVolume, BgmOrder, BgmNext, BgmNone, HbFav, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, InstallHb, RestoreHb, Exit };
 struct MenuItem {
     std::string label;
     std::string nro;
     MenuAct act;
-    bool on = false;  // 켜져 있는 상태 (BGM 재생 중): 초록색 글자
+    bool on = false;  // 켜져 있는 상태 (지금 고른 소리 등): 초록색 글자
     bool hb = false;  // 홈브루 메뉴 (X 버튼으로 바로 실행)
 };
 static const SDL_Color kOn = {90, 220, 120, 255};
 static std::vector<MenuItem> gMenu;
-static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM 설정" 에서 여는 BGM 창
+static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM · 소리 설정" 에서 여는 창
 // 앨범(애플릿)으로 실행됐는지. 애플릿 모드는 쓸 수 있는 메모리가 적어 큰 게임이 느리거나 실행되지 않을 수 있음
 static bool gAppletMode = false;
 static bool gDemo = false;  // 테마 빌더의 데모 창 (--demo): 게임·홈브루 실행 대신 알림, 업데이트 확인 안 함
@@ -91,7 +91,10 @@ static UpdateInfo gUpdate;
 static bool gLaunchedAsHbmenu = false;      // /hbmenu.nro 로 실행됐는지 (업데이트 후 다시 시작할 경로)
 static std::string gLanguage = "auto";      // auto: 스위치 본체 언어, ko, en
 static Lang gSystemLang = Lang::Ko;         // 본체 언어 (시작할 때 한 번 읽음)
-static bool gBgmOn = false;                 // BGM (/JoyLauncher/bgm 의 mp3·ogg)
+// 설정: 소리 선택 (sound). 하나만 난다 — common 공통 BGM(/JoyLauncher/bgm) / theme 테마 BGM(지금 테마 폴더의 bgm) / off 무음
+// (안드로이드판에는 video = 미리보기 영상의 소리가 더 있다. 여기서는 무음으로 본다)
+static std::string gSound = "off";
+static bool gBgmLive = false;               // 시작 준비가 끝남 (그 전과 데스크톱 스냅샷·테마 빌더에서는 오디오를 열지 않음)
 static int gBgmVolume = 60;                 // 0~100
 static bool gBgmShuffle = false;
 static bool gEffects = true;      // 설정: 화면 효과 (effects=on/off)
@@ -183,7 +186,22 @@ static void ApplyLanguage() {
     SetLang(gLanguage == "ko" ? Lang::Ko : gLanguage == "en" ? Lang::En : gSystemLang);
 }
 
-static void ApplyBgm() { BgmConfigure(gBgmOn, gBgmVolume, gBgmShuffle); }
+// 소리 선택에 따른 BGM 곡 폴더 ("" = 없음): 공통 = /JoyLauncher/bgm, 테마 = 지금 테마 폴더의 bgm
+static std::string BgmDir(const std::string &mode) {
+    if (mode == "common") return gHome + "/bgm";
+    if (mode == "theme" && !gThemeName.empty()) return gHome + "/themes/" + gThemeName + "/bgm";
+    return "";
+}
+
+// 소리 선택·테마가 바뀌었을 때: 곡 폴더를 다시 읽고(달라졌으면 그 곡으로) BGM 을 켜거나 끈다
+static void ApplyBgm() {
+    if (!gBgmLive) return;
+    bool bgm = gSound == "common" || gSound == "theme";
+    BgmScan(bgm ? BgmDir(gSound) : "");
+    BgmConfigure(bgm, gBgmVolume, gBgmShuffle);
+}
+
+static const char *SoundLabel() { return gSound == "common" ? T("공통 BGM") : gSound == "theme" ? T("테마 BGM") : T("무음"); }
 
 static std::string LanguageLabel() {
     std::string sys = gSystemLang == Lang::Ko ? "한국어" : "English";
@@ -212,18 +230,23 @@ static void BuildMenu() {
     gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), "",
                      MenuAct::Theme});
     gMenu.push_back({T("PC에서 테마 받기 (FTP)"), "", MenuAct::FtpRecv});
-    if (BgmCount() == 0)
-        gMenu.push_back({T("BGM: 곡 없음  (/JoyLauncher/bgm 에 mp3·ogg 넣기)"), "", MenuAct::BgmNone});
-    else if (gBgmOn)
-        gMenu.push_back({Fmt(T("BGM 설정 (켜짐 (On) · 볼륨 %d%% · %s)"), gBgmVolume, gBgmShuffle ? T("무작위") : T("차례대로")), "",
-                         MenuAct::BgmMenu, true});
-    else
-        gMenu.push_back({T("BGM 설정 (꺼짐 (Off))"), "", MenuAct::BgmMenu});
+    // BGM · 소리 설정 창: 소리는 셋 중 하나 (● = 지금 고른 것), 아래는 BGM 볼륨·순서
+    bool bgmMode = gSound == "common" || gSound == "theme";
+    gMenu.push_back({bgmMode ? Fmt(T("BGM · 소리 설정 (%s · 볼륨 %d%%)"), SoundLabel(), gBgmVolume) : Fmt(T("BGM · 소리 설정 (%s)"), SoundLabel()),
+                     "", MenuAct::BgmMenu, bgmMode});
     gBgmMenu.clear();
-    gBgmMenu.push_back({Fmt(gBgmOn ? T("BGM: 켜짐 (On) (%d곡)") : T("BGM: 꺼짐 (Off) (%d곡)"), BgmCount()), "", MenuAct::Bgm, gBgmOn});
-    gBgmMenu.push_back({Fmt(T("볼륨: %d%%"), gBgmVolume), "", MenuAct::BgmVolume});
-    gBgmMenu.push_back({gBgmShuffle ? T("순서: 무작위") : T("순서: 차례대로"), "", MenuAct::BgmOrder});
-    if (gBgmOn) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
+    auto mode = [](const char *id, const std::string &label, MenuAct act) {
+        bool cur = gSound == id;
+        gBgmMenu.push_back({(cur ? "● " : "○ ") + label, "", act, cur});
+    };
+    mode("common", Fmt(T("공통 BGM (%d곡)  /JoyLauncher/bgm"), BgmCountIn(BgmDir("common"))), MenuAct::SoundCommon);
+    mode("theme", gThemeName.empty() ? std::string(T("테마 BGM (테마 없음)"))
+                                     : Fmt(T("테마 BGM (%d곡)  themes/%s/bgm"), BgmCountIn(BgmDir("theme")), gThemeName.c_str()),
+         MenuAct::SoundTheme);
+    mode("off", T("무음"), MenuAct::SoundOff);
+    gBgmMenu.push_back({Fmt(T("BGM 볼륨: %d%%"), gBgmVolume), "", MenuAct::BgmVolume});
+    gBgmMenu.push_back({gBgmShuffle ? T("BGM 순서: 무작위") : T("BGM 순서: 차례대로"), "", MenuAct::BgmOrder});
+    if (bgmMode && BgmCountIn(BgmDir(gSound)) > 0) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
     gMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), gEffects ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::Effects, gEffects});
     gMenu.push_back({Fmt(T("홈브루 즐겨찾기 추가·빼기 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
@@ -716,6 +739,7 @@ static void LoadTheme(const std::string &name) {
             gTheme.alias[lk] = LowerAscii(v);
         }
     }
+    ApplyBgm();  // 소리 선택이 테마 BGM 이면 이 테마의 곡으로
 }
 
 // 내 그림 폴더: /JoyLauncher/categories/{backgrounds,logos,icons}/<이름>.png|jpg — 테마를 바꿔도 쓰는 카테고리 그림
@@ -831,8 +855,9 @@ static void SaveSettings() {
     o << "auto_update=" << gAutoUpdate << "\n";
     o << T("# 언어: auto = 스위치 본체 언어, ko = 한국어, en = English") << "\n";
     o << "language=" << gLanguage << "\n";
-    o << T("# BGM: /JoyLauncher/bgm 의 mp3·ogg. bgm = on/off, bgm_volume = 0~100, bgm_shuffle = on/off") << "\n";
-    o << "bgm=" << (gBgmOn ? "on" : "off") << "\n";
+    o << T("# 소리 (하나만 남): common = 공통 BGM (/JoyLauncher/bgm 의 mp3·ogg), theme = 테마 BGM (지금 테마 폴더의 bgm), off = 무음") << "\n";
+    o << "sound=" << gSound << "\n";
+    o << T("# BGM: bgm_volume = 0~100, bgm_shuffle = on/off (무작위)") << "\n";
     o << "bgm_volume=" << gBgmVolume << "\n";
     o << "bgm_shuffle=" << (gBgmShuffle ? "on" : "off") << "\n";
     o << T("# 화면 효과: on = 테마의 움직임·화면 전환 사용, off = 끔") << "\n";
@@ -842,10 +867,16 @@ static void SaveSettings() {
 static void LoadSettings() {
     std::ifstream in(gHome + "/settings.txt");
     std::string line, theme;
-    bool found = false;
+    bool found = false, haveSound = false;
+    int oldBgm = -1;  // 1.1 까지의 설정 (bgm=on/off)
     while (std::getline(in, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         if (line.rfind("theme=", 0) == 0) { theme = line.substr(6); found = true; }
+        if (line.rfind("sound=", 0) == 0) {
+            std::string v = line.substr(6);
+            gSound = v == "common" || v == "theme" ? v : "off";  // video(안드로이드판의 영상 소리) 등은 무음
+            haveSound = true;
+        }
         if (line.rfind("hide_cores=", 0) == 0) gHideCores = line.substr(11);
         if (line.rfind("video_frames=", 0) == 0) gVideoFrames = line.substr(13) == "manual" ? "manual" : "auto";
         if (line.rfind("auto_update=", 0) == 0) gAutoUpdate = line.substr(12) == "off" ? "off" : "on";
@@ -853,11 +884,12 @@ static void LoadSettings() {
             std::string v = line.substr(9);
             gLanguage = v == "ko" || v == "en" ? v : "auto";
         }
-        if (line.rfind("bgm=", 0) == 0) gBgmOn = line.substr(4) == "on";
+        if (line.rfind("bgm=", 0) == 0) oldBgm = line.substr(4) == "on";
         if (line.rfind("bgm_volume=", 0) == 0) gBgmVolume = std::max(0, std::min(100, atoi(line.c_str() + 11)));
         if (line.rfind("bgm_shuffle=", 0) == 0) gBgmShuffle = line.substr(12) == "on";
         if (line.rfind("effects=", 0) == 0) gEffects = line.substr(8) != "off";
     }
+    if (!haveSound && oldBgm >= 0) gSound = oldBgm == 1 ? "common" : "off";  // 예전 설정: BGM 을 켜 두었으면 공통 BGM
     ApplyLanguage();
     // 설정이 없으면 기본 테마 JoyBasic (없으면 첫 번째 테마)
     if (!found) {
@@ -902,6 +934,7 @@ static void MakeUserFolders() {
                "  backgrounds/default.jpg              \"게임 목록이 없습니다\" 화면 배경\r\n"
                "  logos/<롬 폴더 이름>.png             게임 목록 제목 대신 표시할 로고 (선택)\r\n"
                "  theme.txt                            dim=0~255 (배경 어둡게), <카테고리 이름>=<그림 파일 이름>\r\n"
+               "  bgm/<곡>.mp3|ogg                     테마 BGM (선택): BGM · 소리 설정에서 \"테마 BGM\" 을 고르면 이 테마를 쓰는 동안 재생\r\n"
                "배경이 없는 카테고리는 테마를 끈 화면으로 보입니다.\r\n"
                "폴더·파일 이름은 영문(ASCII)을 권장합니다. Y 옵션 > 테마 설정에서 고릅니다.\r\n"
                "  layout.txt                           화면 구성 바꾸기 (격자, 위치, 글꼴·색): 테마_레이아웃.md\r\n"
@@ -914,6 +947,7 @@ static void MakeUserFolders() {
                "  backgrounds/default.jpg            background of the \"No games found\" screen\r\n"
                "  logos/<rom folder>.png             logo shown instead of the game list title (optional)\r\n"
                "  theme.txt                          dim=0-255 (darken backgrounds), <category name>=<image file name>\r\n"
+               "  bgm/<song>.mp3|ogg                 theme BGM (optional): plays while this theme is in use when \"Theme BGM\" is chosen in BGM / sound\r\n"
                "Categories without a background look like the no-theme screen.\r\n"
                "Use ASCII folder and file names. Pick a theme in Y Options > Theme.\r\n"
                "  layout.txt                         change the screen layout (grids, positions, fonts, colors): theme-layout-en.md\r\n"
@@ -922,13 +956,17 @@ static void MakeUserFolders() {
                "Joy Launcher BGM 폴더 / BGM folder\r\n"
                "\r\n"
                "[한국어]\r\n"
-               "이 폴더에 mp3 또는 ogg 파일을 넣으면 런처 화면에서 배경 음악으로 재생합니다.\r\n"
-               "Y 옵션에서 켜기/끄기, 볼륨, 순서(차례대로/무작위)를 바꿀 수 있습니다. (기본: 꺼짐)\r\n"
+               "이 폴더에 mp3 또는 ogg 파일을 넣으면 런처 화면에서 배경 음악(공통 BGM)으로 재생합니다.\r\n"
+               "Y 옵션의 \"BGM · 소리 설정\" 에서 소리를 고릅니다: 공통 BGM / 테마 BGM / 무음. (기본: 무음)\r\n"
+               "  공통 BGM = 이 폴더의 곡,  테마 BGM = 테마 폴더 안 bgm 폴더의 곡 (themes/<테마>/bgm)\r\n"
+               "볼륨과 순서(차례대로/무작위)도 같은 창에서 바꿉니다.\r\n"
                "파일 이름은 영문(ASCII)을 권장합니다. 런처에는 음악이 들어 있지 않습니다.\r\n"
                "\r\n"
                "[English]\r\n"
-               "Put mp3 or ogg files in this folder to play them as background music in the launcher.\r\n"
-               "Turn it on/off and change volume and order (in order/shuffle) in Y Options. (Default: off)\r\n"
+               "Put mp3 or ogg files in this folder to play them as background music (Common BGM) in the launcher.\r\n"
+               "Choose the sound in \"BGM / sound\" in Y Options: Common BGM / Theme BGM / Silent. (Default: silent)\r\n"
+               "  Common BGM = the songs in this folder,  Theme BGM = the songs in the bgm folder of the theme (themes/<theme>/bgm)\r\n"
+               "Volume and order (in order / shuffle) are in the same window.\r\n"
                "Use ASCII file names. No music is included with the launcher.\r\n");
 }
 
@@ -2630,7 +2668,7 @@ static void RenderHbPick(App &a) {
 }
 
 static bool Adjustable(MenuAct m) {
-    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::Bgm || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
+    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
 }
 
 // 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비
@@ -2647,7 +2685,7 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
         int y = by + 66 + (i - top) * kRowH;
         bool sel = i == selIdx;
         if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
-        SDL_Color c = items[i].act == MenuAct::BgmNone ? SDL_Color{110, 110, 125, 255} : items[i].on ? kOn : sel ? kWhite : kGrey;
+        SDL_Color c = items[i].on ? kOn : sel ? kWhite : kGrey;
         DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
@@ -2858,7 +2896,7 @@ static void Render(App &a) {
         RenderGames(a);
     }
     if (a.optPick) RenderOptions(a);
-    if (a.bgmPick) RenderPopup(a, T("BGM 설정"), gBgmMenu, a.bgmSel, 640);
+    if (a.bgmPick) RenderPopup(a, T("BGM · 소리 설정"), gBgmMenu, a.bgmSel, 760);
     if (a.themePick) RenderThemePick(a);
     if (a.hbPick) RenderHbPick(a);
     if (a.exitAsk) RenderExitAsk(a);
@@ -3174,6 +3212,7 @@ int main(int argc, char **argv) {
     bool wantHbPick = false;  // 데스크톱 확인용: 홈브루 게임즈 창
     bool wantFrames = false;
     bool wantFtp = false;
+    bool wantBgm = false;  // 시험: BGM · 소리 설정 창을 열고 시작
 #ifdef __SWITCH__
     romfsInit();
     std::string root = kRoot;
@@ -3250,6 +3289,7 @@ int main(int argc, char **argv) {
         else if (s == "--demo") gDemo = true;
         else if (s == "--ftp") wantFtp = true;  // 시험: FTP 받기 화면을 열고 시작
         else if (s == "--hbpick") wantHbPick = true;
+        else if (s == "--bgm") wantBgm = true;
         else if (s == "--frames") wantFrames = true;
     }
     std::string root = gRoot;
@@ -3298,11 +3338,13 @@ int main(int argc, char **argv) {
     if (const char *m = getenv("JOY_MARQUEE_MS")) gMarqueeShift = (Uint32)atoi(m);
 #endif
     MakeUserFolders();
-    BgmScan(gHome + "/bgm");
     gShotMode = !shot.empty();
     gAnimAllowed = !gShotMode;
     LoadUserImages();
-    if (!gShotMode) ApplyBgm();
+    if (!gShotMode) {
+        gBgmLive = true;
+        ApplyBgm();
+    }
     if (!gShotMode && gVideoFrames == "auto") FrameWorkerStart();
     if (!gShotMode && !gDemo && gAutoUpdate == "on") UpdateCheckStart();
     if (!gShotMode) ImgLoaderStart();
@@ -3343,6 +3385,11 @@ int main(int argc, char **argv) {
         a.catTop = CenterTop(a.catSel, false);
     }
     if (wantOpt >= 0) { a.optPick = true; a.optSel = wantOpt; }
+    if (wantBgm) {
+        BuildMenu();
+        a.bgmPick = true;
+        a.bgmSel = gSound == "common" ? 0 : gSound == "theme" ? 1 : 2;
+    }
     if (wantSel >= 0) a.sel = wantSel;
     if (wantMode >= 0) a.mode = wantMode ? Mode::Games : Mode::Categories;
     Clamp(a);
@@ -3625,8 +3672,16 @@ int main(int argc, char **argv) {
             ApplyLanguage();
         } else if (act == MenuAct::Effects) {
             gEffects = !gEffects;
-        } else if (act == MenuAct::Bgm) {
-            gBgmOn = !gBgmOn;
+        } else if (act == MenuAct::SoundCommon || act == MenuAct::SoundTheme || act == MenuAct::SoundOff) {
+            // 소리 선택: 셋 중 하나만
+            gSound = act == MenuAct::SoundCommon ? "common" : act == MenuAct::SoundTheme ? "theme" : "off";
+            if ((gSound == "common" || gSound == "theme") && BgmCountIn(BgmDir(gSound)) == 0) {  // 곡이 없으면 넣을 곳을 알려 줌
+                a.message = gSound == "common" ? std::string(T("/JoyLauncher/bgm 폴더에 mp3 또는 ogg 파일을 넣으세요"))
+                            : gThemeName.empty() ? std::string(T("테마를 쓰지 않고 있습니다 (테마 BGM 은 테마 폴더의 bgm 에 넣습니다)"))
+                                                 : Fmt(T("/JoyLauncher/themes/%s/bgm 폴더에 mp3 또는 ogg 파일을 넣으세요"), gThemeName.c_str());
+                a.messageColor = {60, 70, 120, 240};
+                a.messageUntil = SDL_GetTicks() + 4500;
+            }
         } else if (act == MenuAct::BgmVolume) {
             gBgmVolume = std::max(0, std::min(100, gBgmVolume + dir * 10));
         } else if (act == MenuAct::BgmOrder) {
@@ -3640,7 +3695,7 @@ int main(int argc, char **argv) {
         ApplyBgm();
         SaveSettings();
         BuildMenu();
-        a.bgmSel = std::min(a.bgmSel, (int)gBgmMenu.size() - 1);  // BGM 을 끄면 "다음 곡" 이 빠짐
+        a.bgmSel = std::min(a.bgmSel, (int)gBgmMenu.size() - 1);  // BGM 이 아니면 "다음 곡" 이 빠짐
     };
     auto runMenu = [&](int idx) {
         if (idx < 0 || idx >= (int)gMenu.size()) return;
@@ -3681,12 +3736,11 @@ int main(int argc, char **argv) {
                 a.hbSel = 0;
             }
         } else if (m.act == MenuAct::BgmMenu) {
+            // BGM · 소리 설정 창. 그 사이 넣은 곡이 있으면 반영하고, 커서는 지금 고른 소리에
+            ApplyBgm();
+            BuildMenu();
             a.bgmPick = true;
-            a.bgmSel = 0;
-        } else if (m.act == MenuAct::BgmNone) {
-            a.message = T("/JoyLauncher/bgm 폴더에 mp3 또는 ogg 파일을 넣고 다시 실행하세요");
-            a.messageColor = {60, 70, 120, 240};
-            a.messageUntil = SDL_GetTicks() + 3500;
+            a.bgmSel = gSound == "common" ? 0 : gSound == "theme" ? 1 : 2;
         } else if (m.act == MenuAct::Launch && gAppletMode && !m.hb) {
             a.optPick = false;
             ShowAppletBlock(a);  // RetroArch·PPSSPP 단독 실행도 애플릿 모드에서는 오류

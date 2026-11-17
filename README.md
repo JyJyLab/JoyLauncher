@@ -4,6 +4,8 @@
 
 닌텐도 스위치용 홈브루 게임 런처입니다. 안드로이드용 **페가수스(Pegasus) 롬 모음**을 SD 카드에 그대로 복사하면 `metadata.pegasus.txt` 를 읽어 카테고리별로 보여 주고, 고른 게임을 **RetroArch 코어 / PPSSPP** 로 바로 실행합니다.
 
+> **안드로이드판**도 있습니다: 같은 테마를 그대로 쓰는 안드로이드용 Joy Launcher — 이 저장소의 [`android` 브랜치](https://github.com/JyJyLab/JoyLauncher/tree/android), 릴리스는 태그 `android-v…` (스위치판 릴리스는 태그 `v…`)
+
 ![카테고리 화면](docs/images/01_categories.png)
 
 ## 특징
@@ -20,7 +22,8 @@
 - 나만의 카테고리(`/JoyLauncher/categories.txt`): 카테고리 묶기·숨기기, 모든 테마에서 쓰는 내 그림 폴더
 - NDS 게임은 DraStic 스위치판(`/switch/DrasticDS.nro`)이 있으면 그것으로 실행
 - 홈브루 즐겨찾기: 옵션에서 고른 nro 게임(포팅 게임 등)을 카테고리 맨 위에 모아 실행
-- 즐겨찾기(− 버튼), 한국어 / 영어 화면, 직접 넣은 mp3·ogg 배경 음악, HOME 화면과 같은 배터리 표시
+- 즐겨찾기(− 버튼), 한국어 / 영어 화면, HOME 화면과 같은 배터리 표시
+- 배경 음악: 공통 BGM(`/JoyLauncher/bgm`) 또는 **테마 BGM**(테마 폴더의 `bgm`) 중 선택 (v1.2.0~)
 - 스위치에 RetroArch 코어(PSP 는 PPSSPP)가 있는 기종의 게임만 표시 (성능이 부족한 기종은 기본 숨김)
 - **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트) — 런처 본체만 바뀝니다. 테마 팩은 테마 설정 창의 "기본 테마 4종 내려받기" 또는 릴리스 zip 으로
 

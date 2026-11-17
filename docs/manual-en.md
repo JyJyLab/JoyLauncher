@@ -77,7 +77,7 @@ The current homebrew menu (`/hbmenu.nro`) is handled by type (judged from the pr
 | `library.cache` | saved game list (section 7) |
 | `cache/` | frames grabbed from videos (section 6) |
 | `themes/` | themes + guide `README.txt` (section 8) |
-| `bgm/` | background music + guide `README.txt` (section 9) |
+| `bgm/` | Common BGM + guide `README.txt` (section 9). Theme BGM goes in `themes/<theme>/bgm/` |
 | `state.txt`, `launch_log.txt` | created when you launch a game |
 | `debug_log.txt`, `debug_state.txt` | created when the launcher starts (diagnostic log, section 11) |
 
@@ -261,7 +261,7 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 | Theme | section 8 |
 | Receive themes from PC (FTP) | section 8 |
 | Screen effects | on / off: theme motion (smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade) |
-| BGM | A opens the BGM window; see "Background music" (dimmed when there are no songs) |
+| BGM / sound | A opens the sound window: Common BGM, Theme BGM or Silent, BGM volume and order; see "Background music" (green while a BGM choice is active) |
 | Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
 | Homebrew Favorites: add / remove | see "Homebrew Favorites" below (green when some nro are added) |
 | Set as default homebrew menu / Set again / Restore | section 3 ("Set again" appears at the top if another menu took over) |
@@ -283,8 +283,13 @@ Games that come as an nro on the SD card (ports and other homebrew games) can be
 
 ### Background music (BGM)
 
-- Put **mp3 or ogg** files in `/JoyLauncher/bgm/` and restart the launcher; BGM items appear in Options. No music is included.
-- **"BGM"** in Options opens the BGM window (B closes it): **BGM: On/Off** (default off), **Volume** (◀▶ in 10% steps), **Order** (in order / shuffle), **Next song** (while on).
+- **"BGM / sound"** in Options opens the sound window (B closes it). Choose one of three (● = current), since v1.2.0:
+  - **Common BGM**: **mp3 / ogg** files in `/JoyLauncher/bgm/`, the same songs with every theme.
+  - **Theme BGM**: mp3 / ogg in the `bgm` folder of the theme in use (`/JoyLauncher/themes/<theme>/bgm/`). It follows the theme; a theme without songs is silent. See section 3 of the [theme guide](theme-guide-en.md).
+  - **Silent** (default)
+  - The same window has **BGM volume** (◀▶ in 10% steps), **BGM order** (in order / shuffle) and **Next song** (while BGM plays).
+- If a choice shows 0 songs, add files to that folder and open the window again. No music is included.
+- The "BGM: On/Off" item of v1.1 is gone; an old `bgm=on` becomes Common BGM.
 - Music keeps playing across screens and moves to the next song at the end. Unreadable files are skipped.
 - Before a game or another program starts, and on exit, the music fades out and the audio is closed.
 - Sleep or HOME pauses it; when you return it resumes with a 1-second fade-in.
@@ -310,7 +315,7 @@ The interface is available in Korean and English. **Auto** (default) follows the
 | `video_frames` | `auto` / `manual` |
 | `auto_update` | `on` / `off` |
 | `language` | `auto` / `ko` / `en` |
-| `bgm`, `bgm_volume`, `bgm_shuffle` | `on`/`off`, `0`-`100`, `on`/`off` |
+| `sound`, `bgm_volume`, `bgm_shuffle` | `common`/`theme`/`off` (Common BGM / Theme BGM / silent), `0`-`100`, `on`/`off` |
 | `effects` | `on` / `off` (screen effects) |
 
 Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games, `playcount.txt` play counts per game, `categories.txt` and `categories/` the custom categories and their pictures (section 8), `debug_log.txt` the diagnostic log (start, launch, exit, crash; moved to `debug_log_old.txt` above 512 KB, with `debug_state.txt` as its helper; section 11).
@@ -322,7 +327,7 @@ Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to 
 - **Doesn't return to the launcher after a game**: "Set Joy Launcher as the default homebrew menu" in Options. After an Atmosphere update, start the launcher once from the album and choose "Set again" (section 3).
 - **No images/descriptions for an ES-DE pack**: check that `/ES-DE/gamelists` and `/ES-DE/downloaded_media` were copied and that the ROM folder names match the ES-DE system names (section 4).
 - **"Games can't be started in album (applet) mode"**: the launcher was opened from the Album. Open it in title mode, e.g. by holding R while starting an installed game (section 3).
-- **BGM items are dimmed**: there are no mp3/ogg files in `/JoyLauncher/bgm/`. Add some and restart.
+- **No BGM**: in Options → BGM / sound check that the chosen source has songs (Common BGM = `/JoyLauncher/bgm/`, Theme BGM = the `bgm/` folder of the theme). Add files and open the window again.
 - **An error closes the software when starting another app or returning to the launcher**: read the last entries of `/JoyLauncher/debug_log.txt`, or attach it to a bug report. It records threads and memory left by the previous app ("LEFTOVER"), the crashing thread and address ("CRASH"), and a summary of Atmosphère's error reports (`/atmosphere/crash_reports` etc.).
 
 ---

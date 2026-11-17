@@ -4,6 +4,8 @@
 
 A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM pack** to the SD card as-is: Joy Launcher reads `metadata.pegasus.txt`, shows the games by category and launches them with **RetroArch cores / PPSSPP**.
 
+> There is also an **Android version** that uses the same themes: the [`android` branch](https://github.com/JyJyLab/JoyLauncher/tree/android) of this repository, releases tagged `android-v…` (Switch releases are tagged `v…`)
+
 ![Categories](docs/images/en_01_categories.png)
 
 ## Features
@@ -19,7 +21,8 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Custom categories (`/JoyLauncher/categories.txt`): combine and hide categories, your own pictures folder used by every theme
 - NDS games run with the DraStic Switch port (`/switch/DrasticDS.nro`) when it is installed
 - Homebrew Favorites: nro games picked in the options (ports and others) gathered at the top of the category list
-- Favorites (− button), Korean / English interface, background music from your own mp3/ogg files, HOME-style battery indicator
+- Favorites (− button), Korean / English interface, HOME-style battery indicator
+- Background music: Common BGM (`/JoyLauncher/bgm`) or **Theme BGM** (the theme's `bgm` folder) (v1.2.0+)
 - Shows games only for systems that have a RetroArch core on the Switch (PSP: PPSSPP); systems too slow for the Switch are hidden by default
 - **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the theme packs from "Download the 4 stock themes" in the theme picker or from the release zip
 
