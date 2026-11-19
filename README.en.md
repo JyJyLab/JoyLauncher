@@ -39,6 +39,14 @@ Making themes (shared with the Switch version): [theme-guide-en.md](docs/theme-g
 - Desktop test build (Linux): `make -f Makefile.linux` → `./joylauncher_desktop` (screenshots and launch arguments; Android functions are simulated by `source/platform_desktop.cpp`)
 - Theme Builder: use the one from the Switch repository
 
+## Sponsor
+
+If Joy Launcher helps you, you can support it — donations go to test devices and development time.
+
+- [Buy Me a Coffee](https://buymeacoffee.com/jyjy) — card payment, no account needed
+- [GitHub Sponsors](https://github.com/sponsors/Angler-JJ-Lee)
+- Korea: [ctee](https://ctee.kr/place/jayjay)
+
 ## License
 - Joy Launcher: GPL-3.0 (`LICENSE`)
 - System/emulator tables (`romfs/systems/es_systems.xml`, `es_find_rules.xml`): ES-DE Frontend, MIT (`romfs/systems/LICENSE.ES-DE.txt`)

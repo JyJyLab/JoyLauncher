@@ -6,4 +6,5 @@
 If Joy Launcher helps you, you can support it — donations go to test devices and development time.
 
 - 국내: [크티(ctee)](https://ctee.kr/place/jayjay) — 카드·간편결제
+- 해외 / International: [Buy Me a Coffee](https://buymeacoffee.com/jyjy) — 가입 없이 카드 결제 / no account needed
 - 해외 / International: [GitHub Sponsors](https://github.com/sponsors/Angler-JJ-Lee)
