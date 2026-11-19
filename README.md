@@ -53,6 +53,13 @@
 |---|---|
 | **월스트리트킴** (레트로게임 갤러리) | 30% |
 
+## 후원
+
+조이런처가 도움이 되었다면 후원으로 응원해 주세요. 시험용 기기 구입과 개발 시간 확보에 쓰입니다.
+
+- 국내: [크티(ctee)](https://ctee.kr/place/jayjay) — 카드·간편결제
+- 해외 / International: [GitHub Sponsors](https://github.com/sponsors/Angler-JJ-Lee)
+
 ## 라이선스
 - Joy Launcher: GPL-3.0 (`LICENSE`) — GPL 로 빌드된 FFmpeg 를 정적 링크하므로
 - 나눔고딕 글꼴: SIL Open Font License 1.1 (`OFL.txt`)
