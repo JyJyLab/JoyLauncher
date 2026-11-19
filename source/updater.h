@@ -1,4 +1,4 @@
-// 깃헙 릴리스에서 런처의 새 버전(apk)을 확인·설치하고, 기본 테마 팩을 내려받는다.
+// 깃헙 릴리스에서 런처의 새 버전을 확인하고(설치는 사용자가 브라우저로 apk 를 받아 직접), 기본 테마 팩을 내려받는다.
 #pragma once
 #include <functional>
 #include <string>
@@ -9,6 +9,7 @@ struct UpdateInfo {
     std::string sha256;    // 소문자 16진수 (없으면 빈 값)
     long long size = 0;
     std::string notes;     // 릴리스 설명 (첫 몇 줄)
+    std::string page;      // 릴리스 페이지 주소 (브라우저로 열어 apk 를 받는 곳)
 };
 
 const char *CurrentVersion();
@@ -20,9 +21,9 @@ int CompareVersions(const std::string &a, const std::string &b);
 // 최신 릴리스 조회 (네트워크, 수 초 걸릴 수 있음). 실패하면 false, err 에 이유
 bool FetchLatestRelease(UpdateInfo &info, std::string &err);
 
-// apk 를 받아 검증(SHA-256)한 뒤 설치 화면을 연다.
-// progress(받은 바이트, 전체 바이트) 가 false 를 돌려주면 중지
-bool DownloadAndInstall(const UpdateInfo &info, std::string &err, const std::function<bool(long long, long long)> &progress);
+// 릴리스 페이지 주소: version 이 있으면 그 안드로이드판 릴리스, 없으면 릴리스 목록.
+// 앱이 apk 를 받아 설치하지 않는다 (다른 앱 설치 권한 문제) — 사용자가 브라우저로 받아 직접 설치
+std::string ReleasePageUrl(const std::string &version);
 
 // zip 안의 prefix 폴더 아래 파일을 dest 에 푼다 (테마 내려받기의 풀기 단계, 데스크톱 시험용으로 공개)
 bool ExtractThemeZip(const std::string &zip, const std::string &prefix, const std::string &dest, int &files, std::string &err);

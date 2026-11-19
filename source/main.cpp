@@ -38,6 +38,7 @@
 #include "overlay.h"
 #include "pegasus.h"
 #include "platform.h"
+#include "uistyle.h"
 #include "updater.h"
 #include "video.h"
 
@@ -58,14 +59,14 @@ struct MenuItem {
     MenuAct act;
     bool on = false;  // 켜져 있는 상태 (BGM 재생 중 등): 초록색 글자
 };
-static const SDL_Color kOn = {90, 220, 120, 255};
+// 켜짐 초록색은 메뉴 창 꾸밈(uistyle.cpp MenuStyle::on)
 static std::vector<MenuItem> gMenu;
 static std::vector<MenuItem> gBgmMenu;  // BGM · 소리 설정 창 (X 버튼, 또는 옵션 창에서)
 static bool gDemo = false;  // 데스크톱 시험판의 데모 창 (--demo): 게임·앱 실행 대신 알림, 업데이트 확인 안 함
 static std::string gThemeName;  // 현재 테마 폴더 이름 ("" = 기본)
 static std::string ThemeTitle(const std::string &folder);  // 테마의 화면 이름
 static bool gVideoOn = true;                // 설정: 고른 게임의 미리보기 영상 재생 (video)
-static std::string gAutoUpdate = "on";      // on: 시작할 때 깃헙에서 새 버전 확인 (설치는 옵션 창에서)
+static std::string gAutoUpdate = "on";      // on: 시작할 때 깃헙에서 새 버전 확인 (받기는 옵션 창의 링크로)
 static bool gUpdateFound = false;           // 새 버전을 찾았는지
 static UpdateInfo gUpdate;
 static std::string gLanguage = "auto";      // auto: 기기 언어, ko, en
@@ -195,7 +196,7 @@ static void BuildMenu() {
     gMenu.clear();
     gMenu.push_back({T("게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)"), MenuAct::Refresh});
     if (UpdaterEnabled())
-        gMenu.push_back({gUpdateFound ? Fmt(T("업데이트 설치: v%s (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
+        gMenu.push_back({gUpdateFound ? Fmt(T("새 버전 v%s 받기 (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
                                       : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
                          MenuAct::Update});
     gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), MenuAct::Theme});
@@ -1011,6 +1012,8 @@ struct App {
     std::vector<EmuChoice> emuList;
     std::string emuKey, emuSystem;  // 고른 것을 적어 둘 이름(롬 폴더·카테고리), 그 기종
     bool exitAsk = false;        // 맨 위 화면에서 B: 종료 확인
+    bool updLink = false;        // 업데이트 창: 새 버전 알림 + 릴리스 페이지 주소 (A = 브라우저로 열기)
+    std::string updErr;          // 업데이트 확인 실패 이유 (있으면 창에 표시)
     std::vector<std::string> themeList;  // [0] = 기본, 그다음 테마 폴더 이름, 끝에 내려받기 항목
     std::vector<std::string> themeTitles;  // themeList 와 같은 순서의 화면 이름
     int themeSel = 0;
@@ -1025,8 +1028,6 @@ struct App {
     Uint32 messageUntil = 0;
     bool messageModal = false;  // B 로 닫을 때까지 떠 있는 알림 (그동안 다른 입력 무시)
     SDL_Color messageColor = {120, 40, 40, 240};
-    int confirmIdx = -1;
-    Uint32 confirmUntil = 0;
     // 보기 탭 (게임 화면, ZL/ZR): 0 전체 / 1 즐겨찾기 / 2 최근 실행
     int view = 0, viewFor = -1;
     Collection viewCol;
@@ -1563,6 +1564,100 @@ static void Fill(App &a, int x, int y, int w, int h, SDL_Color c) {
     SDL_RenderFillRect(a.r, &rc);
     TrackBox(rc);
 }
+
+// ---- 메뉴 창 꾸밈 (uistyle.cpp, 스위치판과 같은 파일): 테마 색에 맞춘 판·테두리·글자 + 둥근 모서리. 테마 없음은 예전 색 그대로
+static MenuStyle Menu() {
+    MenuStyle m;
+    MenuStyleFrom(gTheme.layout, !gTheme.base.empty(), m);
+    return m;
+}
+
+// 둥근 네모: 귀퉁이 4개는 실제 해상도(gScale)로 만든 그림(부드럽게, TextCache 에 둠), 나머지는 서로 겹치지 않는 네모
+static void DrawRound(App &a, int x, int y, int w, int h, int r, int bw, SDL_Color fill, SDL_Color border) {
+    if (w <= 0 || h <= 0) return;
+    if (bw <= 0) { bw = 0; border = fill; }
+    r = std::max(0, std::min(r, std::min(w, h) / 2));
+    if (r == 0) {
+        if (bw == 0) { Fill(a, x, y, w, h, fill); return; }
+        bw = std::min(bw, std::min(w, h) / 2);
+        Fill(a, x, y, w, bw, border);
+        Fill(a, x, y + h - bw, w, bw, border);
+        Fill(a, x, y + bw, bw, h - 2 * bw, border);
+        Fill(a, x + w - bw, y + bw, bw, h - 2 * bw, border);
+        Fill(a, x + bw, y + bw, w - 2 * bw, h - 2 * bw, fill);
+        return;
+    }
+    bw = std::min(bw, r);
+    int R = std::max(1, ToPx(r)), BW = bw ? std::max(1, ToPx(bw)) : 0;  // 그림은 실제 점 크기로
+    char key[96];
+    snprintf(key, sizeof(key), "\x02rnd|%d|%d|%02x%02x%02x%02x|%02x%02x%02x%02x", R, BW, fill.r, fill.g, fill.b, fill.a, border.r,
+             border.g, border.b, border.a);
+    SDL_Texture *t = nullptr;
+    auto it = a.text.map.find(key);
+    if (it != a.text.map.end()) {
+        t = it->second;
+    } else {
+        if (a.text.map.size() > 800) a.text.Clear();
+        std::vector<Uint8> px;
+        RoundCornerPixels(R, BW, fill, border, px);
+        if (SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormatFrom(px.data(), 2 * R, 2 * R, 32, 8 * R, SDL_PIXELFORMAT_RGBA32)) {
+            t = SDL_CreateTextureFromSurface(a.r, sf);
+            SDL_FreeSurface(sf);
+        }
+        if (t) {
+            SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+            a.text.map[key] = t;
+        }
+    }
+    if (t) {
+        AlphaMod(t, true);
+        SDL_Rect s[4] = {{0, 0, R, R}, {R, 0, R, R}, {0, R, R, R}, {R, R, R, R}};
+        SDL_FRect d[4] = {{(float)x, (float)y, (float)r, (float)r},
+                          {(float)(x + w - r), (float)y, (float)r, (float)r},
+                          {(float)x, (float)(y + h - r), (float)r, (float)r},
+                          {(float)(x + w - r), (float)(y + h - r), (float)r, (float)r}};
+        for (int i = 0; i < 4; i++) SDL_RenderCopyF(a.r, t, &s[i], &d[i]);
+        AlphaMod(t, false);
+    }
+    int mw = w - 2 * r, mh = h - 2 * r;
+    if (mw > 0) {
+        if (bw) {
+            Fill(a, x + r, y, mw, bw, border);
+            Fill(a, x + r, y + h - bw, mw, bw, border);
+        }
+        Fill(a, x + r, y + bw, mw, r - bw, fill);
+        Fill(a, x + r, y + h - r, mw, r - bw, fill);
+    }
+    if (mh > 0) {
+        if (bw) {
+            Fill(a, x, y + r, bw, mh, border);
+            Fill(a, x + w - bw, y + r, bw, mh, border);
+        }
+        Fill(a, x + bw, y + r, w - 2 * bw, mh, fill);
+    }
+}
+
+// 메뉴 창: 화면을 어둡게 덮고 판. panelA: 테마 없음일 때 판 불투명도를 따로 (-1 = 꾸밈 그대로)
+static void MenuPanel(App &a, const MenuStyle &m, int x, int y, int w, int h, int dimA = 120, int panelA = -1) {
+    if (dimA > 0) Fill(a, 0, 0, W, H, {0, 0, 0, (Uint8)dimA});
+    SDL_Color p = m.panel;
+    if (panelA >= 0 && !m.themed) p.a = (Uint8)panelA;
+    DrawRound(a, x, y, w, h, m.radius, m.borderW, p, m.border);
+}
+static void MenuSel(App &a, const MenuStyle &m, int x, int y, int w, int h) { DrawRound(a, x, y, w, h, m.selRadius, 0, m.sel, m.sel); }
+// 뜻이 있는 색의 상자 (오류 빨강·완료 초록·삭제 확인): 색은 그대로, 둥근 모서리 + 테마면 밝은 같은 색 테두리
+static void NoticeBox(App &a, const MenuStyle &m, int x, int y, int w, int h, SDL_Color c) {
+    SDL_Color b = {(Uint8)std::min(255, c.r + 80), (Uint8)std::min(255, c.g + 80), (Uint8)std::min(255, c.b + 80), 255};
+    DrawRound(a, x, y, w, h, m.radius, m.themed ? m.borderW : 0, c, b);
+}
+// 진행 막대 (frac 0~1)
+static void ProgressBar(App &a, const MenuStyle &m, int x, int y, int w, int h, double frac) {
+    DrawRound(a, x, y, w, h, h / 2, 0, m.track, m.track);
+    int fw = (int)(w * std::max(0.0, std::min(1.0, frac)));
+    if (fw > 0) DrawRound(a, x, y, fw, h, h / 2, 0, m.title, m.title);
+}
+// 도움말의 "[X] <이름>": 이 판의 X 버튼은 BGM · 소리 설정 → 스위치판 테마의 "[X] 홈브루" 등 어떤 이름이든 BGM 으로
+static std::string FixX(const std::string &s) { return FixXLabel(s, "BGM", true); }
 
 // k: 불투명도 0~1 (화면 사진과 미리보기 영상이 서로 바뀔 때)
 static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h, float k = 1.0f) {
@@ -2184,7 +2279,7 @@ static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
     }
     // [strings] 에 글 전체가 있으면 바꾼 말로 (영어 화면용 [strings.en] 으로 테마 글자 번역)
     const char *ov = StringOverride(e.text.c_str());
-    std::string s = Expand(a, PadHint(ov ? std::string(ov) : e.text), c);
+    std::string s = Expand(a, PadHint(FixX(ov ? std::string(ov) : e.text)), c);  // X 이름은 테마 글에서만 (게임 이름 등 자리표 값은 그대로)
     if (s.empty()) return;
     TTF_Font *f = FontFor(e.bold, e.size, s);
     if (!f) return;
@@ -2660,9 +2755,9 @@ static void DrawElem(App &a, const Elem &e, const DrawCtx &c) {
 }
 
 // 화면 아래 도움말. 테마가 [strings] 로 바꾼 글이 있으면 그것 (이름 hint.* → 스위치판의 원래 글 순으로 찾음).
-// 스위치판 테마의 글에 남은 "[X] 홈브루 메뉴" 는 이 런처의 X 버튼 기능인 "BGM" (BGM · 소리 설정) 으로 바꿔 보여 준다
+// 스위치판 테마의 글에 남은 "[X] 홈브루 메뉴" 등은 이 런처의 X 버튼 기능인 "BGM" (BGM · 소리 설정) 으로 바꿔 보여 준다 (FixX: "[X]" 바로 뒤 이름만)
 static std::string ScreenHint(bool games, bool grid) {
-    static const char *kSwitchText[4] = {
+    static const char *kSwitchText[4] = {  // 스위치판 1.2 까지의 기본 문구
         "[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼ 선택",
         "[A] 열기     [B] 종료     [X] 홈브루 메뉴     [Y] 옵션     ▲▼◀▶ 선택",
         "[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ◀ ▶ 페이지  [-] 즐겨찾기  [X] 홈브루  [Y] 옵션",
@@ -2671,16 +2766,9 @@ static std::string ScreenHint(bool games, bool grid) {
     const char *ov = StringOverride(games ? (grid ? "hint.games_grid" : "hint.games") : (grid ? "hint.categories_grid" : "hint.categories"));
     if (!ov && grid) ov = StringOverride(games ? "hint.games" : "hint.categories");
     if (!ov) ov = StringOverride(kSwitchText[(games ? 2 : 0) + (grid ? 1 : 0)]);
-    if (ov) {
-        std::string s = ov;
-        static const std::pair<const char *, const char *> kWords[] = {
-            {"홈브루 메뉴", "BGM"}, {"홈브류 메뉴", "BGM"}, {"홈브루", "BGM"}, {"홈브류", "BGM"},
-            {"Homebrew menu", "BGM"}, {"Homebrew Menu", "BGM"}, {"Homebrew", "BGM"}, {"homebrew", "BGM"}};
-        for (const auto &w : kWords)
-            for (size_t p = s.find(w.first); p != std::string::npos; p = s.find(w.first, p + strlen(w.second)))
-                s.replace(p, strlen(w.first), w.second);
-        return PadHint(s);
-    }
+    if (!ov && !games)  // 스위치판 1.3 부터의 기본 문구 ("[X] 홈브루" 로 통일)
+        ov = StringOverride(grid ? "[A] 열기     [B] 종료     [X] 홈브루     [Y] 옵션     ▲▼◀▶ 선택" : "[A] 열기     [B] 종료     [X] 홈브루     [Y] 옵션     ▲▼ 선택");
+    if (ov) return PadHint(FixX(ov));
     if (!games)
         return PadHint(grid ? T("[A] 열기     [B] 종료     [X] BGM     [Y] 옵션     ▲▼◀▶ 선택") : T("[A] 열기     [B] 종료     [X] BGM     [Y] 옵션     ▲▼ 선택"));
     return PadHint(grid ? T("[A] 실행  [B] 카테고리  [L][R] 카테고리 이동  ▲▼◀▶ 선택  [-] 즐겨찾기  [X] BGM  [Y] 옵션")
@@ -2730,15 +2818,15 @@ static void RenderThemePick(App &a) {
     int rows = std::min(n, 10);
     int bw = 640, bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = (H - bh) / 2;
-    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-    Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
-    DrawText(a, a.fBig, T("테마 선택"), W / 2, by + 16, kAccent, 0, 1);
+    MenuStyle m = Menu();
+    MenuPanel(a, m, bx, by, bw, bh);
+    DrawText(a, a.fBig, T("테마 선택"), W / 2, by + 16, m.title, 0, 1);
     int top = std::max(0, std::min(a.themeSel - rows / 2, n - rows));
     for (int i = 0; i < rows; i++) {
         int idx = top + i;
         int y = by + 66 + i * kRowH;
         bool sel = idx == a.themeSel;
-        if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
+        if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
         bool dl = IsThemeDownload(a.themeList[idx]);
         std::string label = idx == 0 ? std::string(T("기본 (배경 없음)")) : idx < (int)a.themeTitles.size() ? a.themeTitles[idx] : a.themeList[idx];
         if (dl) {
@@ -2752,15 +2840,15 @@ static void RenderThemePick(App &a) {
         }
         bool cur = !dl && ((idx == 0 && gThemeName.empty()) || (idx > 0 && a.themeList[idx] == gThemeName));
         if (cur) label += T("  (사용 중)");
-        SDL_Color c = dl ? kAccent : sel ? kWhite : kGrey;
+        SDL_Color c = dl ? m.title : sel ? m.selText : m.dim;
         DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
-    DrawText(a, a.fInfo, PadHint(T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)")), W / 2, by + bh - 34, kGrey, 0, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)")), W / 2, by + bh - 34, m.dim, 0, 1);
     if (a.themeDelAsk > 0 && a.themeDelAsk < n) {
         std::string name = a.themeDelAsk < (int)a.themeTitles.size() && !a.themeTitles[a.themeDelAsk].empty() ? a.themeTitles[a.themeDelAsk]
                                                                                                              : a.themeList[a.themeDelAsk];
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-        Fill(a, 240, 270, 800, 170, {120, 40, 40, 245});
+        NoticeBox(a, m, 240, 270, 800, 170, {120, 40, 40, 245});
         DrawText(a, a.fList, Fmt(T("'%s' 테마를 지울까요?"), name.c_str()), W / 2, 296, kWhite, 760, 1, 0, 0, kScrollMsg);
         DrawText(a, a.fInfo, Fmt(T("/JoyLauncher/themes/%s 폴더가 삭제됩니다"), a.themeList[a.themeDelAsk].c_str()), W / 2, 344, kWhite, 760, 1);
         DrawText(a, a.fInfo, PadHint(T("[A] 삭제   [B] 취소")), W / 2, 392, kAccent, 0, 1);
@@ -2773,22 +2861,22 @@ static void RenderAppPick(App &a) {
     int rows = std::min(n, (H - 16 - 110) / kRowH);
     int bw = 980, bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
-    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-    Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
-    DrawText(a, a.fBig, T("앱"), W / 2, by + 16, kAccent, 0, 1);
+    MenuStyle m = Menu();
+    MenuPanel(a, m, bx, by, bw, bh);
+    DrawText(a, a.fBig, T("앱"), W / 2, by + 16, m.title, 0, 1);
     int top = std::max(0, std::min(a.appSel - rows / 2, n - rows));
     for (int i = 0; i < rows; i++) {
         int idx = top + i;
         int y = by + 66 + i * kRowH;
         bool sel = idx == a.appSel;
-        if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
+        if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
         const Game &g = a.appList[idx];
         bool in = std::find(gAppFav.begin(), gAppFav.end(), AppsKey(g.file)) != gAppFav.end();
         std::string label = std::string(in ? "★ " : "☆ ") + g.title + "   " + g.developer;
-        DrawText(a, a.fList, label, bx + 32, y + 4, in ? kOn : sel ? kWhite : kGrey, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+        DrawText(a, a.fList, label, bx + 32, y + 4, in ? m.on : sel ? m.selText : m.dim, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     DrawText(a, a.fInfo, PadHint(Fmt(T("[A] 실행   [-] 앱 즐겨찾기에 넣기 / 빼기   [B] 닫기   (즐겨찾기 %d개)"), (int)gAppFav.size())), W / 2,
-             by + bh - 34, kGrey, 0, 1);
+             by + bh - 34, m.dim, 0, 1);
 }
 
 // 에뮬레이터 선택 창: 지금 카테고리(롬 폴더)의 기종에서 쓸 수 있는 에뮬레이터. 초록 = 설치됨
@@ -2797,25 +2885,27 @@ static void RenderEmuPick(App &a) {
     int rows = std::min(n, (H - 16 - 150) / kRowH);
     int bw = 900, bh = 150 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
-    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-    Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
-    DrawText(a, a.fBig, T("에뮬레이터 선택"), W / 2, by + 16, kAccent, 0, 1);
-    DrawText(a, a.fInfo, Fmt(T("대상: %s  ·  기종: %s"), a.emuKey.c_str(), a.emuSystem.empty() ? "?" : a.emuSystem.c_str()), W / 2, by + 62, kGrey,
+    MenuStyle m = Menu();
+    MenuPanel(a, m, bx, by, bw, bh);
+    DrawText(a, a.fBig, T("에뮬레이터 선택"), W / 2, by + 16, m.title, 0, 1);
+    DrawText(a, a.fInfo, Fmt(T("대상: %s  ·  기종: %s"), a.emuKey.c_str(), a.emuSystem.empty() ? "?" : a.emuSystem.c_str()), W / 2, by + 62, m.dim,
              bw - 60, 1);
     int top = std::max(0, std::min(a.emuSel - rows / 2, n - rows));
     for (int i = 0; i < rows; i++) {
         int idx = top + i;
         int y = by + 106 + i * kRowH;
         bool sel = idx == a.emuSel;
-        if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
+        if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
         const EmuChoice &ch = a.emuList[idx];
         std::string label = ch.label.empty() ? std::string(T("자동 (롬 모음의 설정 → 설치된 에뮬레이터)")) : ch.label;
         if (!ch.label.empty() && !ch.installed) label += T("  (설치 안 됨)");
         if (ch.current) label = "● " + label;
-        SDL_Color col = !ch.installed ? SDL_Color{110, 110, 125, 255} : ch.current ? kOn : sel ? kWhite : kGrey;
+        SDL_Color off = m.themed ? SDL_Color{(Uint8)((m.dim.r + m.panel.r) / 2), (Uint8)((m.dim.g + m.panel.g) / 2), (Uint8)((m.dim.b + m.panel.b) / 2), 255}
+                                 : SDL_Color{110, 110, 125, 255};
+        SDL_Color col = !ch.installed ? off : ch.current ? m.on : sel ? m.selText : m.dim;
         DrawText(a, a.fList, label, bx + 32, y + 4, col, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
-    DrawText(a, a.fInfo, PadHint(T("[A] 선택   [B] 닫기   (기록: /JoyLauncher/emulators.txt)")), W / 2, by + bh - 34, kGrey, 0, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 선택   [B] 닫기   (기록: /JoyLauncher/emulators.txt)")), W / 2, by + bh - 34, m.dim, 0, 1);
 }
 
 static bool Adjustable(MenuAct m) {
@@ -2830,18 +2920,18 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
     int top = std::max(0, std::min(selIdx - rows / 2, n - rows));
     int bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
-    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-    Fill(a, bx, by, bw, bh, {28, 28, 40, 245});
-    DrawText(a, a.fBig, title, W / 2, by + 16, kAccent, 0, 1);
+    MenuStyle m = Menu();
+    MenuPanel(a, m, bx, by, bw, bh);
+    DrawText(a, a.fBig, title, W / 2, by + 16, m.title, 0, 1);
     for (int i = top; i < top + rows; i++) {
         int y = by + 66 + (i - top) * kRowH;
         bool sel = i == selIdx;
-        if (sel) Fill(a, bx + 16, y - 4, bw - 32, kRowH, kSel);
-        SDL_Color c = items[i].on ? kOn : sel ? kWhite : kGrey;
+        if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
+        SDL_Color c = items[i].on ? m.on : sel ? m.selText : m.dim;
         DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
-    DrawText(a, a.fInfo, PadHint(adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기")), W / 2, by + bh - 34, kGrey,
+    DrawText(a, a.fInfo, PadHint(adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기")), W / 2, by + bh - 34, m.dim,
              0, 1);
 }
 
@@ -2852,29 +2942,51 @@ static void RenderOptions(App &a) { RenderPopup(a, T("옵션"), gMenu, a.optSel,
 static void RenderFtp(App &a) {
     FtpServerStatus st = FtpServerGet();
     int bw = 900, bh = 520, bx = (W - bw) / 2, by = (H - bh) / 2;
-    Fill(a, 0, 0, W, H, {0, 0, 0, 150});
-    Fill(a, bx, by, bw, bh, {28, 28, 40, 248});
-    DrawText(a, a.fBig, T("PC에서 테마 받기 (FTP)"), W / 2, by + 18, kAccent, 0, 1);
+    MenuStyle m = Menu();
+    MenuPanel(a, m, bx, by, bw, bh, 150, 248);
+    DrawText(a, a.fBig, T("PC에서 테마 받기 (FTP)"), W / 2, by + 18, m.title, 0, 1);
     if (!st.running) {
-        DrawText(a, a.fList, T("FTP 를 열지 못했습니다: ") + st.error, W / 2, by + 120, kWhite, bw - 60, 1);
+        DrawText(a, a.fList, T("FTP 를 열지 못했습니다: ") + st.error, W / 2, by + 120, m.text, bw - 60, 1);
     } else {
         std::string addr = "ftp://" + st.ip + ":" + std::to_string(st.port);
-        DrawText(a, a.fTitle, addr, W / 2, by + 78, kWhite, bw - 40, 1);
-        DrawText(a, a.fInfo, T("테마 빌더 → 파일 → 스위치로 보내기 에 위 주소·포트를 적으세요 (사용자·비밀번호 비움)"), W / 2, by + 132, kGrey, bw - 40, 1);
-        DrawText(a, a.fInfo, st.client ? T("PC 연결됨") : T("PC 를 기다리는 중…"), bx + 30, by + 176, st.client ? kOn : kGrey);
-        DrawText(a, a.fInfo, Fmt(T("받은 파일 %d개 · 지운 것 %d개"), st.files, st.removed), bx + bw - 30, by + 176, kWhite, 0, 2);
+        DrawText(a, a.fTitle, addr, W / 2, by + 78, m.text, bw - 40, 1);
+        DrawText(a, a.fInfo, T("테마 빌더 → 파일 → 스위치로 보내기 에 위 주소·포트를 적으세요 (사용자·비밀번호 비움)"), W / 2, by + 132, m.dim, bw - 40, 1);
+        DrawText(a, a.fInfo, st.client ? T("PC 연결됨") : T("PC 를 기다리는 중…"), bx + 30, by + 176, st.client ? m.on : m.dim);
+        DrawText(a, a.fInfo, Fmt(T("받은 파일 %d개 · 지운 것 %d개"), st.files, st.removed), bx + bw - 30, by + 176, m.text, 0, 2);
         int y = by + 214, from = std::max(0, (int)st.log.size() - 9);
-        for (int i = from; i < (int)st.log.size(); i++, y += 30) DrawText(a, a.fDesc, st.log[i], bx + 30, y, kGrey, bw - 60);
+        for (int i = from; i < (int)st.log.size(); i++, y += 30) DrawText(a, a.fDesc, st.log[i], bx + 30, y, m.dim, bw - 60);
     }
-    DrawText(a, a.fInfo, PadHint(T("[B] 닫기 (받은 테마를 다시 읽음) · 이 화면이 열린 동안만 FTP 가 열립니다")), W / 2, by + bh - 40, kGrey, bw - 40, 1);
+    DrawText(a, a.fInfo, PadHint(T("[B] 닫기 (받은 테마를 다시 읽음) · 이 화면이 열린 동안만 FTP 가 열립니다")), W / 2, by + bh - 40, m.dim, bw - 40, 1);
 }
 
 // 종료 확인
 static void RenderExitAsk(App &a) {
-    Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-    Fill(a, 340, 270, 600, 160, {28, 28, 40, 245});
-    DrawText(a, a.fBig, T("런처를 종료합니다"), W / 2, 300, kWhite, 560, 1);
-    DrawText(a, a.fInfo, PadHint(T("[A] 종료   [B] 돌아가기")), W / 2, 372, kGrey, 560, 1);
+    MenuStyle m = Menu();
+    MenuPanel(a, m, 340, 270, 600, 160);
+    DrawText(a, a.fBig, T("런처를 종료합니다"), W / 2, 300, m.text, 560, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 종료   [B] 돌아가기")), W / 2, 372, m.dim, 560, 1);
+}
+
+// 업데이트 창: 앱이 apk 를 받아 설치하지 않는다 (다른 앱 설치 권한 문제) → 릴리스 페이지를 알려 주고 브라우저로 연다
+static void RenderUpdateLink(App &a) {
+    MenuStyle m = Menu();
+    int bw = 960, bh = 350, bx = (W - bw) / 2, by = (H - bh) / 2;
+    MenuPanel(a, m, bx, by, bw, bh);
+    bool newer = gUpdateFound && !gUpdate.version.empty();
+    std::string title = newer ? Fmt(T("새 버전 v%s 이 있습니다"), gUpdate.version.c_str())
+                      : !a.updErr.empty() ? std::string(T("업데이트 확인 실패"))
+                                          : Fmt(T("최신 버전입니다 (v%s)"), CurrentVersion());
+    DrawText(a, a.fBig, title, W / 2, by + 18, m.title, bw - 40, 1);
+    DrawText(a, a.fInfo, !a.updErr.empty() ? a.updErr : Fmt(T("지금 버전: v%s"), CurrentVersion()), W / 2, by + 70, m.dim, bw - 60, 1, 0, 0,
+             kScrollMsg);
+    DrawText(a, a.fInfo, T("내려받는 곳 (브라우저 주소)"), W / 2, by + 112, m.dim, bw - 60, 1);
+    std::string url = ReleasePageUrl(newer ? gUpdate.version : std::string());
+    DrawText(a, a.fList, url, W / 2, by + 146, m.text, bw - 60, 1, 0, 0, kScrollMsg);
+    DrawText(a, a.fInfo, T("페이지의 JoyLauncher.apk 를 받아 직접 설치하세요"), W / 2, by + 196, m.text, bw - 60, 1, 0, 0, kScrollMsg);
+    DrawText(a, a.fInfo, T("덮어 설치하면 /JoyLauncher 의 설정·테마는 그대로입니다"), W / 2, by + 228, m.text, bw - 60, 1, 0, 0, kScrollMsg);
+    DrawText(a, a.fInfo, T("처음이면 브라우저(또는 파일 앱)에 '출처를 알 수 없는 앱 설치' 허용이 필요할 수 있습니다"), W / 2, by + 266, m.dim, bw - 60, 1, 0, 0,
+             kScrollMsg);
+    DrawText(a, a.fInfo, PadHint(T("[A] 브라우저로 열기   [B] 닫기")), W / 2, by + bh - 44, m.dim, bw - 40, 1);
 }
 
 static void Render(App &a);
@@ -3016,10 +3128,11 @@ static void Render(App &a) {
     if (a.appPick) RenderAppPick(a);
     if (a.emuPick) RenderEmuPick(a);
     if (a.exitAsk) RenderExitAsk(a);
+    if (a.updLink) RenderUpdateLink(a);
     if (a.ftpOpen) RenderFtp(a);
     if (a.messageModal) {
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-        Fill(a, 240, 280, 800, 140, a.messageColor);
+        NoticeBox(a, Menu(), 240, 280, 800, 140, a.messageColor);
         DrawText(a, a.fList, a.message, W / 2, 310, kWhite, 760, 1, 0, 0, kScrollMsg);
         DrawText(a, a.fInfo, PadHint(T("[B] 닫기")), W / 2, 370, kWhite, 0, 1);
     } else if (!a.message.empty() && SDL_GetTicks() < a.messageUntil) {
@@ -3029,7 +3142,7 @@ static void Render(App &a) {
         for (std::string l; std::getline(ss, l, '\n');) lines.push_back(l);
         int n = std::max(1, (int)lines.size()), lh = 40;
         int boxH = 50 + n * lh, top = 345 - boxH / 2;
-        Fill(a, 240, top, 800, boxH, a.messageColor);
+        NoticeBox(a, Menu(), 240, top, 800, boxH, a.messageColor);
         for (int i = 0; i < n; i++)
             DrawText(a, a.fList, lines[i], W / 2, top + 30 + i * lh - (n > 1 ? 5 : 0), kWhite, 760, 1, 0, 0, kScrollMsg);
     }
@@ -3527,6 +3640,7 @@ int main(int argc, char **argv) {
     bool wantBgm = false;       // 시험: BGM · 소리 설정 창
     bool wantEmuPick = false;   // 시험: 에뮬레이터 선택 창
     bool wantFtp = false;
+    bool wantUpdLink = false, wantUpdErr = false;
     bool dumpLaunch = false;    // 시험: 모든 게임의 실행 인자를 적고 끝
     bool homeArg = false;
 #ifdef __ANDROID__
@@ -3579,6 +3693,12 @@ int main(int argc, char **argv) {
         else if (s == "--apppick") wantAppPick = true;
         else if (s == "--bgm") wantBgm = true;
         else if (s == "--emupick") wantEmuPick = true;
+        else if (s == "--updlink" && i + 1 < argc) {  // 시험: 업데이트 창 (버전 "-" = 최신, "!" = 확인 실패)
+            std::string v = argv[++i];
+            wantUpdLink = true;
+            if (v == "!") wantUpdErr = true;
+            else if (v != "-") { gUpdate.version = v; gUpdateFound = true; }
+        }
         else if (s == "--dump-launch") dumpLaunch = true;
     }
 #endif
@@ -3644,6 +3764,7 @@ int main(int argc, char **argv) {
     }
     ApplyVideo();
     if (!gShotMode && !gDemo && gAutoUpdate == "on" && UpdaterEnabled()) UpdateCheckStart();
+    remove((plat::PrivateDir() + "/JoyLauncher-update.apk").c_str());  // 1.2.0 까지 앱이 받아 두던 업데이트 apk
     if (!gShotMode) ImgLoaderStart();
     // 이전에 중단된 임시 파일 정리
     if (DIR *d = opendir((gHome + "/cache").c_str())) {
@@ -3821,6 +3942,11 @@ int main(int argc, char **argv) {
         if (wantSel >= 0 && a.appPick) a.appSel = std::min(wantSel, (int)a.appList.size() - 1);
     }
     if (wantEmuPick) openEmuPick();
+    if (wantUpdLink) {
+        BuildMenu();
+        a.updLink = true;
+        if (wantUpdErr) a.updErr = "timeout";
+    }
     if (wantBgm) {
         BuildMenu();
         a.bgmPick = true;
@@ -3904,8 +4030,9 @@ int main(int argc, char **argv) {
     // 화면 가운데 상자에 한 줄 표시 (오래 걸리는 작업 전)
     auto showBusy = [&](const std::string &text) {
         Render(a);
-        Fill(a, 240, 300, 800, 90, {28, 28, 40, 245});
-        DrawText(a, a.fList, text, W / 2, 330, kWhite, 760, 1, 0, 0, kScrollMsg);
+        MenuStyle m = Menu();
+        MenuPanel(a, m, 240, 300, 800, 90, 0);
+        DrawText(a, a.fList, text, W / 2, 330, m.text, 760, 1, 0, 0, kScrollMsg);
         SDL_RenderPresent(a.r);
     };
     auto modal = [&](const std::string &text, bool ok) {
@@ -3920,47 +4047,32 @@ int main(int argc, char **argv) {
         if (SDL_GetTicks() - lastDraw >= 100 || part >= 1.0) {
             lastDraw = SDL_GetTicks();
             Render(a);
-            Fill(a, 240, 280, 800, 150, {28, 28, 40, 245});
-            DrawText(a, a.fList, title, W / 2, 300, kWhite, 760, 1);
-            Fill(a, 280, 350, 720, 14, {60, 60, 80, 255});
-            Fill(a, 280, 350, (int)(720.0 * std::max(0.0, std::min(1.0, part))), 14, kAccent);
-            DrawText(a, a.fInfo, PadHint(T("[B] 취소")), W / 2, 380, kGrey, 760, 1);
+            MenuStyle m = Menu();
+            MenuPanel(a, m, 240, 280, 800, 150, 0);
+            DrawText(a, a.fList, title, W / 2, 300, m.text, 760, 1);
+            ProgressBar(a, m, 280, 350, 720, 14, part);
+            DrawText(a, a.fInfo, PadHint(T("[B] 취소")), W / 2, 380, m.dim, 760, 1);
             SDL_RenderPresent(a.r);
         }
         return !cancel;
     };
-    // 옵션 창의 "업데이트": 확인 → (새 버전) A 한 번 더 → 내려받아 설치 화면 열기
-    auto runUpdate = [&](int idx) {
+    // 옵션 창의 "업데이트": 확인 → 결과와 릴리스 페이지 주소를 보이는 창 (설치는 사용자가 브라우저로 받아 직접)
+    auto runUpdate = [&](int) {
+        a.updErr.clear();
         if (!gUpdateFound) {
             showBusy(T("업데이트 확인 중..."));
             UpdateCheckStop();
             UpdateInfo info;
             std::string err;
-            if (!FetchLatestRelease(info, err)) { a.optPick = false; modal(T("업데이트 확인 실패: ") + err, false); return; }
-            if (CompareVersions(info.version, CurrentVersion()) <= 0) {
-                a.optPick = false;
-                modal(Fmt(T("최신 버전입니다 (v%s)"), CurrentVersion()), true);
-                return;
+            if (!FetchLatestRelease(info, err)) a.updErr = err;
+            else if (CompareVersions(info.version, CurrentVersion()) > 0) {
+                gUpdate = info;
+                gUpdateFound = true;
+                BuildMenu();
             }
-            gUpdate = info;
-            gUpdateFound = true;
-            BuildMenu();
-        } else if (a.confirmIdx == idx && SDL_GetTicks() <= a.confirmUntil) {
-            a.confirmIdx = -1;
-            a.optPick = false;
-            UpdateCheckStop();
-            auto progress = [&](long long got, long long total) {
-                return drawProgress(Fmt(T("v%s 내려받는 중  %.1f / %.1f MB"), gUpdate.version.c_str(), got / 1048576.0, total / 1048576.0),
-                                    total > 0 ? (double)got / total : 0.0);
-            };
-            std::string err;
-            if (!DownloadAndInstall(gUpdate, err, progress)) { modal(T("업데이트 실패: ") + err, false); return; }
-            modal(Fmt(T("v%s 설치 화면을 열었습니다. 설치를 마치면 런처가 다시 시작됩니다"), gUpdate.version.c_str()), true);
-            return;
         }
-        a.confirmIdx = idx;
-        a.confirmUntil = SDL_GetTicks() + 5000;
-        Notice(a, PadHint(Fmt(T("새 버전 v%s: [A] 를 한 번 더 누르면 내려받아 설치합니다"), gUpdate.version.c_str())), kMsgBlue, 5000);
+        a.optPick = false;
+        a.updLink = true;
     };
     // 테마 선택 창의 "기본 테마 n종 내려받기": 최신 릴리스에서 팩마다 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기
     auto runThemeDownload = [&]() {
@@ -4115,6 +4227,14 @@ int main(int argc, char **argv) {
             if (b == 0 || b == 1) a.exitAsk = false;
             return;
         }
+        if (a.updLink) {  // A: 브라우저로 릴리스 페이지, B: 닫기
+            if (b == 0) {
+                std::string url = ReleasePageUrl(gUpdateFound ? gUpdate.version : std::string());
+                if (gDemo || SDL_OpenURL(url.c_str()) != 0) Notice(a, T("브라우저를 열지 못했습니다. 주소를 직접 입력하세요"), kMsgRed, 4500);
+            }
+            if (b == 0 || b == 1) a.updLink = false;
+            return;
+        }
         if (a.appPick) {
             int n = (int)a.appList.size();
             if (b == 13) a.appSel = (a.appSel + n - 1) % n;
@@ -4229,7 +4349,6 @@ int main(int argc, char **argv) {
         if (b == 3) {  // Y: 옵션
             a.optPick = true;
             a.optSel = 0;
-            a.confirmIdx = -1;
             return;
         }
         if (b == 2) {  // X: BGM · 소리 설정 (스위치판의 홈브루 메뉴 자리. 앱 목록은 옵션 창에서)
@@ -4318,7 +4437,7 @@ int main(int argc, char **argv) {
                     gUpdate = info;
                     gUpdateFound = true;
                     BuildMenu();
-                    if (!a.messageModal) Notice(a, PadHint(Fmt(T("새 버전 v%s 이 있습니다  ·  [Y] 옵션에서 설치"), info.version.c_str())), kMsgBlue, 5000);
+                    if (!a.messageModal) Notice(a, PadHint(Fmt(T("새 버전 v%s 이 있습니다  ·  [Y] 옵션 → 새 버전 받기"), info.version.c_str())), kMsgBlue, 5000);
                 }
             }
         }
@@ -4465,7 +4584,7 @@ int main(int argc, char **argv) {
         // 물러나는 프레임이나 게임을 막 실행한 뒤에 다시 시작하면 다른 앱 뒤에서 소리가 나므로 그때도 멈춘 채로 둔다
         bool videoHold = inBackground || (gVideoHoldUntil && (Sint32)(gVideoHoldUntil - SDL_GetTicks()) > 0);
         VideoEndFrame(SDL_GetTicks() - a.selChanged, !videoHold && !(a.optPick || a.bgmPick || a.themePick || a.appPick || a.emuPick ||
-                                                                     a.exitAsk || a.ftpOpen || a.messageModal));
+                                                                     a.exitAsk || a.updLink || a.ftpOpen || a.messageModal));
         if (overlayOn) OverlayDraw(a.r, gPadStartSelect);
         SDL_RenderPresent(a.r);
     }

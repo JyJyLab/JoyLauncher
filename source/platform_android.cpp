@@ -189,7 +189,6 @@ void Init() {
         {"saveAppIcon", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Z"},
         {"startAm", "([Ljava/lang/String;)Ljava/lang/String;"},
         {"startApp", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"},
-        {"installApk", "(Ljava/lang/String;)Ljava/lang/String;"},
         {"battery", "()I"},
         {"systemLanguage", "()Ljava/lang/String;"},
         {"decodeImage", "(Ljava/lang/String;I)[I"},
@@ -340,18 +339,6 @@ bool StartApp(const std::string &package, const std::string &activity, std::stri
     jstring r = (jstring)env->CallStaticObjectMethod(gCls, m, p, a);
     env->DeleteLocalRef(p);
     env->DeleteLocalRef(a);
-    if (Failed(env)) { err = "java exception"; return false; }
-    err = Str(env, r);
-    return err.empty();
-}
-
-bool InstallApk(const std::string &apkPath, std::string &err) {
-    JNIEnv *env = Env();
-    jmethodID m = Method(env, "installApk", "(Ljava/lang/String;)Ljava/lang/String;");
-    if (!m) { err = "installApk"; return false; }
-    jstring p = J(env, apkPath);
-    jstring r = (jstring)env->CallStaticObjectMethod(gCls, m, p);
-    env->DeleteLocalRef(p);
     if (Failed(env)) { err = "java exception"; return false; }
     err = Str(env, r);
     return err.empty();

@@ -19,8 +19,6 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- 설치된 에뮬레이터 확인, 앱 목록(앱 즐겨찾기) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-    <!-- 런처 업데이트(apk) 설치 화면 열기 -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="@string/app_name"

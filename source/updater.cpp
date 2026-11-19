@@ -386,30 +386,14 @@ bool FetchLatestRelease(UpdateInfo &info, std::string &err) {
         }
     }
     if (info.url.empty()) { err = Fmt(T("릴리스에 %s 가 없습니다"), kAssetName); return false; }
-    if (info.sha256.empty() && !shaUrl.empty()) {
-        std::string s, e2;
-        if (HttpGet(shaUrl, s, e2)) info.sha256 = s.substr(0, std::min<size_t>(64, s.find_first_of(" \t\r\n")));
-    }
-    for (auto &ch : info.sha256) ch = (char)tolower((unsigned char)ch);
+    (void)shaUrl;  // 앱이 받지 않으므로 검증값은 읽지 않음
+    info.page = ReleasePageUrl(info.version);
     return true;
 }
 
-// apk 를 받아 검증한 뒤 설치 화면을 연다 (설치는 안드로이드가 사용자에게 묻고 진행)
-bool DownloadAndInstall(const UpdateInfo &info, std::string &err, const std::function<bool(long long, long long)> &progress) {
-    Asset a;
-    a.name = kAssetName;
-    a.url = info.url;
-    a.sha256 = info.sha256;
-    a.size = info.size;
-    std::string apk = plat::PrivateDir() + "/JoyLauncher-update.apk";
-    remove(apk.c_str());
-    if (!DownloadVerified(a, apk, err, progress)) return false;
-    std::string e;
-    if (!plat::InstallApk(apk, e)) {
-        err = T("설치 화면을 열지 못했습니다: ") + e;
-        return false;
-    }
-    return true;
+std::string ReleasePageUrl(const std::string &version) {
+    std::string base = std::string("https://github.com/") + kUpdateRepo + "/releases";
+    return version.empty() ? base : base + "/tag/" + kAndroidTag + version;
 }
 
 bool ExtractThemeZip(const std::string &zip, const std::string &prefix, const std::string &dest, int &files, std::string &err) {

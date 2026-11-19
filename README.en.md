@@ -25,7 +25,7 @@ It reads **Pegasus metadata** or **ES-DE game lists** in your ROM folders, shows
 
 ## Install
 1. Download `JoyLauncher.apk` of the **Android release** (tag `android-v…`) from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and install it (Android 7.0 or later, arm64). Releases tagged `v…` are the Switch version
-   - Later versions are installed from "Check for updates" in Options
+   - For later versions, "Check for updates" in Options shows the release page; download the apk there and install it over the old one (settings and themes stay)
 2. On first start it asks for **All files access** → allow it (to read your ROM folders and to use the `/JoyLauncher` folder)
 3. Put ROMs in `ROMs` (or `Roms` / `roms`) on the storage. For other places list them in `/JoyLauncher/roots.txt`, one per line
 4. Install emulators separately (RetroArch, DuckStation, PPSSPP …)

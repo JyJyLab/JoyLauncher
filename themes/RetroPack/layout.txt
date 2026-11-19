@@ -1,0 +1,10 @@
+# 레트로테마 (RetroPack) — 화면 구성은 기본 그대로, 메뉴 창 색만 정함
+[theme]
+# 메뉴 창(옵션·BGM·테마 선택 등) 색 — v1.3 부터 사용, 이전 판은 무시 (설명: docs/테마_레이아웃.md «메뉴 창 꾸미기»)
+color.menu = #14121cf2
+color.menu_border = #7860c8
+color.menu_title = #ffce54
+color.menu_text = #eeecf5
+color.menu_dim = #a5a0b9
+color.menu_select = #3a3062
+color.menu_select_text = #ffffff

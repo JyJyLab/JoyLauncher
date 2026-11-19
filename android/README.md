@@ -119,7 +119,8 @@ scp pc:Claude/joylauncher-android/android/build/smoke.png android/build/   # CT1
   (키·암호 파일은 저장소에 넣지 않는다. 사본은 NAS 의 자격 폴더). 같은 키로 서명해야 깔린 앱 위에 덮어 깔 수 있으므로
   배포용 키를 잃으면 사용자가 앱을 지우고 다시 깔아야 한다. 디버그 키로 깔린 시험판 위에는 배포판을 덮어 깔 수 없다(지우고 설치, `/JoyLauncher` 폴더는 남음).
 - **릴리스**: 스위치판과 같은 저장소(JyJyLab/JoyLauncher)에 태그 `android-v<버전>` 으로, 자산 `JoyLauncher.apk`.
-  런처의 업데이트 확인은 태그가 `android-v` 로 시작하는 가장 새 릴리스를 찾는다 (스위치판 `v<버전>` 릴리스와 섞여 있음).
+  런처의 업데이트 확인은 태그가 `android-v` 로 시작하는 가장 새 릴리스를 찾아 그 릴리스 페이지 주소를 보여 준다 (스위치판 `v<버전>` 릴리스와 섞여 있음).
+  앱이 apk 를 받아 설치하지 않는다 (1.3.0 부터, REQUEST_INSTALL_PACKAGES 권한 삭제) — 사용자가 브라우저로 받아 직접 설치. 그래서 릴리스 자산 이름 `JoyLauncher.apk` 는 그대로 유지.
   이 릴리스는 "Latest" 로 표시하지 않는다 (스위치판 런처가 latest 를 보기 때문). 기본 테마 zip 은 스위치판 릴리스의 것을 함께 쓴다.
 - **기호 정보**: APK 에는 기호를 뗀 사본이 들어간다. 떼지 않은 원본은 `android/build/native-<abi>/lib/` 에 있다
   (`ndk-stack -sym android/build/native-arm64-v8a/lib`).

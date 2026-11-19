@@ -6,6 +6,14 @@ background_color = #ffffff
 color.text = #222222
 color.dim = #777777
 color.navy = #3b4191
+# 메뉴 창(옵션·BGM·테마 선택 등) 색 — v1.3 부터 사용, 이전 판은 무시 (설명: docs/테마_레이아웃.md «메뉴 창 꾸미기»)
+color.menu = #ffffff
+color.menu_border = #3b4191
+color.menu_title = #3b4191
+color.menu_text = #222222
+color.menu_dim = #777777
+color.menu_select = #e4e6f6
+color.menu_select_text = #1d2160
 
 [categories.background]
 visible = off

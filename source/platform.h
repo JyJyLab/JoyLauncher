@@ -48,7 +48,6 @@ bool StartActivity(const std::vector<std::string> &amArgs, std::string &err);
 // 앱 실행 (activity 가 비면 그 앱의 기본 실행 화면)
 bool StartApp(const std::string &package, const std::string &activity, std::string &err);
 // 내려받은 apk 설치 화면 열기 (런처 업데이트)
-bool InstallApk(const std::string &apkPath, std::string &err);
 
 // ---- 기기 상태
 // 전지 잔량 0~100 (-1 = 모름)

@@ -183,11 +183,6 @@ bool StartApp(const std::string &package, const std::string &activity, std::stri
     return StartActivity(a, err);
 }
 
-bool InstallApk(const std::string &apkPath, std::string &) {
-    printf("INSTALL %s\n", apkPath.c_str());
-    return true;
-}
-
 int Battery(bool &charging) {
     std::string b = Env("JOY_BATTERY");
     if (b.empty()) return -1;

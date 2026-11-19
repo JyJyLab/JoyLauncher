@@ -25,7 +25,7 @@
 
 ## 설치
 1. [릴리스](https://github.com/JyJyLab/JoyLauncher/releases) 에서 **안드로이드판**(태그 `android-v…`)의 `JoyLauncher.apk` 를 받아 설치 (안드로이드 7.0 이상, arm64). 스위치판은 태그 `v…` 의 릴리스입니다
-   - 이후 새 버전은 옵션 창의 "업데이트 확인" 으로 받습니다
+   - 이후 새 버전은 옵션 창의 "업데이트 확인" 이 알려 주는 릴리스 페이지에서 apk 를 받아 직접 덮어 설치합니다 (설정·테마 유지)
 2. 처음 실행하면 **모든 파일 접근** 권한을 묻습니다 → 허용 (롬 폴더를 읽고 `/JoyLauncher` 폴더를 쓰기 위해)
 3. 롬은 저장소의 `ROMs`(또는 `Roms`·`roms`) 폴더에. 다른 곳이면 `/JoyLauncher/roots.txt` 에 한 줄씩 적습니다
 4. 에뮬레이터는 따로 설치합니다 (RetroArch, DuckStation, PPSSPP 등)

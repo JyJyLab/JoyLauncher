@@ -5,7 +5,7 @@ The Android version of Joy Launcher for the Switch. Screens and themes are the s
 ![Categories](images/en_01_categories.png)
 
 ## 1. Install and first start
-1. Download `JoyLauncher.apk` of the Android release (tag `android-v…`) from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and install it (Android 7.0 or later, arm64 devices). New versions come through **Options → Check for updates** (also checked at start; `auto_update=off` in `settings.txt` turns that off).
+1. Download `JoyLauncher.apk` of the Android release (tag `android-v…`) from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and install it (Android 7.0 or later, arm64 devices). For new versions, **Options → Check for updates** shows the release page: download `JoyLauncher.apk` there and install it over the old one (**[A] Open in browser**; settings and themes stay). The app does not download or install the apk itself (install-permission issues). It also checks at start (`auto_update=off` in `settings.txt` turns that off).
 2. On first start a screen explains that **access to all files on the storage** is required. Press any button or the screen to open the settings → **allow Joy Launcher** → go back and it continues.
    - It is needed to read your ROM folders and to keep settings and themes in the `JoyLauncher` folder at the root of the storage.
    - On Android 10 or earlier the storage permission dialog is shown instead.

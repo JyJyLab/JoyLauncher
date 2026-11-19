@@ -475,18 +475,6 @@ public class JoyActivity extends SDLActivity {
         }
     }
 
-    public static String installApk(String path) {
-        try {
-            Intent i = new Intent(Intent.ACTION_VIEW);
-            i.setDataAndType(JoyFileProvider.uriFor(new File(path)), "application/vnd.android.package-archive");
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            self.startActivity(i);
-            return null;
-        } catch (Throwable t) {
-            return t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
-        }
-    }
-
     // ------------------------------------------------------------ 기기 상태
     // 잔량(0~100) + 충전 중이면 1000. 모르면 -1
     public static int battery() {
