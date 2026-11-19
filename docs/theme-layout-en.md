@@ -109,7 +109,7 @@ color.mycolor = #ff8800         # your own color name (use: color = mycolor)
 ```
 
 - Text containing characters your font does not have (e.g. Korean in a Latin-only font) is drawn with the **built-in font** (NanumGothic).
-- The options window and message boxes keep their standard look.
+- From v1.3.0 the options window, theme picker, message boxes and other menus follow the theme colors (rounded corners, matching panel / border / text) — see “Menu windows” in section 11.
 
 ### Colors
 
@@ -428,5 +428,7 @@ Button icons (v1.2.0+): `[A]` `[B]` `[X]` `[Y]` `[L]` `[R]` `[ZL]` `[ZR]` `[+]` 
 - **Conditions**: `visible_if = <placeholder>` / `hidden_if` (empty or `0` = false).
 - **Placeholders**: `{name}` `{short}` `{system}` `{num}` `{num_desc}` `{fav}` `{playcount}` `{lastplayed}` `{selected}` `{file}` `{date}`. Templates: `{a,b,c| · }` joins non-empty values; `{key?yes:no}`; `{key=value?yes:no}`.
 - **`[strings]` / `[strings.en]`**: replace UI text. Keys `hint.categories`, `hint.categories_grid`, `hint.games`, `hint.games_grid`, or any original Korean UI string.
+- **X button name per platform (v1.3.0+)**: themes are shared by the Switch and Android versions, so the name right after `[X]` (up to the next `[button]` or two spaces) is adjusted: Android (X = BGM · sound settings) always shows `BGM`; Switch (X = homebrew menu) keeps the theme's own word and only replaces Android names (BGM / sound / music) with `Homebrew`. Applies to hints and theme text elements, not to placeholder values such as game names. The Switch default hint is now `[X] Homebrew` (`[strings]` keyed by the old `[X] 홈브루 메뉴` text still work).
+- **Menu windows (v1.3.0+)**: options, BGM · sound, theme picker, favorites pickers, emulator picker, FTP, exit / progress / message boxes are drawn with rounded corners in theme colors. `[theme]` keys: `color.menu` (panel), `color.menu_border`, `color.menu_title`, `color.menu_text`, `color.menu_dim`, `color.menu_select` (selection bar), `color.menu_select_text`, `menu_radius` (0–40, default 14), `menu_border_width` (0–8, default 2). Colors left out are derived from the theme: panel = `background_color` → `bar` → dark default; border = same hue, clearly lighter/darker (≥ 2.2:1); text = `text` (falls back to white/black below 4.5:1); title = complementary hue of the panel (gray panel → `accent` → yellow) adjusted to 4.5:1; selection = between panel and border. Error (red) / done (green) boxes keep their colors and only get the corners and border. With no theme the old colors stay, only the corners are rounded. `color.menu…` is ignored silently by 1.2.0 and older; `menu_radius` / `menu_border_width` make older versions report an unknown key, so add `requires = 1.3.0` when you use them (the theme builder does this on export).
 - **Built-in system names**: folder/category names (FC, SFC, MD, PS1, 액션-아케이드 …) map to ES-DE names (nes, snes, megadrive, psx, arcade_action …), so ES-DE theme art works without theme.txt lines.
 - **Theme builder**: see 테마_빌더.md (Korean).

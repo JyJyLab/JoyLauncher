@@ -1891,13 +1891,43 @@ static void ThemePanel() {
     if (IniSec *ts = B.doc.Find("theme"))
         for (const auto &kv : std::vector<IniKV>(ts->kv))
             if (!kv.raw && kv.key.rfind("color.", 0) == 0 && kv.key != "color.text" && kv.key != "color.dim" && kv.key != "color.accent" &&
-                kv.key != "color.selection" && kv.key != "color.bar")
+                kv.key != "color.selection" && kv.key != "color.bar" && kv.key.rfind("color.menu", 0) != 0)
                 colorRow(kv.key, kv.key.substr(6).c_str(), "#ffffff");
     static std::string newColor = "navy";
     ImGui::SetNextItemWidth(160);
     ImGui::InputText("##nc", &newColor);
     ImGui::SameLine();
     if (ImGui::Button("색 이름 추가") && !newColor.empty()) { PushUndo(); B.doc.Set("theme", "color." + Lower(newColor), "#3b4191"); Changed(); }
+    ImGui::SeparatorText("메뉴 창 (옵션·BGM·테마 선택 등, v1.3)");
+    ImGui::TextDisabled("비워 두면 테마 색에서 자동 (비슷한 색 테두리·대비되는 글자·보색 제목). 데모 창에서 Y 로 확인");
+    colorRow("color.menu", "menu  (판)", "#1e1e28f0");
+    colorRow("color.menu_border", "menu_border  (테두리)", "#566eb2");
+    colorRow("color.menu_title", "menu_title  (제목)", "#ffc440");
+    colorRow("color.menu_text", "menu_text  (글자)", "#ebebf0");
+    colorRow("color.menu_dim", "menu_dim  (흐린 글자)", "#9696a5");
+    colorRow("color.menu_select", "menu_select  (선택 막대)", "#46466e");
+    colorRow("color.menu_select_text", "menu_select_text  (선택 글자)", "#ffffff");
+    auto pxRow = [&](const char *key, const char *lbl, int def, int mx) {
+        std::string v = B.doc.Get("theme", key);
+        int x = v.empty() ? def : atoi(v.c_str());
+        ImGui::PushID(key);
+        ImGui::SetNextItemWidth(300);
+        if (ImGui::SliderInt(lbl, &x, 0, mx, "%d px")) {
+            static Uint32 at = 0;
+            if (SDL_GetTicks() - at > 800) PushUndo();
+            at = SDL_GetTicks();
+            B.doc.Set("theme", key, std::to_string(x));
+            Changed();
+        }
+        if (B.doc.Has("theme", key)) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("x")) { PushUndo(); B.doc.Erase("theme", key); Changed(); }
+        }
+        ImGui::PopID();
+    };
+    pxRow("menu_radius", "모서리 반지름 (기본 14)", 14, 40);
+    pxRow("menu_border_width", "테두리 굵기 (기본 2)", 2, 8);
+    ImGui::TextDisabled("반지름·굵기를 정하면 내보낼 때 requires = 1.3.0 (이전 판 런처는 모르는 키로 알림)");
     ImGui::SeparatorText("화면 효과 (움직임·전환)");
     auto msRow = [&](const char *key, const char *lbl, int def) {
         std::string v = B.doc.Get("theme", key);
@@ -2036,6 +2066,15 @@ static void ExportTheme(const std::string &target, bool zip) {
     if (UsesExtensions() && !B.doc.Has("theme", "requires")) {
         B.doc.Set("theme", "requires", "1.1.0");
         Changed();
+    }
+    // v1.3 키 (메뉴 창 모서리·테두리 굵기): 이전 판 런처는 모르는 키로 알림 → requires 를 1.3.0 이상으로
+    if (B.doc.Has("theme", "menu_radius") || B.doc.Has("theme", "menu_border_width")) {
+        int v[3] = {0, 0, 0};
+        sscanf(B.doc.Get("theme", "requires").c_str(), "%d.%d.%d", &v[0], &v[1], &v[2]);
+        if (v[0] < 1 || (v[0] == 1 && v[1] < 3)) {
+            B.doc.Set("theme", "requires", "1.3.0");
+            Changed();
+        }
     }
     SaveFiles();
     std::string err;

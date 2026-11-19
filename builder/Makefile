@@ -3,7 +3,7 @@ APP_VERSION := $(shell sed -n 's/^APP_VERSION[[:space:]]*:=[[:space:]]*//p' ../M
 IMGUI = third_party/imgui
 SRC_APP = main.cpp stubs.cpp
 SRC_JOY = ../source/main.cpp ../source/layout.cpp ../source/pegasus.cpp ../source/hbmenu.cpp ../source/i18n.cpp \
-          ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp ../source/ftpserver.cpp
+          ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp ../source/ftpserver.cpp ../source/uistyle.cpp
 SRC_IMGUI = $(IMGUI)/imgui.cpp $(IMGUI)/imgui_draw.cpp $(IMGUI)/imgui_tables.cpp $(IMGUI)/imgui_widgets.cpp \
             $(IMGUI)/backends/imgui_impl_sdl2.cpp $(IMGUI)/backends/imgui_impl_sdlrenderer2.cpp $(IMGUI)/misc/cpp/imgui_stdlib.cpp
 ifdef WIN
@@ -47,7 +47,7 @@ $(foreach s,$(SRCS),$(eval $(call RULE,$(s))))
 # 데모 창: 런처 그대로 (영상·네트워크·BGM 은 빈 함수), 키보드로 조작
 DEMO_OUT = $(if $(WIN),build-win/JoyDemo.exe,build/joydemo)
 DEMO_SRCS = stubs.cpp ../source/main.cpp ../source/layout.cpp ../source/pegasus.cpp ../source/hbmenu.cpp ../source/i18n.cpp \
-            ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp ../source/ftpserver.cpp
+            ../source/installed.cpp ../source/debuglog.cpp ../source/esde.cpp ../source/ftpserver.cpp ../source/uistyle.cpp
 DEMO_FLAGS = -O2 -std=gnu++17 -DAPP_VERSION_STR=\"$(APP_VERSION)\" $(CXXFLAGS_SDL)
 demo: $(DEMO_OUT)
 $(DEMO_OUT): $(DEMO_SRCS) $(wildcard ../source/*.h) $(RES) ../Makefile

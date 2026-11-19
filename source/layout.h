@@ -102,6 +102,7 @@ struct Layout {
     std::map<std::string, std::string> strings, stringsEn;  // [strings] / [strings.en]: 화면 문구 바꾸기 (원래 한국어 문구 또는 hint.* 키 -> 바꿀 말)
     std::string minVersion;
     // 화면 효과 (v1.1, 0 = 없음): 선택·스크롤 움직임, 배경 바뀜, 화면 전환
+    int menuRadius = -1, menuBorderW = -1;  // [theme] menu_radius·menu_border_width: 메뉴 창 모서리·테두리 (-1 = 기본, v1.3)
     bool buttonIcons = true;  // [theme] button_icons: 도움말의 [A]·[B]… 를 버튼 그림으로 (off = 글자 그대로)
     int animMs = 0, bgFadeMs = 0, transition = 0, transitionMs = 220;  // transition: 0 none / 1 fade / 2 slide                 // [theme] requires = 최소 Joy Launcher 버전
     bool custom = false;                   // 테마의 layout.txt 를 읽었는지

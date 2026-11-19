@@ -566,6 +566,11 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
                 if (!ParseBool(val, b)) problem("button_icons: on / off");
                 else l.buttonIcons = b;
             }
+            else if (key == "menu_radius" || key == "menu_border_width") {
+                int v, mx = key == "menu_radius" ? 40 : 8;
+                if (!ParseInt(val, v) || v < 0 || v > mx) problem(key + ": 0~" + std::to_string(mx));
+                else (key == "menu_radius" ? l.menuRadius : l.menuBorderW) = v;
+            }
             else if (key == "background_color") {
                 if (ParseColor(val, l.clear) && l.clear.name.empty()) l.hasClear = true;
                 else problem("background_color: #rrggbb");

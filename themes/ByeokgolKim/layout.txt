@@ -5,6 +5,14 @@ font = fonts/regular.ttf
 color.text = #ffffff
 color.dim = #d0d0d8
 color.accent = #ffffff
+# 메뉴 창(옵션·BGM·테마 선택 등) 색 — v1.3 부터 사용, 이전 판은 무시 (설명: docs/테마_레이아웃.md «메뉴 창 꾸미기»)
+color.menu = #26262cf2
+color.menu_border = #d2d2d8
+color.menu_title = #ffffff
+color.menu_text = #ececf0
+color.menu_dim = #a8a8b0
+color.menu_select = #54545e
+color.menu_select_text = #ffffff
 
 # ---------------------------------------------------------------- 카테고리 화면: 기종 카드 격자
 [categories.background]

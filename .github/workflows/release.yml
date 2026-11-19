@@ -43,6 +43,8 @@ jobs:
       - name: Release notes
         run: |
           if [ -f "docs/releases/v${VER}.md" ]; then cp "docs/releases/v${VER}.md" notes.md; else echo "Joy Launcher v${VER}" > notes.md; fi
+          # 후원 안내는 모든 릴리스 페이지 끝에 붙인다 (docs/releases/_sponsor.md, 안드로이드 릴리스도 같은 파일)
+          if [ -f docs/releases/_sponsor.md ]; then printf '\n' >> notes.md; cat docs/releases/_sponsor.md >> notes.md; fi
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:

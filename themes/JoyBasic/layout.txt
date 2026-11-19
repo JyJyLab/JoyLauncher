@@ -1,0 +1,10 @@
+# 기본테마 (JoyBasic) — 화면 구성은 기본 그대로, 메뉴 창 색만 정함
+[theme]
+# 메뉴 창(옵션·BGM·테마 선택 등) 색 — v1.3 부터 사용, 이전 판은 무시 (설명: docs/테마_레이아웃.md «메뉴 창 꾸미기»)
+color.menu = #161a2ef2
+color.menu_border = #566eb2
+color.menu_title = #ffc440
+color.menu_text = #eceef5
+color.menu_dim = #9ea4be
+color.menu_select = #303a66
+color.menu_select_text = #ffffff
