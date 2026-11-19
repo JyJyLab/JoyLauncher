@@ -50,6 +50,14 @@ Adding your own theme: [docs/theme-guide-en.md](docs/theme-guide-en.md) · Chang
 |---|---|
 | **월스트리트킴** (Wall Street Kim, Retro Game Gallery) | 30% |
 
+## Sponsor
+
+If Joy Launcher helps you, you can support it — donations go to test devices and development time.
+
+- [Buy Me a Coffee](https://buymeacoffee.com/jyjy) — card payment, no account needed
+- [GitHub Sponsors](https://github.com/sponsors/Angler-JJ-Lee)
+- Korea: [ctee](https://ctee.kr/place/jayjay)
+
 ## License
 - Joy Launcher: GPL-3.0 (`LICENSE`) — it statically links FFmpeg built with GPL options
 - NanumGothic font: SIL Open Font License 1.1 (`OFL.txt`)
