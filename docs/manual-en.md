@@ -233,7 +233,7 @@ Send themes made on a PC over Wi-Fi without taking out the SD card.
 
 | Screen | Controls |
 |---|---|
-| Categories | ▲▼ select / A open / B exit (confirm: A exit, B back) / X homebrew menu / Y options / + exit at once |
+| Categories | ▲▼ select / A open / B exit (confirm: A exit, B back) / X homebrew menu (can be turned off in Options) / Y options / + exit at once |
 | Game list | ▲▼ move / ◀▶ page / L·R previous·next category / **ZL·ZR view tabs** / A play / B back / **− add/remove favorite** / X homebrew menu / Y options / + exit |
 
 The left and right sticks work like the D-pad, and holding a direction repeats.
@@ -261,6 +261,7 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 | Theme | section 8 |
 | Receive themes from PC (FTP) | section 8 |
 | Screen effects | on / off: theme motion (smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade) |
+| X button (open homebrew menu) | on / off: when off, X does nothing and `[X]` disappears from the hint line (no leaving the launcher by accident). X (delete) in the theme picker still works |
 | BGM / sound | A opens the sound window: Common BGM, Theme BGM or Silent, BGM volume and order; see "Background music" (green while a BGM choice is active) |
 | Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
 | Homebrew Favorites: add / remove | see "Homebrew Favorites" below (green when some nro are added) |
@@ -317,6 +318,7 @@ The interface is available in Korean and English. **Auto** (default) follows the
 | `language` | `auto` / `ko` / `en` |
 | `sound`, `bgm_volume`, `bgm_shuffle` | `common`/`theme`/`off` (Common BGM / Theme BGM / silent), `0`-`100`, `on`/`off` |
 | `effects` | `on` / `off` (screen effects) |
+| `x_button` | `on` / `off` (X opens the homebrew menu) |
 
 Other files in `/JoyLauncher/`: `homebrew_favorites.txt` holds the nro added to "Homebrew Favorites" (section 9), `favorites.txt` the favorite games, `playcount.txt` play counts per game, `categories.txt` and `categories/` the custom categories and their pictures (section 8), `debug_log.txt` the diagnostic log (start, launch, exit, crash; moved to `debug_log_old.txt` above 512 KB, with `debug_state.txt` as its helper; section 11).
 

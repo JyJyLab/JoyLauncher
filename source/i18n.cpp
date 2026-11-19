@@ -62,6 +62,8 @@ const char *const kTable[][2] = {
     {"이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)", "This theme needs Joy Launcher v%s or later (now v%s)"},
     {"즐겨찾기", "Favorites"},
     {"홈브루", "Homebrew"},
+    {"X 버튼 (홈브루 메뉴 열기): %s", "X button (open homebrew menu): %s"},
+    {"# X 버튼: on = 홈브루 메뉴 열기, off = 끔 (잘못 눌러 런처를 벗어나지 않게)", "# X button: on = open the homebrew menu, off = disabled (no leaving the launcher by accident)"},
     {"홈브루 즐겨찾기", "Homebrew Favorites"},
     {"홈브루 즐겨찾기 추가·빼기 (%d개)", "Homebrew Favorites: add / remove (%d)"},
     {"[A] 또는 [-] 넣기 / 빼기   [B] 닫기   (%d개)", "[A] or [-] Add / remove   [B] Close   (%d)"},

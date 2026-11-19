@@ -67,7 +67,7 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, XButton, InstallHb, RestoreHb, Exit };
 struct MenuItem {
     std::string label;
     std::string nro;
@@ -99,6 +99,7 @@ static bool gBgmLive = false;               // 시작 준비가 끝남 (그 전�
 static int gBgmVolume = 60;                 // 0~100
 static bool gBgmShuffle = false;
 static bool gEffects = true;      // 설정: 화면 효과 (effects=on/off)
+static bool gXButton = true;      // 설정: X 버튼으로 홈브루 메뉴 열기 (x_button=on/off). 끄면 X 는 아무것도 안 하고 도움말에서 빠짐
 static bool gAnimAllowed = true;  // 데스크톱 스냅샷에서는 끔
 static bool AnimOn() { return gEffects && gAnimAllowed; }
 static float Ease(float t) {
@@ -250,6 +251,7 @@ static void BuildMenu() {
     if (bgmMode && BgmCountIn(BgmDir(gSound)) > 0) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
     gMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), gEffects ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::Effects, gEffects});
+    gMenu.push_back({Fmt(T("X 버튼 (홈브루 메뉴 열기): %s"), gXButton ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::XButton, gXButton});
     gMenu.push_back({Fmt(T("홈브루 즐겨찾기 추가·빼기 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
     if (hbReplaced) {
     } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
@@ -863,6 +865,8 @@ static void SaveSettings() {
     o << "bgm_shuffle=" << (gBgmShuffle ? "on" : "off") << "\n";
     o << T("# 화면 효과: on = 테마의 움직임·화면 전환 사용, off = 끔") << "\n";
     o << "effects=" << (gEffects ? "on" : "off") << "\n";
+    o << T("# X 버튼: on = 홈브루 메뉴 열기, off = 끔 (잘못 눌러 런처를 벗어나지 않게)") << "\n";
+    o << "x_button=" << (gXButton ? "on" : "off") << "\n";
 }
 
 static void LoadSettings() {
@@ -889,6 +893,7 @@ static void LoadSettings() {
         if (line.rfind("bgm_volume=", 0) == 0) gBgmVolume = std::max(0, std::min(100, atoi(line.c_str() + 11)));
         if (line.rfind("bgm_shuffle=", 0) == 0) gBgmShuffle = line.substr(12) == "on";
         if (line.rfind("effects=", 0) == 0) gEffects = line.substr(8) != "off";
+        if (line.rfind("x_button=", 0) == 0) gXButton = line.substr(9) != "off";
     }
     if (!haveSound && oldBgm >= 0) gSound = oldBgm == 1 ? "common" : "off";  // 예전 설정: BGM 을 켜 두었으면 공통 BGM
     ApplyLanguage();
@@ -1589,8 +1594,24 @@ static void ProgressBar(App &a, const MenuStyle &m, int x, int y, int w, int h, 
     int fw = (int)(w * std::max(0.0, std::min(1.0, frac)));
     if (fw > 0) DrawRound(a, x, y, fw, h, h / 2, 0, m.title, m.title);
 }
-// 도움말의 "[X] <이름>": 안드로이드판용 테마의 "[X] BGM" 등은 이 판의 X 기능(홈브루)으로
-static std::string FixX(const std::string &s) { return FixXLabel(s, T("홈브루"), false); }
+// "[X] <이름>" 한 덩어리를 뺀다 (X 버튼을 껐을 때 도움말에서): 뒤의 공백까지, 맨 끝이면 앞의 공백까지
+static std::string StripX(const std::string &s) {
+    std::string out = s;
+    for (size_t p = out.find("[X]"); p != std::string::npos; p = out.find("[X]", p)) {
+        size_t e = p + 3;
+        while (e < out.size() && out[e] == ' ') e++;
+        while (e < out.size() && out[e] != '[' && out[e] != '\n' && !(out[e] == ' ' && e + 1 < out.size() && out[e + 1] == ' ')) e++;
+        while (e < out.size() && out[e] == ' ') e++;  // 뒤 공백
+        size_t b = p;
+        if (e >= out.size() || out[e] == '\n')
+            while (b > 0 && out[b - 1] == ' ') b--;  // 맨 끝: 앞 공백
+        out.erase(b, e - b);
+        p = b;
+    }
+    return out;
+}
+// 도움말의 "[X] <이름>": 안드로이드판용 테마의 "[X] BGM" 등은 이 판의 X 기능(홈브루)으로. X 버튼을 껐으면 빼기
+static std::string FixX(const std::string &s) { return gXButton ? FixXLabel(s, T("홈브루"), false) : StripX(s); }
 
 static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
     int bw, bh;
@@ -2762,7 +2783,7 @@ static void RenderHbPick(App &a) {
 }
 
 static bool Adjustable(MenuAct m) {
-    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
+    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::XButton || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
 }
 
 // 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비
@@ -3767,6 +3788,8 @@ int main(int argc, char **argv) {
             ApplyLanguage();
         } else if (act == MenuAct::Effects) {
             gEffects = !gEffects;
+        } else if (act == MenuAct::XButton) {
+            gXButton = !gXButton;
         } else if (act == MenuAct::SoundCommon || act == MenuAct::SoundTheme || act == MenuAct::SoundOff) {
             // 소리 선택: 셋 중 하나만
             gSound = act == MenuAct::SoundCommon ? "common" : act == MenuAct::SoundTheme ? "theme" : "off";
@@ -3818,7 +3841,7 @@ int main(int argc, char **argv) {
             a.optPick = false;
         } else if (m.act == MenuAct::Update) {
             runUpdate(idx);
-        } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects) {
+        } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects || m.act == MenuAct::XButton) {
             adjust(m.act, 1);
         } else if (m.act == MenuAct::HbFav) {
             a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;
@@ -3980,6 +4003,7 @@ int main(int argc, char **argv) {
             return;
         }
         if (b == 2) {  // X: 홈브루 메뉴 (이전 기본 메뉴 → sphaira → nx-hbmenu → 기타 백업)
+            if (!gXButton) return;  // 옵션에서 끔
             for (const auto &m : gMenu)
                 if (m.hb) {
                     SaveState(a, true);
