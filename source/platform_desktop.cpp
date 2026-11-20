@@ -183,6 +183,21 @@ bool StartApp(const std::string &package, const std::string &activity, std::stri
     return StartActivity(a, err);
 }
 
+// 시험: JOY_PICK_DIR 에 적은 값을 고른 것으로 (없으면 파일 관리자 없음 → 앱 안 찾아보기)
+static bool gPickPending = false;
+bool OpenFolderPicker() {
+    if (Env("JOY_PICK_DIR").empty()) return false;
+    gPickPending = true;
+    return true;
+}
+
+bool FolderPickerResult(std::string &out) {
+    if (!gPickPending) return false;
+    gPickPending = false;
+    out = Env("JOY_PICK_DIR") == "-" ? std::string() : Env("JOY_PICK_DIR");
+    return true;
+}
+
 int Battery(bool &charging) {
     std::string b = Env("JOY_BATTERY");
     if (b.empty()) return -1;

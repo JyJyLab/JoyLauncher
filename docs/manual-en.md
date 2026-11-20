@@ -10,6 +10,12 @@ The Android version of Joy Launcher for the Switch. Screens and themes are the s
    - It is needed to read your ROM folders and to keep settings and themes in the `JoyLauncher` folder at the root of the storage.
    - On Android 10 or earlier the storage permission dialog is shown instead.
 3. The four stock themes are unpacked into `JoyLauncher/themes` on first start.
+4. Then the **ROM folders** window opens.
+   - If ROM folders were found automatically (internal / SD card) they are listed: **A = use these** (saved in `roots.txt`, automatic search stays on) · **B = choose myself**
+   - Choose myself: the Android **file manager (folder picker)** opens. Go into your ROMS folder and tap **Use this folder → Allow**; the place is saved in `roots.txt` and the game list is read at once (the number of games is shown). Choosing yourself **turns the automatic search off so only the chosen folders are used** (turn it back on in Options → ROMs & apps → ROM folders)
+   - With nothing found: A = choose in the file manager, B = later
+   - On Android 11+ the top of a storage, the top of Download and the Android folder cannot be picked (system rule) — pick a folder inside (e.g. `Roms`). Cloud places such as Google Drive cannot be used
+   - Devices where the file manager does not open get the in-app browser instead (pick a folder showing "n system folders (GBA, NDS …)")
 
 ## 2. Folders
 Settings and themes are in **`/JoyLauncher`** at the root of the internal storage (`/storage/emulated/0/JoyLauncher`). Edit them freely with a file manager or from a PC.
@@ -30,18 +36,19 @@ Settings and themes are in **`/JoyLauncher`** at the root of the internal storag
 
 ## 3. ROM folders
 Found automatically:
-- `ROMs` / `Roms` / `roms` and `Emulation/roms` on the internal storage and SD cards
+- `ROMs` / `Roms` / `roms` and `Emulation/roms` at the top of the internal storage and SD cards or one level below (e.g. `/JY_Data/Roms`)
+- a top-level folder holding two or more system folders (`GBA`, `NDS`, `SNES` …), e.g. `/Games/GBA` and `/Games/NDS` → `/Games`
 - the game folders of Pegasus (`pegasus-frontend/game_dirs.txt`)
 - the ROM folder in the ES-DE settings (`ES-DE/settings/es_settings.xml`)
 
-For other places add lines to `/JoyLauncher/roots.txt` (e.g. `/storage/1234-ABCD/Games`). `auto=off` turns the automatic search off.
+For other places choose them in Options → ROMs & apps → **ROM folders** (section 1, step 4) or add lines to `/JoyLauncher/roots.txt` (e.g. `/storage/1234-ABCD/Games`; a single system folder such as `/storage/emulated/0/MyFolder/GBA` works too). `auto=off` turns the automatic search off.
 
 Game lists are read in three ways, mixed per folder:
 1. **Pegasus**: `metadata.pegasus.txt` in the folder
 2. **ES-DE**: `gamelist.xml` in the folder, or `ES-DE/gamelists/<folder>/gamelist.xml` with `ES-DE/downloaded_media`
 3. **No list**: the folder name gives the system; files with that system's extensions are games
 
-After adding or removing ROMs, images or videos use **Options → Refresh game list**.
+After adding or removing ROMs, images or videos use **Options → ROMs & apps → Refresh game list**.
 
 - Box art and screenshots can be png, jpg or **webp** (e.g. `media/<game>/boxFront.webp` of JoiPlay packs for Pegasus). `\n` in descriptions becomes a line break, and Japanese/Chinese characters missing from the launcher font are drawn with the device's CJK font.
 
@@ -49,8 +56,8 @@ After adding or removing ROMs, images or videos use **Options → Refresh game l
 When the selected game has a preview video it starts after a moment in place of the screenshot and loops. Until it appears the screenshot (or the box art) is shown.
 - Where videos are found: Pegasus `assets.video`, `<video>` in `gamelist.xml`, ES-DE `downloaded_media/<system>/videos`, and in the ROM folder `media/<game name>/video.mp4` or `<game name>.mp4` in `videos/`, `snap/`, `media/videos/` (mp4, mkv, webm … whatever the device can play)
 - The video has sound only when "Video sound" is chosen in **BGM / sound (X)**; with a BGM choice it plays silently (chapter 7).
-- The video stops while a window (Options, Apps …) is open and when a game is started.
-- **Options → Preview videos** turns them on and off (`video=on/off` in `settings.txt`).
+- The video stops while a window (Options, Manage App Favorites …) is open and when a game is started.
+- **Options → Theme settings → Preview videos** turns them on and off (`video=on/off` in `settings.txt`).
 
 ## 4. Starting games: how the emulator is chosen
 There are **no system limits**. All games are shown and the emulator is chosen when a game is started.
@@ -69,7 +76,7 @@ There are **no system limits**. All games are shown and the emulator is chosen w
 Without an emulator the launcher tells you so when you start the game ("No … emulator is installed (supported: …)").
 
 ### Changing the emulator
-**Options (Y) → Choose emulator** sets the emulator for the current category (on the game screen: the ROM folder of the selected game). The choice is saved in `emulators.txt`, which can also be written by hand:
+**Options (Y) → ROMs & apps → Choose emulator** sets the emulator for the current category (on the game screen: the ROM folder of the selected game). The choice is saved in `emulators.txt`, which can also be written by hand:
 ```
 psx=DuckStation (Standalone)
 snes=snes9x
@@ -100,13 +107,13 @@ Put `es_systems.xml` and `es_find_rules.xml` with the ES-DE syntax in `/JoyLaunc
 
 Android's **Back** equals B.
 - **Button names**: `+` `−` for Nintendo controllers, `START` `SELECT` for the others.
-- **Swap A and B** (Options): B selects and A cancels; the button names on screen follow.
+- **Swap A and B** (Options → System settings): B selects and A cancels; the button names on screen follow.
 
 ## 6. On-screen controller
-Touch buttons appear when no controller is connected. They hide when a controller is connected or a button is pressed, and show again when you touch the screen. **Options → On-screen controller**: Auto / Always / Off.
+Touch buttons appear when no controller is connected. They hide when a controller is connected or a button is pressed, and show again when you touch the screen. **Options → System settings → On-screen controller**: Auto / Always / Off.
 
 ## 7. Sound: BGM and video sound
-**X** opens **BGM / sound** (the same item is in Options). Only **one** of these is heard at a time; BGM and video sound never play together.
+**X** opens **BGM / sound** (the same item is in Options → System settings). Only **one** of these is heard at a time; BGM and video sound never play together.
 
 ![BGM / sound](images/en_03_sound.png)
 
@@ -123,13 +130,18 @@ Touch buttons appear when no controller is connected. They hide when a controlle
 - Settings file: `sound=common/theme/video/off`, `bgm_volume=0-100`, `bgm_shuffle=on/off` (an old `bgm=on` becomes Common BGM).
 
 ## 8. App Favorites
-**Options (Y) → Apps** opens the list of installed apps: A opens the app, −(SELECT) adds it to or removes it from **App Favorites**, which is shown at the top of the categories.
+**Options (Y) → ROMs & apps → Manage App Favorites** opens the list of installed apps: A opens the app, −(SELECT) adds it to or removes it from **App Favorites**, which is shown at the top of the categories.
 (It takes the place of "Homebrew Favorites" of the Switch version. Themes use the image name `hbfav`; `appfav` is used first if present.)
 
 ## 9. Options (Y)
 ![Options](images/en_02_options.png)
 
-Refresh game list · Theme (select, delete, download the stock themes) · Receive themes from PC (FTP) · BGM / sound · Language · Screen effects · Preview videos · Apps / App Favorites · Choose emulator · Swap A and B · On-screen controller · Exit.
+The top of the Options window holds three groups plus Language, Check for updates and Exit. On a group (▶) A opens it and B goes back to the top. Windows opened from a group (theme list, ROM folders, apps, emulators, BGM) return to that group when closed with B. Y closes Options.
+
+- **ROMs & apps**: Refresh game list · ROM folders ("ROM folders in use: n registered + m found" at the top; + Add folder (file manager); + Add folder (browse in the app — when the file manager does not work); automatic search on/off; registered folders — X removes; automatically found folders — A registers; internal, SD card and other places together, saved in `roots.txt`) · Manage App Favorites (chapter 8) · Choose emulator (chapter 4)
+- **Theme settings**: Choose theme (select, delete, download the stock themes, receive from PC) · Screen effects · Preview videos · Receive themes from PC (FTP)
+- **System settings**: BGM / sound (same as X, chapter 7) · Swap A and B · On-screen controller
+- Language · Check for updates · Exit
 
 ## 10. Themes (compatible with the Switch version)
 The theme syntax is the same. Themes from the Switch version work here as they are, and the other way round.
@@ -142,11 +154,11 @@ The theme syntax is the same. Themes from the Switch version work here as they a
 ## 11. Troubleshooting
 | Problem | Check |
 |---|---|
-| No games found | ROM folder name (`ROMs` / `Roms` / `roms`) or `roots.txt`; the all-files permission |
-| The emulator opens but not the game | Is the system's ROM folder added as a game folder in the emulator (chapter 4)? Options → Choose emulator |
+| No games found | press **A** on that screen to choose the ROM folder (section 1, step 4), or check the ROM folder place and name (section 3) / `roots.txt`; the all-files permission. Added ROMs are picked up at the next start (Options → ROMs & apps → Refresh game list to see them at once) |
+| The emulator opens but not the game | Is the system's ROM folder added as a game folder in the emulator (chapter 4)? Options → ROMs & apps → Choose emulator |
 | RetroArch opens but the game does not run | Is that core installed in RetroArch? Pick another one in Choose emulator |
 | Which emulator was used? | `/JoyLauncher/launch_log.txt` |
 | The launcher closed suddenly | start it again and see `/JoyLauncher/crash_log.txt` (attach it to bug reports) |
-| Select / cancel are the wrong way round | Options → Swap A and B |
-| New games do not appear | Options → Refresh game list |
-| No preview video | Is Options → Preview videos on? Check the video's place and name (chapter 3) and refresh the game list. Formats the device cannot play show the screenshot only |
+| Select / cancel are the wrong way round | Options → System settings → Swap A and B |
+| New games do not appear | Options → ROMs & apps → Refresh game list |
+| No preview video | Is Options → Theme settings → Preview videos on? Check the video's place and name (chapter 3) and refresh the game list. Formats the device cannot play show the screenshot only |

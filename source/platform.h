@@ -47,7 +47,10 @@ bool SaveAppIcon(const std::string &package, const std::string &activity, const 
 bool StartActivity(const std::vector<std::string> &amArgs, std::string &err);
 // 앱 실행 (activity 가 비면 그 앱의 기본 실행 화면)
 bool StartApp(const std::string &package, const std::string &activity, std::string &err);
-// 내려받은 apk 설치 화면 열기 (런처 업데이트)
+// 안드로이드 기본 파일 관리자의 폴더 선택 화면 (ACTION_OPEN_DOCUMENT_TREE). 열 수 없으면 false (앱 안 찾아보기로 대신)
+bool OpenFolderPicker();
+// 폴더 선택 결과: 다 골랐으면 true + out (실제 경로 / "" = 취소 / "!이유" = 실제 경로가 없는 위치)
+bool FolderPickerResult(std::string &out);
 
 // ---- 기기 상태
 // 전지 잔량 0~100 (-1 = 모름)

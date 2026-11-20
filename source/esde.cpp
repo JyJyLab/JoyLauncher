@@ -68,9 +68,24 @@ const std::map<std::string, std::string> kAlias = {
 };
 }  // namespace
 
+// 띄어쓰기·-·_·. 를 뺀 이름 ("게임보이어드밴스" = "게임보이 어드밴스", "닌텐도DS" = "닌텐도 ds")
+static std::string Squash(const std::string &s) {
+    std::string o;
+    for (char c : s)
+        if (c != ' ' && c != '-' && c != '_' && c != '.') o += c;
+    return o;
+}
+
 const char *EsdeSystemName(const std::string &lowerName) {
     auto it = kAlias.find(lowerName);
     if (it != kAlias.end()) return it->second.c_str();
+    static const std::map<std::string, std::string> squashed = [] {
+        std::map<std::string, std::string> m;
+        for (const auto &kv : kAlias) m.emplace(Squash(kv.first), kv.second);
+        return m;
+    }();
+    auto sq = squashed.find(Squash(lowerName));
+    if (sq != squashed.end()) return sq->second.c_str();
     for (const auto &s : kSystems)
         if (lowerName == s.id) return s.id;
     return "";

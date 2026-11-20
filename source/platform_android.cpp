@@ -190,6 +190,8 @@ void Init() {
         {"startAm", "([Ljava/lang/String;)Ljava/lang/String;"},
         {"startApp", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"},
         {"battery", "()I"},
+        {"openFolderPicker", "()Z"},
+        {"folderPickerResult", "()Ljava/lang/String;"},
         {"systemLanguage", "()Ljava/lang/String;"},
         {"decodeImage", "(Ljava/lang/String;I)[I"},
         {"videoStart", "(Ljava/lang/String;ZI)V"},
@@ -342,6 +344,25 @@ bool StartApp(const std::string &package, const std::string &activity, std::stri
     if (Failed(env)) { err = "java exception"; return false; }
     err = Str(env, r);
     return err.empty();
+}
+
+bool OpenFolderPicker() {
+    JNIEnv *env = Env();
+    jmethodID m = Method(env, "openFolderPicker", "()Z");
+    if (!m) return false;
+    jboolean r = env->CallStaticBooleanMethod(gCls, m);
+    if (Failed(env)) return false;
+    return r;
+}
+
+bool FolderPickerResult(std::string &out) {
+    JNIEnv *env = Env();
+    jmethodID m = Method(env, "folderPickerResult", "()Ljava/lang/String;");
+    if (!m) return false;
+    jstring r = (jstring)env->CallStaticObjectMethod(gCls, m);
+    if (Failed(env) || !r) return false;
+    out = Str(env, r);
+    return true;
 }
 
 int Battery(bool &charging) {

@@ -11,14 +11,14 @@ It reads **Pegasus metadata** or **ES-DE game lists** in your ROM folders, shows
 - **No system limits**: anything with an installed emulator runs (retro systems, NDS, 3DS, PS2, GC/Wii, Switch, PS3, Xbox 360 …). The system/emulator table is the one from ES-DE for Android (195 systems, 106 emulators); files with the same syntax add new systems and emulators
 - **Emulator choice = Pegasus + ES-DE**
   1. the launch command (`am start …`) in a ROM pack's `metadata.pegasus.txt` is used as it is
-  2. otherwise the ROM folder name gives the system and an installed emulator is picked ("Choose emulator" in Options changes it)
-- ROM folders are found automatically: `ROMs` / `Roms` / `roms` on internal storage and SD cards, Pegasus' `game_dirs.txt`, the ES-DE ROM folder
+  2. otherwise the ROM folder name gives the system and an installed emulator is picked (Options → ROMs & apps → "Choose emulator" changes it)
+- ROM folders: on first start the automatically found places (internal / SD card) are shown — A = use them, B = choose in the Android file manager; several places at once; change them in Options → ROMs & apps → ROM folders (saved in `roots.txt`). Automatic search: `ROMs` / `Roms` / `roms` at the top of a storage or one level below, folders holding system folders, Pegasus' `game_dirs.txt`, the ES-DE ROM folder
 - Settings and themes live in **`/JoyLauncher`** at the root of the storage, free to edit with any file manager
-- **App Favorites**: pick installed apps into a category (Options → Apps)
+- **App Favorites**: pick installed apps into a category (Options → ROMs & apps → Manage App Favorites)
 - **Sound choice (X button)**: Common BGM, Theme BGM, Video sound or Silent, one at a time. Every theme can carry its own BGM (`themes/<theme>/bgm`)
 - **Button names follow the controller**: `+` `−` for Nintendo pads, `START` `SELECT` for the others. Option to swap A/B (select/cancel)
 - **On-screen controller**: touch buttons appear when no controller is connected
-- Box art, screenshots and **preview videos**: when the selected game has a video it plays in place of the screenshot (can be turned off in Options)
+- Box art, screenshots and **preview videos**: when the selected game has a video it plays in place of the screenshot (can be turned off in Options → Theme settings)
 - Themes: per-category backgrounds and logos, screen layouts with `layout.txt` (grids, carousels, fonts, colors, transitions). Four stock themes included. Also receives themes from the PC Theme Builder (Switch version) over FTP
 - Favorites and recently played tabs, custom categories, Korean / English, battery indicator
 - The screen keeps the theme's 1280x720 coordinates while text and images are drawn at the device resolution, so it stays sharp on high-resolution displays
@@ -27,7 +27,7 @@ It reads **Pegasus metadata** or **ES-DE game lists** in your ROM folders, shows
 1. Download `JoyLauncher.apk` of the **Android release** (tag `android-v…`) from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and install it (Android 7.0 or later, arm64). Releases tagged `v…` are the Switch version
    - For later versions, "Check for updates" in Options shows the release page; download the apk there and install it over the old one (settings and themes stay)
 2. On first start it asks for **All files access** → allow it (to read your ROM folders and to use the `/JoyLauncher` folder)
-3. Put ROMs in `ROMs` (or `Roms` / `roms`) on the storage. For other places list them in `/JoyLauncher/roots.txt`, one per line
+3. Put ROMs in `ROMs` (or `Roms` / `roms`) at the top of the storage or one level below (e.g. `/JY_Data/Roms`). For other places list them in `/JoyLauncher/roots.txt`, one per line
 4. Install emulators separately (RetroArch, DuckStation, PPSSPP …)
 
 Manual: [docs/manual-en.md](docs/manual-en.md) · 한국어: [docs/설명서.md](docs/설명서.md)

@@ -53,14 +53,18 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 옵션 창(Y)의 항목
-enum class MenuAct { Theme, FtpRecv, Video, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundVideo, SoundOff, BgmVolume, BgmOrder, BgmNext, AppFav, EmuPick, SwapAB, Overlay, Exit };
+enum class MenuAct { Theme, FtpRecv, Video, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundVideo, SoundOff, BgmVolume, BgmOrder, BgmNext, AppFav, EmuPick, SwapAB, Overlay, RootPick, Exit,
+                     CatRom, CatTheme, CatSystem };  // Cat* = 옵션 창 맨 위의 분류 (A 로 그 분류 창)
 struct MenuItem {
     std::string label;
     MenuAct act;
     bool on = false;  // 켜져 있는 상태 (BGM 재생 중 등): 초록색 글자
 };
 // 켜짐 초록색은 메뉴 창 꾸밈(uistyle.cpp MenuStyle::on)
-static std::vector<MenuItem> gMenu;
+static std::vector<MenuItem> gMenu;      // 옵션 창 맨 위: 롬 및 앱 설정 · 테마 설정 · 시스템 설정 · 언어 · 업데이트 · 종료
+static std::vector<MenuItem> gRomMenu;   // 롬 및 앱 설정: 게임 목록 새로 고침 · 롬 폴더 설정 · 앱 즐겨찾기 목록 관리 · 에뮬레이터 선택
+static std::vector<MenuItem> gThemeMenu; // 테마 설정: 테마 선택 · 화면 효과 · 미리보기 영상 · PC에서 테마 받기
+static std::vector<MenuItem> gSysMenu;   // 시스템 설정: BGM · 소리 설정 · A·B 버튼 바꾸기 · 화면 컨트롤러
 static std::vector<MenuItem> gBgmMenu;  // BGM · 소리 설정 창 (X 버튼, 또는 옵션 창에서)
 static bool gDemo = false;  // 데스크톱 시험판의 데모 창 (--demo): 게임·앱 실행 대신 알림, 업데이트 확인 안 함
 static std::string gThemeName;  // 현재 테마 폴더 이름 ("" = 기본)
@@ -192,19 +196,31 @@ static const char *OverlayLabel() {
     return gOverlayMode == "on" ? T("항상 표시") : gOverlayMode == "off" ? T("끔") : T("자동 (컨트롤러가 없을 때)");
 }
 
+static std::vector<std::string> RootsTxtFolders();
+
 static void BuildMenu() {
-    gMenu.clear();
-    gMenu.push_back({T("게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)"), MenuAct::Refresh});
-    if (UpdaterEnabled())
-        gMenu.push_back({gUpdateFound ? Fmt(T("새 버전 v%s 받기 (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
-                                      : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
-                         MenuAct::Update});
-    gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), MenuAct::Theme});
-    gMenu.push_back({T("PC에서 테마 받기 (FTP)"), MenuAct::FtpRecv});
-    // BGM · 소리 설정 창: 소리는 넷 중 하나 (● = 지금 고른 것), 아래는 BGM 볼륨·순서
+    const char *onOff[2] = {T("꺼짐 (Off)"), T("켜짐 (On)")};
+    int nRoots = (int)RootsTxtFolders().size();
+    std::string theme = gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName);
+    // 롬 및 앱 설정
+    gRomMenu.clear();
+    gRomMenu.push_back({T("게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)"), MenuAct::Refresh});
+    gRomMenu.push_back({Fmt(T("롬 폴더 설정 (등록 %d개)"), nRoots), MenuAct::RootPick});
+    gRomMenu.push_back({Fmt(T("앱 즐겨찾기 목록 관리 (%d개)"), (int)gAppFav.size()), MenuAct::AppFav, !gAppFav.empty()});
+    gRomMenu.push_back({T("에뮬레이터 선택 (지금 카테고리)"), MenuAct::EmuPick});
+    // 테마 설정
+    gThemeMenu.clear();
+    gThemeMenu.push_back({Fmt(T("테마 선택 (현재: %s)"), theme.c_str()), MenuAct::Theme});
+    gThemeMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), onOff[gEffects]), MenuAct::Effects, gEffects});
+    gThemeMenu.push_back({Fmt(T("미리보기 영상 재생: %s"), onOff[gVideoOn]), MenuAct::Video, gVideoOn});
+    gThemeMenu.push_back({T("PC에서 테마 받기 (FTP)"), MenuAct::FtpRecv});
+    // 시스템 설정. BGM · 소리 설정 창: 소리는 넷 중 하나 (● = 지금 고른 것), 아래는 BGM 볼륨·순서
     bool bgmMode = gSound == "common" || gSound == "theme";
-    gMenu.push_back({bgmMode ? Fmt(T("BGM · 소리 설정 (%s · 볼륨 %d%%)"), SoundLabel(), gBgmVolume) : Fmt(T("BGM · 소리 설정 (%s)"), SoundLabel()),
-                     MenuAct::BgmMenu, bgmMode});
+    gSysMenu.clear();
+    gSysMenu.push_back({bgmMode ? Fmt(T("BGM · 소리 설정 (%s · 볼륨 %d%%)"), SoundLabel(), gBgmVolume) : Fmt(T("BGM · 소리 설정 (%s)"), SoundLabel()),
+                        MenuAct::BgmMenu, bgmMode});
+    gSysMenu.push_back({Fmt(T("A·B 버튼 바꾸기 (선택 ↔ 취소): %s"), onOff[gSwapAB]), MenuAct::SwapAB, gSwapAB});
+    gSysMenu.push_back({Fmt(T("화면 컨트롤러 (터치): %s"), OverlayLabel()), MenuAct::Overlay, gOverlayMode == "on"});
     gBgmMenu.clear();
     auto mode = [](const char *id, const std::string &label, MenuAct act) {
         bool cur = gSound == id;
@@ -219,15 +235,24 @@ static void BuildMenu() {
     gBgmMenu.push_back({Fmt(T("BGM 볼륨: %d%%"), gBgmVolume), MenuAct::BgmVolume});
     gBgmMenu.push_back({gBgmShuffle ? T("BGM 순서: 무작위") : T("BGM 순서: 차례대로"), MenuAct::BgmOrder});
     if (bgmMode && BgmCountIn(BgmDir(gSound)) > 0) gBgmMenu.push_back({T("다음 곡"), MenuAct::BgmNext});
+    // 맨 위: 분류 셋 + 언어 · 업데이트 · 종료
+    gMenu.clear();
+    gMenu.push_back({T("롬 및 앱 설정  (새로 고침 · 롬 폴더 · 앱 즐겨찾기 · 에뮬레이터)"), MenuAct::CatRom});
+    gMenu.push_back({Fmt(T("테마 설정  (현재: %s)"), theme.c_str()), MenuAct::CatTheme});
+    gMenu.push_back({T("시스템 설정  (BGM · 소리 · A·B 버튼 · 화면 컨트롤러)"), MenuAct::CatSystem});
     gMenu.push_back({LanguageLabel(), MenuAct::Language});
-    gMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), gEffects ? T("켜짐 (On)") : T("꺼짐 (Off)")), MenuAct::Effects, gEffects});
-    gMenu.push_back({Fmt(T("미리보기 영상 재생: %s"), gVideoOn ? T("켜짐 (On)") : T("꺼짐 (Off)")), MenuAct::Video, gVideoOn});
-    gMenu.push_back({Fmt(T("앱 목록 · 앱 즐겨찾기 추가·빼기 (%d개)"), (int)gAppFav.size()), MenuAct::AppFav, !gAppFav.empty()});
-    gMenu.push_back({T("에뮬레이터 선택 (지금 카테고리)"), MenuAct::EmuPick});
-    gMenu.push_back({Fmt(T("A·B 버튼 바꾸기 (선택 ↔ 취소): %s"), gSwapAB ? T("켜짐 (On)") : T("꺼짐 (Off)")), MenuAct::SwapAB, gSwapAB});
-    gMenu.push_back({Fmt(T("화면 컨트롤러 (터치): %s"), OverlayLabel()), MenuAct::Overlay, gOverlayMode == "on"});
+    if (UpdaterEnabled())
+        gMenu.push_back({gUpdateFound ? Fmt(T("새 버전 v%s 받기 (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
+                                      : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
+                         MenuAct::Update});
     gMenu.push_back({T("종료"), MenuAct::Exit});
 }
+// 옵션 창의 단계: 0 = 맨 위, 1 = 롬 및 앱 설정, 2 = 테마 설정, 3 = 시스템 설정
+static std::vector<MenuItem> &OptItems(int cat) { return cat == 1 ? gRomMenu : cat == 2 ? gThemeMenu : cat == 3 ? gSysMenu : gMenu; }
+static const char *OptTitle(int cat) {
+    return cat == 1 ? T("롬 및 앱 설정") : cat == 2 ? T("테마 설정") : cat == 3 ? T("시스템 설정") : T("옵션");
+}
+static int OptCatOf(MenuAct m) { return m == MenuAct::CatRom ? 1 : m == MenuAct::CatTheme ? 2 : m == MenuAct::CatSystem ? 3 : 0; }
 
 // ---------------------------------------------------------------- 기기 화면 배율
 // 화면은 늘 1280x720 좌표로 그린다 (테마의 좌표 그대로, SDL 이 기기 화면에 맞춰 늘림).
@@ -588,7 +613,9 @@ static std::vector<std::string> ListSubdirs(const std::string &dir) {
         while (dirent *e = readdir(d)) {
             std::string n = e->d_name;
             if (n.empty() || n[0] == '.') continue;
-            if (IsDirPath(dir + "/" + n)) out.push_back(n);
+            // 항목 종류는 d_type 으로 (모를 때만 stat): 롬 수천 개 폴더에서 항목마다 stat 하면 SD 카드에서 매우 느림
+            bool isDir = e->d_type == DT_DIR || (e->d_type == DT_UNKNOWN || e->d_type == DT_LNK ? IsDirPath(dir + "/" + n) : false);
+            if (isDir) out.push_back(n);
         }
         closedir(d);
     }
@@ -979,17 +1006,30 @@ static void MakeUserFolders() {
         std::ofstream o(roots, std::ios::binary);
         o << "# Joy Launcher 롬 폴더 / ROM folders\r\n"
              "#\r\n"
-             "# [한국어] 한 줄에 폴더 하나 (예: /storage/emulated/0/Roms). 적지 않아도 저장소마다 ROMs·Roms·roms 폴더,\r\n"
+             "# [한국어] 한 줄에 폴더 하나 (예: /storage/emulated/0/Roms, 기종 폴더 하나만 적어도 됨). 적지 않아도 저장소마다\r\n"
+             "#   맨 위나 한 단계 아래의 ROMs·Roms·roms 폴더, 기종 폴더(GBA·NDS…)가 모인 폴더,\r\n"
              "#   페가수스의 game_dirs.txt, ES-DE 의 롬 폴더를 자동으로 찾습니다.\r\n"
              "#   auto=off                              자동으로 찾지 않고 여기 적은 폴더만 씀\r\n"
              "#   esde=/storage/emulated/0/ES-DE        ES-DE 폴더 (gamelists · downloaded_media) 위치\r\n"
-             "# [English] One folder per line. Without any line the launcher finds ROMs / Roms / roms on every storage,\r\n"
+             "# [English] One folder per line (a single system folder works too). Without any line the launcher finds\r\n"
+             "#   ROMs / Roms / roms at the top of every storage or one level below, folders holding system folders,\r\n"
              "#   the folders in Pegasus' game_dirs.txt and the ES-DE ROM folder by itself.\r\n"
              "#   auto=off   use only the folders listed here      esde=<path>   where the ES-DE folder is\r\n";
     }
 }
 
 enum class Mode { Categories, Games };
+
+// 롬 폴더 고르기 창의 한 줄
+struct RootItem {
+    std::string label, path;
+    int kind = 0;          // 0 이 폴더 사용 / 1 위로 / 2 하위 폴더 / 3 저장소 / 4 등록된 폴더 / 5 자동으로 찾은 폴더
+                           // 6 폴더 추가 (파일 관리자) / 7 앱 안에서 찾아보기 / 8 자동 찾기 켜기·끄기 / 9 처음 실행: 찾은 폴더 / 10 처음 실행: 없음
+                           // 11 안내 줄 (고를 수 없음)
+    int systems = 0;       // 그 안의 기종 이름 폴더 수
+    std::string sysNames;  // 그 기종 폴더 이름 몇 개
+    bool isSystem = false; // 폴더 이름 자체가 기종 (GBA 등)
+};
 
 struct App {
     SDL_Renderer *r = nullptr;
@@ -1000,8 +1040,9 @@ struct App {
     ThumbCache thumbs;           // 표시 크기로 줄인 그림 (테마 아이콘·격자 칸)
     std::string lastBack;        // 새 배경을 읽기 전까지 보여줄 직전 배경
     bool themePick = false;      // 테마 선택 창
-    bool optPick = false;        // 옵션 창 (Y): 새로 고침·테마·BGM·언어·앱 목록·버튼 설정 등
+    bool optPick = false;        // 옵션 창 (Y): 맨 위 = 분류(롬 및 앱 · 테마 · 시스템) · 언어 · 업데이트 · 종료
     int optSel = 0;
+    int optCat = 0;              // 옵션 창 단계 (OptItems): 0 = 맨 위, 1 = 롬 및 앱 설정, 2 = 테마 설정, 3 = 시스템 설정
     bool bgmPick = false;        // BGM 창 (옵션 창 위에 한 겹 더)
     int bgmSel = 0;
     bool appPick = false;        // 앱 목록 창 (X, 또는 옵션 창에서): 설치된 앱 실행, 앱 즐겨찾기에 넣고 빼기
@@ -1012,6 +1053,14 @@ struct App {
     std::vector<EmuChoice> emuList;
     std::string emuKey, emuSystem;  // 고른 것을 적어 둘 이름(롬 폴더·카테고리), 그 기종
     bool exitAsk = false;        // 맨 위 화면에서 B: 종료 확인
+    bool rootPick = false;       // 롬 폴더 고르기 창 (처음 실행·옵션·게임 없음 화면) — 고른 폴더는 roots.txt 에 저장
+    bool rootFirst = false;      // 처음 실행 때 연 창 (B = 나중에)
+    std::string rootDir;         // 보고 있는 폴더 ("" = 처음 목록: 자동으로 찾은 폴더·등록된 폴더·저장소)
+    std::vector<RootItem> rootItems;
+    int rootSel = 0;
+    std::string rootSummary;     // 롬 폴더 설정 창 머리말: 지금 쓰는 폴더 수
+    bool folderPicking = false;  // 안드로이드 파일 관리자(폴더 선택)가 열려 있음 — 결과를 기다림
+    bool pickAutoOff = false;    // 처음 실행 때 직접 고르는 중: 고르면 자동 찾기를 끔 (roots.txt auto=off)
     bool updLink = false;        // 업데이트 창: 새 버전 알림 + 릴리스 페이지 주소 (A = 브라우저로 열기)
     std::string updErr;          // 업데이트 확인 실패 이유 (있으면 창에 표시)
     std::vector<std::string> themeList;  // [0] = 기본, 그다음 테마 폴더 이름, 끝에 내려받기 항목
@@ -2863,7 +2912,7 @@ static void RenderAppPick(App &a) {
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh);
-    DrawText(a, a.fBig, T("앱"), W / 2, by + 16, m.title, 0, 1);
+    DrawText(a, a.fBig, T("앱 즐겨찾기 목록 관리"), W / 2, by + 16, m.title, 0, 1);
     int top = std::max(0, std::min(a.appSel - rows / 2, n - rows));
     for (int i = 0; i < rows; i++) {
         int idx = top + i;
@@ -2913,8 +2962,8 @@ static bool Adjustable(MenuAct m) {
            m == MenuAct::Overlay || m == MenuAct::Video;
 }
 
-// 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비
-static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &items, int selIdx, int bw) {
+// 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비, sub: 옵션의 분류 창 (B = 뒤로)
+static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &items, int selIdx, int bw, bool sub = false) {
     int n = (int)items.size();
     int rows = std::min(n, (H - 16 - 110) / kRowH);  // 화면에 다 안 들어가면 커서를 따라 넘김
     int top = std::max(0, std::min(selIdx - rows / 2, n - rows));
@@ -2928,15 +2977,20 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
         bool sel = i == selIdx;
         if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
         SDL_Color c = items[i].on ? m.on : sel ? m.selText : m.dim;
-        DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+        bool cat = OptCatOf(items[i].act) > 0;  // 분류: 오른쪽 끝에 ▶
+        DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - (cat ? 104 : 64), 0, 0, 0, sel ? kScroll : 0);
+        if (cat) DrawText(a, a.fList, "▶", bx + bw - 56, y + 4, c);
     }
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
-    DrawText(a, a.fInfo, PadHint(adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기")), W / 2, by + bh - 34, m.dim,
-             0, 1);
+    bool opens = selIdx >= 0 && selIdx < n && OptCatOf(items[selIdx].act) > 0;
+    const char *hint = sub ? (adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 뒤로") : T("[A] 선택   [B] 뒤로"))
+                     : opens ? T("[A] 열기   [B] 닫기")
+                     : adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기");
+    DrawText(a, a.fInfo, PadHint(hint), W / 2, by + bh - 34, m.dim, 0, 1);
 }
 
 // 옵션 창 (Y)
-static void RenderOptions(App &a) { RenderPopup(a, T("옵션"), gMenu, a.optSel, 820); }
+static void RenderOptions(App &a) { RenderPopup(a, OptTitle(a.optCat), OptItems(a.optCat), a.optSel, 900, a.optCat > 0); }
 
 // PC에서 테마 받기 (FTP): 주소·포트, 받은 것
 static void RenderFtp(App &a) {
@@ -2965,6 +3019,53 @@ static void RenderExitAsk(App &a) {
     MenuPanel(a, m, 340, 270, 600, 160);
     DrawText(a, a.fBig, T("런처를 종료합니다"), W / 2, 300, m.text, 560, 1);
     DrawText(a, a.fInfo, PadHint(T("[A] 종료   [B] 돌아가기")), W / 2, 372, m.dim, 560, 1);
+}
+
+// 롬 폴더 고르기 창
+static void RenderRootPick(App &a) {
+    MenuStyle m = Menu();
+    int n = (int)a.rootItems.size();
+    int rows = std::max(1, std::min(n, (H - 16 - 170) / kRowH));
+    int bw = 1100, bh = 170 + rows * kRowH;
+    int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
+    MenuPanel(a, m, bx, by, bw, bh);
+    bool firstList = a.rootFirst && a.rootDir.empty();
+    bool found = firstList && n && a.rootItems[0].kind == 9;
+    DrawText(a, a.fBig, firstList ? T("롬 폴더 확인") : T("롬 폴더 설정"), W / 2, by + 16, m.title, bw - 40, 1);
+    std::string where = firstList ? std::string(found ? T("자동으로 찾은 롬 폴더입니다. 이대로 쓰거나, 파일 관리자에서 직접 고르세요")
+                                                      : T("롬 폴더를 자동으로 찾지 못했습니다. 파일 관리자에서 ROMS 폴더를 고르세요"))
+                      : a.rootDir.empty() ? a.rootSummary + T("   (roots.txt 에 저장)")
+                      : a.rootDir == "\x01" ? std::string(T("앱 안에서 찾아보기: 저장소를 고르세요")) : a.rootDir;
+    DrawText(a, a.fInfo, where, W / 2, by + 62, m.dim, bw - 60, 1, 0, 0, kScrollMsg);
+    int top = std::max(0, std::min(a.rootSel - rows / 2, n - rows));
+    for (int i = 0; i < rows && top + i < n; i++) {
+        int idx = top + i;
+        int y = by + 106 + i * kRowH;
+        bool sel = idx == a.rootSel;
+        const RootItem &it = a.rootItems[idx];
+        if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
+        std::string label = it.label;
+        if ((it.kind >= 2 && it.kind <= 5) || it.kind == 0 || it.kind == 9) {
+            if (it.isSystem) label += T("   · 기종 폴더");
+            else if (it.systems > 0) label += Fmt(T("   · 기종 폴더 %d개 (%s)"), it.systems, it.sysNames.c_str());
+        }
+        bool good = it.isSystem || it.systems > 0;
+        SDL_Color c = it.kind == 11 ? m.dim : it.kind == 0 || it.kind == 5 || it.kind == 6 || it.kind == 9 ? m.title : it.kind == 4 ? m.on
+                    : sel ? m.selText : good || it.kind == 7 || it.kind == 8 ? m.text : m.dim;
+        DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+    }
+    int kind = a.rootSel < n ? a.rootItems[a.rootSel].kind : -1;
+    const char *close = a.rootDir.empty() ? (a.rootFirst ? T("[B] 나중에") : T("[B] 닫기")) : T("[B] 위로");
+    std::string hint = firstList ? std::string(found ? T("[A] 이대로 사용   [B] 직접 선택 (파일 관리자)") : T("[A] 파일 관리자에서 고르기   [B] 나중에"))
+                     : kind == 6 ? std::string(T("[A] 파일 관리자 열기   ")) + close
+                     : kind == 8 ? std::string(T("[A] 켜기 / 끄기   ")) + close
+                     : kind == 11 ? std::string(close)
+                     : kind == 5 ? std::string(T("[A] 등록   ")) + close
+                     : kind == 0 ? std::string(T("[A] 이 폴더 사용   ")) + close
+                     : kind == 2 ? std::string(T("[A] 열기   [X] 이 폴더 사용   ")) + close
+                     : kind == 4 ? std::string(T("[A] 열기   [X] 등록 해제   ")) + close
+                                 : std::string(T("[A] 열기   ")) + close;
+    DrawText(a, a.fInfo, PadHint(hint), W / 2, by + bh - 40, m.dim, bw - 40, 1);
 }
 
 // 업데이트 창: 앱이 apk 를 받아 설치하지 않는다 (다른 앱 설치 권한 문제) → 릴리스 페이지를 알려 주고 브라우저로 연다
@@ -3076,18 +3177,36 @@ static void RebuildAppFavorites(App &a, bool keepPos) {
     a.sel = std::min(a.sel, std::max(0, (int)CurCol(a).games.size() - 1));
 }
 
+// 쌓여 있는 버튼·키·터치 입력 버리기 (컨트롤러 연결·화면 사건은 그대로)
+static void FlushInputs() {
+    SDL_PumpEvents();
+    SDL_FlushEvents(SDL_KEYDOWN, SDL_TEXTINPUT);
+    SDL_FlushEvents(SDL_JOYAXISMOTION, SDL_JOYBUTTONUP);
+    SDL_FlushEvents(SDL_CONTROLLERAXISMOTION, SDL_CONTROLLERBUTTONUP);
+    SDL_FlushEvents(SDL_FINGERDOWN, SDL_FINGERMOTION);
+    SDL_FlushEvents(SDL_MOUSEMOTION, SDL_MOUSEWHEEL);
+}
+
 static void LoadGames(App &a, bool force, std::string &log) {
     std::string cache = gHome + "/library.cache";
+    Uint32 tSig = SDL_GetTicks();
     std::string sig = LibrarySignature(gRoots);
+    SDL_Log("[time] signature %u ms", SDL_GetTicks() - tSig);
+    Uint32 tCache = SDL_GetTicks();
     if (!force && LoadLibraryCache(cache, sig, a.cols)) {
         log += "[cache] " + cache + "\n";
+        SDL_Log("[time] cache load %u ms", SDL_GetTicks() - tCache);
     } else {
         if (a.r && !gShotMode) {
-            SDL_SetRenderDrawColor(a.r, 16, 16, 22, 255);
-            SDL_RenderClear(a.r);
-            DrawText(a, a.fBig, T("게임 목록을 읽는 중..."), W / 2, 300, kWhite, 0, 1);
-            DrawText(a, a.fInfo, T("처음 한 번만 오래 걸립니다. 이후에는 저장된 목록을 바로 씁니다."), W / 2, 360, kGrey, 0, 1);
-            SDL_RenderPresent(a.r);
+            // 안드로이드: 그린 첫 장이 화면에 안 나올 때가 있어(겹 버퍼) 몇 번 그려 둔다 — 안 그러면 다 읽을 때까지 검은 화면
+            for (int i = 0; i < 3; i++) {
+                SDL_PumpEvents();
+                SDL_SetRenderDrawColor(a.r, 16, 16, 22, 255);
+                SDL_RenderClear(a.r);
+                DrawText(a, a.fBig, T("게임 목록을 읽는 중..."), W / 2, 300, kWhite, 0, 1);
+                DrawText(a, a.fInfo, T("처음 한 번만 오래 걸립니다. 이후에는 저장된 목록을 바로 씁니다."), W / 2, 360, kGrey, 0, 1);
+                SDL_RenderPresent(a.r);
+            }
         }
         // 그림 캐시 비우기: 읽기에 실패했던 그림(새로 넣은 파일일 수 있음)도 다시 읽게
         a.images.Clear();
@@ -3112,11 +3231,10 @@ static void Render(App &a) {
     ImgPump(a.r);
     MarqueeNextFrame();
     if (a.cols.empty()) {
-        Frame(a, "Joy Launcher", PadHint(T("[B] 종료     [X] BGM     [Y] 옵션")));
+        Frame(a, "Joy Launcher", PadHint(T("[A] 롬 폴더 고르기     [B] 종료     [X] BGM     [Y] 옵션")));
         DrawText(a, a.fBig, T("게임 목록이 없습니다"), W / 2, 280, kWhite, 0, 1);
-        DrawText(a, a.fInfo, T("저장소의 ROMs (또는 Roms·roms) 폴더에 게임을 넣거나, /JoyLauncher/roots.txt 에 롬 폴더를 적으세요"), W / 2, 340, kGrey,
-                 1180, 1);
-        DrawText(a, a.fInfo, T("페가수스(game_dirs.txt)·ES-DE 의 롬 폴더는 자동으로 찾습니다"), W / 2, 376, kGrey, 1180, 1);
+        DrawText(a, a.fInfo, PadHint(T("[A] 를 눌러 게임(롬)이 든 폴더를 고르세요 — 고른 폴더는 다음에도 그대로 씁니다")), W / 2, 340, kGrey, 1180, 1);
+        DrawText(a, a.fInfo, T("저장소의 ROMs·Roms·roms 폴더와 페가수스·ES-DE 의 롬 폴더는 자동으로 찾습니다"), W / 2, 376, kGrey, 1180, 1);
     } else if (a.mode == Mode::Categories) {
         RenderCategories(a);
     } else {
@@ -3129,12 +3247,18 @@ static void Render(App &a) {
     if (a.emuPick) RenderEmuPick(a);
     if (a.exitAsk) RenderExitAsk(a);
     if (a.updLink) RenderUpdateLink(a);
+    if (a.rootPick) RenderRootPick(a);
     if (a.ftpOpen) RenderFtp(a);
-    if (a.messageModal) {
+    if (a.messageModal) {  // 여러 줄 ("\n") 이면 줄마다 (한 줄이면 예전 자리 그대로)
+        std::vector<std::string> lines;
+        std::stringstream ss(a.message);
+        for (std::string l; std::getline(ss, l, '\n');) lines.push_back(l);
+        int n = std::max(1, (int)lines.size()), lh = 40, boxH = 100 + n * lh, top = 350 - boxH / 2;
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-        NoticeBox(a, Menu(), 240, 280, 800, 140, a.messageColor);
-        DrawText(a, a.fList, a.message, W / 2, 310, kWhite, 760, 1, 0, 0, kScrollMsg);
-        DrawText(a, a.fInfo, PadHint(T("[B] 닫기")), W / 2, 370, kWhite, 0, 1);
+        NoticeBox(a, Menu(), 240, top, 800, boxH, a.messageColor);
+        for (int i = 0; i < (int)lines.size(); i++)
+            DrawText(a, i ? a.fInfo : a.fList, lines[i], W / 2, top + 30 + i * lh + (i ? 4 : 0), kWhite, 760, 1, 0, 0, kScrollMsg);
+        DrawText(a, a.fInfo, PadHint(T("[B] 닫기")), W / 2, top + 50 + n * lh, kWhite, 0, 1);
     } else if (!a.message.empty() && SDL_GetTicks() < a.messageUntil) {
         // 여러 줄 알림 ("\n" 으로 나눔): 줄마다 가운데 정렬, 한 번에 보이게
         std::vector<std::string> lines;
@@ -3218,7 +3342,7 @@ static void Clamp(App &a) {
     if (a.cols.empty()) return;
     int total = (int)a.cols.size();
     a.catSel = std::max(0, std::min(a.catSel, total - 1));
-    a.optSel = std::max(0, std::min(a.optSel, (int)gMenu.size() - 1));
+    a.optSel = std::max(0, std::min(a.optSel, (int)OptItems(a.optCat).size() - 1));
     // 목록 맨 위 항목(top)은 열 수의 배수 (격자는 줄 단위로 넘김)
     auto keep = [](int sel, int &top, bool games) {
         int cols, rows;
@@ -3448,6 +3572,7 @@ static std::vector<std::string> FindRoots(const std::string &first, bool autoDef
         if (p.empty() || p[0] == '#' || !IsDirPath(p) || std::find(roots.begin(), roots.end(), p) != roots.end()) return;
         roots.push_back(p);
         log += "[root] " + p + " (" + why + ")\n";
+        SDL_Log("[root] %s (%s)", p.c_str(), why);
     };
     bool autoFind = autoDefault;
     if (!first.empty()) add(first, "--root");
@@ -3485,13 +3610,212 @@ static std::vector<std::string> FindRoots(const std::string &first, bool autoDef
             add(x.substr(p, x.find('"', p) - p), "ES-DE ROMDirectory");
         }
     }
+    // 저장소 맨 위와 그 한 단계 아래(예: /JY_Data/Roms)의 ROMs·Roms·roms·rom 폴더, Emulation/roms.
+    // 맨 위 폴더 안에 기종 이름 폴더가 둘 이상 있으면 (예: /Games/GBA, /Games/NDS) 그 폴더도 롬 폴더로
+    static const std::set<std::string> kSkip = {"android", "joylauncher", "es-de", "retroarch", "pegasus-frontend", "dcim", "lost.dir"};
+    auto romName = [&](const std::string &parent, const std::string &d, const std::string &why) {
+        std::string low = LowerAscii(d);
+        if (low == "roms" || low == "rom") add(parent + "/" + d, why.c_str());
+        if (low == "emulation") add(parent + "/" + d + "/roms", why.c_str());
+    };
     for (const auto &v : vols)
         for (const auto &d : ListSubdirs(v.path)) {
+            romName(v.path, d, "storage");
             std::string low = LowerAscii(d);
-            if (low == "roms" || low == "rom") add(v.path + "/" + d, "storage");
-            if (low == "emulation") add(v.path + "/" + d + "/roms", "storage");
+            if (kSkip.count(low) || low == "roms" || low == "rom" || low == "emulation") continue;
+            std::string sub = v.path + "/" + d;
+            int systems = 0;
+            for (const auto &e : ListSubdirs(sub)) {
+                romName(sub, e, "storage/" + d);
+                if (*EsdeSystemName(LowerAscii(e))) systems++;  // 내장 기종 이름표 (에뮬레이터 표는 롬 폴더를 정한 뒤에 읽음)
+            }
+            if (systems >= 2) add(sub, "storage: 기종 폴더 모음");
         }
     return roots;
+}
+
+// ---- roots.txt 읽고 쓰기 (롬 폴더 고르기 창)
+static std::vector<std::string> RootsTxtLines() {
+    std::vector<std::string> lines;
+    std::ifstream in(gHome + "/roots.txt", std::ios::binary);
+    for (std::string l; std::getline(in, l);) {
+        if (!l.empty() && l.back() == '\r') l.pop_back();
+        lines.push_back(l);
+    }
+    if (!lines.empty() && lines[0].size() >= 3 && (unsigned char)lines[0][0] == 0xEF) lines[0] = lines[0].substr(3);
+    return lines;
+}
+static bool IsRootsTxtFolder(const std::string &line) {
+    std::string t = CleanPath(line);
+    return !t.empty() && t[0] != '#' && t.rfind("esde=", 0) != 0 && t.rfind("auto=", 0) != 0;
+}
+static std::vector<std::string> RootsTxtFolders() {
+    std::vector<std::string> out;
+    for (const auto &l : RootsTxtLines())
+        if (IsRootsTxtFolder(l)) out.push_back(CleanPath(l));
+    return out;
+}
+static bool RootsTxtWrite(const std::vector<std::string> &lines) {
+    std::string tmp = gHome + "/roots.txt.tmp";
+    {
+        std::ofstream o(tmp, std::ios::binary);
+        for (const auto &l : lines) o << l << "\r\n";
+        if (!o) return false;
+    }
+    return rename(tmp.c_str(), (gHome + "/roots.txt").c_str()) == 0;
+}
+// 폴더 한 줄 더하기 (이미 있으면 그대로). 파일이 없으면 설명 머리말부터
+static bool RootsTxtAdd(const std::string &path) {
+    std::string p = CleanPath(path);
+    for (const auto &f : RootsTxtFolders())
+        if (f == p) return true;
+    std::vector<std::string> lines = RootsTxtLines();
+    if (lines.empty()) lines = {"# Joy Launcher 롬 폴더 / ROM folders (한 줄에 폴더 하나 / one folder per line)"};
+    while (!lines.empty() && lines.back().empty()) lines.pop_back();
+    lines.push_back(p);
+    return RootsTxtWrite(lines);
+}
+static bool RootsTxtRemove(const std::string &path) {
+    std::string p = CleanPath(path);
+    std::vector<std::string> lines = RootsTxtLines(), keep;
+    for (const auto &l : lines)
+        if (!(IsRootsTxtFolder(l) && CleanPath(l) == p)) keep.push_back(l);
+    return keep.size() == lines.size() ? true : RootsTxtWrite(keep);
+}
+
+// roots.txt 의 auto= (없으면 켜짐)
+static bool RootsTxtAutoOn() {
+    bool on = true;
+    for (const auto &l : RootsTxtLines()) {
+        std::string t = CleanPath(l);
+        if (t.rfind("auto=", 0) == 0) on = LowerAscii(t.substr(5)) != "off";
+    }
+    return on;
+}
+static bool RootsTxtSetAuto(bool on) {
+    std::vector<std::string> lines = RootsTxtLines(), keep;
+    for (const auto &l : lines)
+        if (CleanPath(l).rfind("auto=", 0) != 0) keep.push_back(l);
+    if (keep.empty()) keep = {"# Joy Launcher 롬 폴더 / ROM folders (한 줄에 폴더 하나 / one folder per line)"};
+    while (!keep.empty() && keep.back().empty()) keep.pop_back();
+    if (!on) keep.push_back("auto=off");
+    return RootsTxtWrite(keep);
+}
+// 폴더가 있는 저장소: 내장 / SD 카드 (번호) / 기타
+static std::string RootPlace(const std::string &path) {
+    for (const auto &v : plat::Volumes())
+        if (path == v.path || path.rfind(v.path + "/", 0) == 0) return v.primary ? T("내장") : Fmt(T("SD 카드 (%s)"), v.id.c_str());
+    return T("기타");
+}
+
+// 폴더 안의 기종 이름 폴더 (내장 기종 이름표). names: 앞의 몇 개
+static int CountSystemDirs(const std::string &dir, std::string *names) {
+    int n = 0;
+    for (const auto &e : ListSubdirs(dir))
+        if (*EsdeSystemName(LowerAscii(e))) {
+            if (names && n < 4) *names += (n ? ", " : "") + e;
+            n++;
+        }
+    if (names && n > 4) *names += ", …";
+    return n;
+}
+static RootItem RootFolderItem(const std::string &label, const std::string &path, int kind) {
+    RootItem it;
+    it.label = label;
+    it.path = path;
+    it.kind = kind;
+    it.isSystem = *EsdeSystemName(LowerAscii(path.substr(path.find_last_of('/') + 1))) != 0;
+    it.systems = CountSystemDirs(path, &it.sysNames);
+    return it;
+}
+// 처음 실행 확인 창: 자동으로 찾은 롬 폴더 (A 이대로 / B 직접 선택)
+static void RootFirstList(App &a) {
+    a.rootDir.clear();
+    a.rootItems.clear();
+    a.rootSel = 0;
+    for (const auto &r : gRoots) a.rootItems.push_back(RootFolderItem(RootPlace(r) + ": " + r, r, 9));
+    if (a.rootItems.empty()) {
+        RootItem it;
+        it.kind = 10;
+        it.label = T("자동으로 찾은 롬 폴더가 없습니다");
+        a.rootItems.push_back(it);
+    }
+}
+// 롬 폴더 고르기 창의 목록 만들기. dir "" = 롬 폴더 설정 (등록된 폴더·자동으로 찾은 폴더·폴더 추가 …), "\x01" = 저장소 목록
+static void RootBrowse(App &a, std::string dir) {  // 값으로 받음: it->path 를 넘겨도 rootItems 를 비울 때 안 사라지게
+    a.rootDir = dir;
+    a.rootItems.clear();
+    a.rootSel = 0;
+    std::vector<plat::Volume> vols = plat::Volumes();
+    if (dir.empty()) {
+        std::vector<std::string> reg = RootsTxtFolders();
+        bool autoOn = RootsTxtAutoOn();
+        auto inside = [&](const std::string &p) {  // 등록된 폴더(또는 그 안)라 이미 읽는 곳
+            for (const auto &r : reg)
+                if (p == r || p.rfind(r + "/", 0) == 0) return true;
+            return false;
+        };
+        std::vector<std::string> autoShown;
+        int autoInside = 0;
+        if (autoOn)
+            for (const auto &r : gRoots)
+                if (std::find(reg.begin(), reg.end(), r) == reg.end()) {
+                    if (inside(r)) autoInside++;
+                    else autoShown.push_back(r);
+                }
+        RootItem add;
+        add.kind = 6;
+        add.label = T("+ 폴더 추가 (파일 관리자)");
+        a.rootItems.push_back(add);
+        RootItem browse;
+        browse.kind = 7;
+        browse.label = T("+ 폴더 추가 (앱 안에서 찾아보기 — 파일 관리자가 안 될 때)");
+        a.rootItems.push_back(browse);
+        RootItem autoItem;
+        autoItem.kind = 8;
+        autoItem.label = autoOn ? std::string(T("자동 찾기: 켜짐 — 아래 등록된 폴더 + 자동으로 찾은 폴더를 함께 씀"))
+                                : std::string(T("자동 찾기: 꺼짐 — 등록된 폴더만 씀"));
+        a.rootItems.push_back(autoItem);
+        for (const auto &r : reg) a.rootItems.push_back(RootFolderItem(T("등록: ") + RootPlace(r) + "  " + r, r, 4));
+        for (const auto &r : autoShown) a.rootItems.push_back(RootFolderItem(T("자동: ") + RootPlace(r) + "  " + r, r, 5));
+        if (autoInside > 0) {
+            RootItem note;
+            note.kind = 11;
+            note.label = Fmt(T("자동으로 찾은 폴더 %d곳은 등록된 폴더 안에 있어 이미 함께 읽습니다"), autoInside);
+            a.rootItems.push_back(note);
+        }
+        a.rootSummary = Fmt(T("지금 쓰는 롬 폴더: 등록 %d곳 + 자동 %d곳"), (int)reg.size(), (int)(autoShown.size() + autoInside));
+        if (!autoOn) a.rootSummary = Fmt(T("지금 쓰는 롬 폴더: 등록 %d곳 (자동 찾기 꺼짐)"), (int)reg.size());
+        return;
+    }
+    if (dir == "\x01") {
+        for (const auto &v : vols) {
+            RootItem it;
+            it.kind = 3;
+            it.path = v.path;
+            it.label = (v.primary ? std::string(T("내부 저장소")) : Fmt(T("SD 카드 (%s)"), v.id.c_str())) + "   " + v.path;
+            a.rootItems.push_back(it);
+        }
+        return;
+    }
+    a.rootItems.push_back(RootFolderItem(T("▶ 이 폴더를 롬 폴더로 사용"), dir, 0));
+    RootItem up;
+    up.kind = 1;
+    up.label = T(".. (위로)");
+    a.rootItems.push_back(up);
+    for (const auto &d : ListSubdirs(dir)) {
+        if (LowerAscii(d) == "android") continue;  // 앱 데이터 (읽을 수 없음)
+        a.rootItems.push_back(RootFolderItem(d, dir + "/" + d, 2));
+    }
+    if (a.rootItems.size() > 2) a.rootSel = 2;
+}
+// 위 폴더 (저장소 맨 위 → "\x01" 저장소 목록 → "" 롬 폴더 설정)
+static std::string RootParent(const std::string &dir) {
+    if (dir == "\x01") return "";
+    for (const auto &v : plat::Volumes())
+        if (v.path == dir) return "\x01";
+    size_t s = dir.find_last_of('/');
+    return s == std::string::npos || s == 0 ? std::string() : dir.substr(0, s);
 }
 
 // 처음 실행: APK 에 든 기본 테마(assets 의 themes/<팩>.zip)를 /JoyLauncher/themes 에 풀어 둔다.
@@ -3633,7 +3957,7 @@ static void ResetGpu(App &a, bool all) {
 #ifndef JOY_BUILDER
 int main(int argc, char **argv) {
     std::string shot;
-    int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1;
+    int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1, wantOptCat = 0;
     std::string wantTheme, wantLang, rootArg;
     bool wantPick = false;
     bool wantAppPick = false;   // 시험: 앱 목록 창
@@ -3641,6 +3965,7 @@ int main(int argc, char **argv) {
     bool wantEmuPick = false;   // 시험: 에뮬레이터 선택 창
     bool wantFtp = false;
     bool wantUpdLink = false, wantUpdErr = false;
+    std::string wantRootPick, addRoot, removeRoot, firstChoice;
     bool dumpLaunch = false;    // 시험: 모든 게임의 실행 인자를 적고 끝
     bool homeArg = false;
 #ifdef __ANDROID__
@@ -3659,6 +3984,7 @@ int main(int argc, char **argv) {
         else if (s == "--col" && i + 1 < argc) wantCol = atoi(argv[++i]);
         else if (s == "--cat" && i + 1 < argc) wantCat = atoi(argv[++i]);  // 카테고리 화면 커서
         else if (s == "--opt" && i + 1 < argc) wantOpt = atoi(argv[++i]);  // 옵션 창 열고 커서
+        else if (s == "--optcat" && i + 1 < argc) wantOptCat = atoi(argv[++i]);  // 옵션 창 분류 (1 롬 및 앱 · 2 테마 · 3 시스템)
         else if (s == "--lang" && i + 1 < argc) wantLang = argv[++i];  // ko / en (설정보다 우선)
         else if (s == "--theme-unzip" && i + 3 < argc) {  // 테마 zip 풀기 시험: --theme-unzip <zip> <zip 안 폴더/> <풀 곳>
             int files = 0;
@@ -3693,6 +4019,12 @@ int main(int argc, char **argv) {
         else if (s == "--apppick") wantAppPick = true;
         else if (s == "--bgm") wantBgm = true;
         else if (s == "--emupick") wantEmuPick = true;
+        else if (s == "--rootpick") wantRootPick = "\x02";  // 시험: 롬 폴더 설정 창
+        else if (s == "--firstrun") wantRootPick = "\x03";  // 시험: 처음 실행 확인 창
+        else if (s == "--first-choice" && i + 1 < argc) firstChoice = argv[++i];  // 시험: 처음 실행 확인 창에서 A 또는 B (B 는 JOY_PICK_DIR)
+        else if (s == "--rootdir" && i + 1 < argc) wantRootPick = argv[++i];  // 시험: 그 폴더를 보는 창
+        else if (s == "--add-root" && i + 1 < argc) addRoot = argv[++i];  // 시험: roots.txt 에 더하고 결과 출력
+        else if (s == "--remove-root" && i + 1 < argc) removeRoot = argv[++i];  // 시험: roots.txt 에서 빼고 결과 출력
         else if (s == "--updlink" && i + 1 < argc) {  // 시험: 업데이트 창 (버전 "-" = 최신, "!" = 확인 실패)
             std::string v = argv[++i];
             wantUpdLink = true;
@@ -3749,6 +4081,7 @@ int main(int argc, char **argv) {
     (void)homeArg;
     mkdir(gHome.c_str(), 0777);
     gShotMode = !shot.empty();
+    bool firstRun = !std::ifstream(gHome + "/settings.txt").good();  // 처음 실행: 롬 폴더 고르기 창을 연다
     if (!gShotMode) InstallBundledThemes(a);
     LoadSettings();
     if (!wantLang.empty()) { gLanguage = wantLang; ApplyLanguage(); }
@@ -3776,16 +4109,19 @@ int main(int argc, char **argv) {
     }
     if (!wantTheme.empty()) LoadTheme(wantTheme == "-" ? "" : wantTheme);
     std::string log;
+    Uint32 tRoots = SDL_GetTicks();
 #ifdef __ANDROID__
     std::vector<std::string> roots = FindRoots("", true, log);
 #else
     // 데스크톱 시험판: --root (기본 "roms"). JOY_PRIMARY 를 정했으면 안드로이드처럼 저장소에서도 찾음
     std::vector<std::string> roots = FindRoots(rootArg.empty() && !getenv("JOY_PRIMARY") ? gRoot : rootArg, getenv("JOY_PRIMARY") != nullptr, log);
 #endif
+    Uint32 tEmu = SDL_GetTicks();
     {
         std::string esde = EsdeLocate(roots);
         EmuLoad(gHome, esde.empty() ? std::vector<std::string>() : std::vector<std::string>{esde});
     }
+    SDL_Log("[time] start→roots %u ms, roots %u ms (%d), emu %u ms", tRoots, tEmu - tRoots, (int)roots.size(), SDL_GetTicks() - tEmu);
     LoadFavorites();
     LoadAppFav();
     LoadPlayCounts();
@@ -3793,6 +4129,8 @@ int main(int argc, char **argv) {
     {
         std::string scan;
         LoadGames(a, false, scan);
+        SDL_Log("[time] games ready %u ms", SDL_GetTicks());
+        FlushInputs();  // 읽는 동안 눌린 버튼은 버림 (다 읽자마자 게임이 실행되는 일 막기)
         log += scan;
     }
     printf("%s", log.c_str());
@@ -3823,7 +4161,7 @@ int main(int argc, char **argv) {
         a.catSel = wantCat;
         a.catTop = CenterTop(a.catSel, false);
     }
-    if (wantOpt >= 0) { a.optPick = true; a.optSel = wantOpt; }
+    if (wantOpt >= 0) { a.optPick = true; a.optCat = std::max(0, std::min(3, wantOptCat)); a.optSel = wantOpt; Clamp(a); }
     if (wantSel >= 0) a.sel = wantSel;
     if (wantMode >= 0) a.mode = wantMode ? Mode::Games : Mode::Categories;
     Clamp(a);
@@ -3897,7 +4235,6 @@ int main(int argc, char **argv) {
             Notice(a, T("실행할 수 있는 앱을 찾지 못했습니다"), kMsgBlue, 3500);
             return;
         }
-        a.optPick = false;
         a.appPick = true;
         a.appSel = std::min(a.appSel, (int)a.appList.size() - 1);
     };
@@ -3932,7 +4269,6 @@ int main(int argc, char **argv) {
         a.emuSel = 0;
         for (size_t i = 0; i < a.emuList.size(); i++)
             if (a.emuList[i].current) a.emuSel = (int)i;
-        a.optPick = false;
         a.emuPick = true;
     };
     if (wantPick) openThemePick();
@@ -3942,6 +4278,13 @@ int main(int argc, char **argv) {
         if (wantSel >= 0 && a.appPick) a.appSel = std::min(wantSel, (int)a.appList.size() - 1);
     }
     if (wantEmuPick) openEmuPick();
+    if (!wantRootPick.empty()) {  // 시험: 롬 폴더 고르기 창 (화면 찍기 전에 열어 둠)
+        a.rootPick = true;
+        a.rootFirst = wantRootPick == "\x03";
+        if (a.rootFirst) RootFirstList(a);
+        else RootBrowse(a, wantRootPick == "\x02" ? std::string() : wantRootPick);
+        if (wantSel >= 0) a.rootSel = std::min(wantSel, (int)a.rootItems.size() - 1);
+    }
     if (wantUpdLink) {
         BuildMenu();
         a.updLink = true;
@@ -4165,29 +4508,89 @@ int main(int argc, char **argv) {
         a.bgmPick = true;
         a.bgmSel = gSound == "common" ? 0 : gSound == "theme" ? 1 : gSound == "video" ? 2 : 3;
     };
+    // 롬 폴더·에뮬레이터 표·게임 목록 다시 읽기 (SD 카드를 꽂았거나 roots.txt 를 고쳤을 때)
+    auto reloadLibrary = [&]() {
+        SaveState(a);
+        std::string log2;
+#ifdef __ANDROID__
+        gRoots = FindRoots("", true, log2);
+#else
+        if (getenv("JOY_PRIMARY")) gRoots = FindRoots("", true, log2);
+#endif
+        {
+            std::string esde = EsdeLocate(gRoots);
+            EmuLoad(gHome, esde.empty() ? std::vector<std::string>() : std::vector<std::string>{esde});
+        }
+        LoadGames(a, true, log2);
+        LoadState(a, true);
+        Clamp(a);
+        BuildMenu();
+        FlushInputs();
+    };
+    // 롬 폴더 고르기: 고른 폴더를 roots.txt 에 저장하고 다시 읽음, 그 폴더에서 찾은 게임 수를 알림
+    auto chooseRoot = [&](std::string path) {  // 값으로 (고른 줄의 경로가 목록을 바꿀 때 사라지지 않게)
+        if (!RootsTxtAdd(path) || (a.pickAutoOff && !RootsTxtSetAuto(false))) {
+            Notice(a, T("roots.txt 를 저장하지 못했습니다"), kMsgRed, 4500);
+            return;
+        }
+        a.rootPick = a.rootFirst = a.pickAutoOff = false;
+        reloadLibrary();
+        int n = 0;
+        for (const auto &col : a.cols)
+            if (!col.virt)
+                for (const auto &g : col.games)
+                    if (g.file.rfind(path + "/", 0) == 0) n++;
+        a.message = n > 0 ? Fmt(T("롬 폴더를 저장했습니다 (게임 %d개)\n%s"), n, path.c_str())
+                          : Fmt(T("저장했지만 이 폴더에서 게임을 찾지 못했습니다\n기종 폴더(GBA·NDS…)가 든 폴더를 고르세요: %s"), path.c_str());
+        if (RootsTxtAutoOn()) a.message += std::string("\n") + T("자동 찾기 켜짐: 자동으로 찾은 폴더도 함께 씁니다 (옵션 → 롬 및 앱 설정 → 롬 폴더 설정에서 끌 수 있음)");
+        a.messageColor = n > 0 ? kMsgGreen : kMsgRed;
+        a.messageModal = true;
+    };
+    auto openRootPick = [&](bool first) {
+        a.rootPick = true;
+        a.rootFirst = first;
+        if (first) RootFirstList(a);
+        else RootBrowse(a, "");
+    };
+    // 처음 실행 확인 창의 A: 자동으로 찾은 폴더를 그대로 roots.txt 에 (자동 찾기는 켜 둠)
+    auto acceptFound = [&]() {
+        int saved = 0;
+        for (const auto &it : a.rootItems)
+            if (it.kind == 9 && RootsTxtAdd(it.path)) saved++;
+        a.rootPick = a.rootFirst = false;
+        reloadLibrary();
+        int n = 0;
+        for (const auto &col : a.cols)
+            if (!col.virt) n += (int)col.games.size();
+        a.message = Fmt(T("롬 폴더 %d곳을 저장했습니다 (게임 %d개)"), saved, n);
+        a.messageColor = n > 0 ? kMsgGreen : kMsgRed;
+        a.messageModal = true;
+    };
+    // 안드로이드 파일 관리자(폴더 선택) 열기. 못 열면 앱 안에서 찾아보기. autoOff: 고르면 자동 찾기를 끔 (처음 실행의 직접 선택)
+    auto startSystemPicker = [&](bool autoOff) {
+        a.pickAutoOff = autoOff;
+        if (plat::OpenFolderPicker()) {
+            a.folderPicking = true;
+            return;
+        }
+        a.rootPick = true;
+        RootBrowse(a, "\x01");
+        Notice(a, T("파일 관리자를 열 수 없어 앱 안에서 찾아봅니다"), kMsgBlue, 4000);
+    };
+    // 옵션 창의 항목 실행. 분류 창에서 연 창(테마 선택·롬 폴더·앱·에뮬레이터·BGM)은 B 로 닫으면 그 분류 창으로 돌아옴
     auto runMenu = [&](int idx) {
-        if (idx < 0 || idx >= (int)gMenu.size()) return;
-        const MenuItem m = gMenu[idx];
-        if (m.act == MenuAct::FtpRecv) {
+        const auto &items = OptItems(a.optCat);
+        if (idx < 0 || idx >= (int)items.size()) return;
+        const MenuItem m = items[idx];
+        if (OptCatOf(m.act) > 0) {
+            a.optCat = OptCatOf(m.act);
+            a.optSel = 0;
+        } else if (m.act == MenuAct::FtpRecv) {
             openFtp();
         } else if (m.act == MenuAct::Theme) {
-            a.optPick = false;
             openThemePick();
         } else if (m.act == MenuAct::Refresh) {
-            a.optPick = false;
-            SaveState(a);
-            // 롬 폴더·에뮬레이터 표도 다시 (SD 카드를 꽂았거나 설정 파일을 고쳤을 수 있음)
-            std::string log2;
-#ifdef __ANDROID__
-            gRoots = FindRoots("", true, log2);
-#endif
-            {
-                std::string esde = EsdeLocate(gRoots);
-                EmuLoad(gHome, esde.empty() ? std::vector<std::string>() : std::vector<std::string>{esde});
-            }
-            LoadGames(a, true, log2);
-            LoadState(a, true);
-            Clamp(a);
+            reloadLibrary();
             int n = 0;
             for (const auto &col : a.cols)
                 if (!col.virt) n += (int)col.games.size();
@@ -4201,6 +4604,8 @@ int main(int argc, char **argv) {
             adjust(m.act, 1);
         } else if (m.act == MenuAct::AppFav) {
             openAppPick();
+        } else if (m.act == MenuAct::RootPick) {
+            openRootPick(false);
         } else if (m.act == MenuAct::EmuPick) {
             openEmuPick();
         } else if (m.act == MenuAct::BgmMenu) {
@@ -4233,6 +4638,62 @@ int main(int argc, char **argv) {
                 if (gDemo || SDL_OpenURL(url.c_str()) != 0) Notice(a, T("브라우저를 열지 못했습니다. 주소를 직접 입력하세요"), kMsgRed, 4500);
             }
             if (b == 0 || b == 1) a.updLink = false;
+            return;
+        }
+        if (a.folderPicking) return;  // 파일 관리자에서 고르는 중 (결과는 주 반복에서 받음)
+        if (a.rootPick) {  // 롬 폴더 확인·설정·찾아보기
+            int n = (int)a.rootItems.size();
+            const RootItem *it = a.rootSel < n ? &a.rootItems[a.rootSel] : nullptr;
+            if (a.rootFirst && a.rootDir.empty()) {  // 처음 실행 확인 창
+                bool found = n && a.rootItems[0].kind == 9;
+                if (b == 13 && n) a.rootSel = (a.rootSel + n - 1) % n;
+                else if (b == 15 && n) a.rootSel = (a.rootSel + 1) % n;
+                else if (b == 0) {
+                    if (found) acceptFound();
+                    else startSystemPicker(true);
+                } else if (b == 1) {
+                    if (found) startSystemPicker(true);
+                    else a.rootPick = a.rootFirst = false;  // 나중에
+                }
+                return;
+            }
+            if (b == 13 && n) a.rootSel = (a.rootSel + n - 1) % n;
+            else if (b == 15 && n) a.rootSel = (a.rootSel + 1) % n;
+            else if (b == 12 && n) a.rootSel = std::max(0, a.rootSel - 10);
+            else if (b == 14 && n) a.rootSel = std::min(n - 1, a.rootSel + 10);
+            else if (b == 0 && it && it->kind != 11) {  // 11 = 안내 줄
+                if (it->kind == 0 || it->kind == 5) chooseRoot(it->path);
+                else if (it->kind == 1) RootBrowse(a, RootParent(a.rootDir));
+                else if (it->kind == 6) startSystemPicker(false);
+                else if (it->kind == 7) RootBrowse(a, "\x01");
+                else if (it->kind == 8) {
+                    int keep = a.rootSel;
+                    RootsTxtSetAuto(!RootsTxtAutoOn());
+                    reloadLibrary();
+                    RootBrowse(a, "");
+                    for (int i = 0; i < (int)a.rootItems.size(); i++)
+                        if (a.rootItems[i].kind == 8) keep = i;
+                    a.rootSel = keep;
+                } else RootBrowse(a, it->path);  // 하위 폴더·저장소·등록된 폴더 열기
+            } else if (b == 2 && it) {
+                if (it->kind == 2) chooseRoot(it->path);
+                else if (it->kind == 4) {
+                    std::string gone = it->path;
+                    RootsTxtRemove(gone);
+                    reloadLibrary();
+                    RootBrowse(a, "");
+                    Notice(a, T("롬 폴더 등록을 해제했습니다: ") + gone, kMsgBlue, 3500);
+                }
+            } else if (b == 1) {
+                if (a.rootDir.empty()) a.rootPick = a.rootFirst = false;
+                else {
+                    std::string from = a.rootDir, up = RootParent(a.rootDir);
+                    if (up.empty() && a.rootFirst) RootFirstList(a);  // 처음 실행 중 찾아보기에서 나오면 확인 창으로
+                    else RootBrowse(a, up);
+                    for (int i = 0; i < (int)a.rootItems.size(); i++)  // 방금 있던 폴더에 커서
+                        if (a.rootItems[i].path == from) a.rootSel = i;
+                }
+            }
             return;
         }
         if (a.appPick) {
@@ -4337,17 +4798,28 @@ int main(int argc, char **argv) {
             return;
         }
         if (a.optPick) {
-            int n = (int)gMenu.size();
+            const auto &items = OptItems(a.optCat);
+            int n = (int)items.size();
             if (b == 13) a.optSel = (a.optSel + n - 1) % n;
             else if (b == 15) a.optSel = (a.optSel + 1) % n;
             else if (b == 0) runMenu(a.optSel);
-            else if ((b == 12 || b == 14) && Adjustable(gMenu[a.optSel].act)) adjust(gMenu[a.optSel].act, b == 14 ? 1 : -1);
-            else if (b == 1 || b == 3) a.optPick = false;
+            else if ((b == 12 || b == 14) && Adjustable(items[a.optSel].act)) adjust(items[a.optSel].act, b == 14 ? 1 : -1);
+            else if (b == 1 && a.optCat > 0) {  // 분류 창의 B: 맨 위로 (그 분류에 커서)
+                int from = a.optCat;
+                a.optCat = 0;
+                a.optSel = 0;
+                for (int i = 0; i < (int)gMenu.size(); i++)
+                    if (OptCatOf(gMenu[i].act) == from) a.optSel = i;
+            } else if (b == 1 || b == 3) {
+                a.optPick = false;
+                a.optCat = 0;
+            }
             a.selChanged = SDL_GetTicks() - 1000;
             return;
         }
         if (b == 3) {  // Y: 옵션
             a.optPick = true;
+            a.optCat = 0;
             a.optSel = 0;
             return;
         }
@@ -4355,7 +4827,11 @@ int main(int argc, char **argv) {
             openBgm();
             return;
         }
-        if (a.cols.empty()) { if (b == 1 || b == 10) a.exitAsk = true; return; }
+        if (a.cols.empty()) {  // 게임 목록이 없음: A = 롬 폴더 고르기
+            if (b == 0) openRootPick(false);
+            if (b == 1 || b == 10) a.exitAsk = true;
+            return;
+        }
         int ncol = (int)a.cols.size();
         if (a.mode == Mode::Categories) {
             switch (b) {
@@ -4425,8 +4901,54 @@ int main(int argc, char **argv) {
     auto swapAB = [&](int b) { return gSwapAB && (b == 0 || b == 1) ? 1 - b : b; };
     bool overlayOn = false;
     bool inBackground = false;  // 다른 앱이 앞에 있음 (이 프레임을 끝으로 SDL 이 런처를 멈춰 둔다)
+    if (wantRootPick.empty() && firstRun && !gShotMode && !gDemo) {
+        openRootPick(true);  // 처음 실행: 롬 폴더 고르기 (B = 나중에, 자동으로 찾은 폴더만 씀)
+        printf("[rootpick] first run\n");
+    }
+    if (!firstChoice.empty()) {  // 시험: 처음 실행 확인 창의 선택을 그대로 해 보고 결과 출력
+        openRootPick(true);
+        bool found = !a.rootItems.empty() && a.rootItems[0].kind == 9;
+        if (firstChoice == "A" && found) acceptFound();
+        else {
+            startSystemPicker(true);
+            std::string r;
+            if (a.folderPicking && plat::FolderPickerResult(r)) {
+                a.folderPicking = false;
+                if (!r.empty() && r[0] != '!') chooseRoot(r);
+                else printf("PICK %s\n", r.empty() ? "(cancel)" : r.c_str());
+            }
+        }
+        printf("FIRST %s | %s\n", firstChoice.c_str(), a.message.c_str());
+        std::ifstream rf(gHome + "/roots.txt", std::ios::binary);
+        printf("%s", std::string(std::istreambuf_iterator<char>(rf), {}).c_str());
+        return 0;
+    }
+    if (!removeRoot.empty()) {
+        printf("REMOVEROOT %d\n", (int)RootsTxtRemove(removeRoot));
+        std::ifstream rf(gHome + "/roots.txt", std::ios::binary);
+        printf("%s", std::string(std::istreambuf_iterator<char>(rf), {}).c_str());
+        return 0;
+    }
+    if (!addRoot.empty()) {
+        chooseRoot(addRoot);
+        printf("ADDROOT %s\n", a.message.c_str());
+        std::ifstream rf(gHome + "/roots.txt", std::ios::binary);
+        printf("%s", std::string(std::istreambuf_iterator<char>(rf), {}).c_str());
+        return 0;
+    }
     bool updateNotified = gAutoUpdate != "on" || gShotMode || gDemo || !UpdaterEnabled();
     while (running) {
+        if (a.folderPicking) {  // 파일 관리자에서 돌아옴: 고른 폴더 적용 (취소면 창 그대로)
+            std::string r;
+            if (plat::FolderPickerResult(r)) {
+                a.folderPicking = false;
+                if (!r.empty() && r[0] == '!')
+                    Notice(a, r == "!provider" ? std::string(T("이 위치는 실제 폴더가 아닙니다 (클라우드·다른 앱). 내부 저장소나 SD 카드의 폴더를 고르세요"))
+                                                : T("고른 폴더의 저장소를 찾지 못했습니다 ") + r,
+                           kMsgRed, 5000);
+                else if (!r.empty()) chooseRoot(r);
+            }
+        }
         if (!updateNotified) {  // 시작 시 백그라운드 확인 결과 (새 버전이면 한 번 알림)
             UpdateInfo info;
             std::string err;
@@ -4584,7 +5106,7 @@ int main(int argc, char **argv) {
         // 물러나는 프레임이나 게임을 막 실행한 뒤에 다시 시작하면 다른 앱 뒤에서 소리가 나므로 그때도 멈춘 채로 둔다
         bool videoHold = inBackground || (gVideoHoldUntil && (Sint32)(gVideoHoldUntil - SDL_GetTicks()) > 0);
         VideoEndFrame(SDL_GetTicks() - a.selChanged, !videoHold && !(a.optPick || a.bgmPick || a.themePick || a.appPick || a.emuPick ||
-                                                                     a.exitAsk || a.updLink || a.ftpOpen || a.messageModal));
+                                                                     a.exitAsk || a.updLink || a.rootPick || a.ftpOpen || a.messageModal));
         if (overlayOn) OverlayDraw(a.r, gPadStartSelect);
         SDL_RenderPresent(a.r);
     }

@@ -759,9 +759,10 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
     if (!gEsdeDir.empty()) lib.log += "[esde] " + gEsdeDir + " (media " + gEsdeMedia + ")\n";
     for (const auto &r : rootDirs) {
         if (!IsDir(r)) continue;
-        // 루트 자체는 목록 파일이 있을 때만 (롬을 루트에 직접 두는 경우는 드묾)
+        // 루트 자체: 목록 파일이 있으면 그것, 없으면 자동 인식 (roots.txt 에 롬 폴더 자체를 적은 경우: /…/GBA)
         bool rootMeta = Exists(r + "/metadata.pegasus.txt");
         if (rootMeta) ParsePegasus(r, lib);
+        else if (!IsMediaFolder(r)) ScanAuto(r, lib);
         // 루트에 목록이 있으면 (페가수스 game_dirs.txt 의 게임 폴더 등) 그 하위 폴더는 게임 데이터 — 자동 등록하지 않는다
         for (const auto &s : ListDir(r, true)) Scan(r + "/" + s, 1, lib, rootMeta);
     }
@@ -786,18 +787,30 @@ std::vector<Collection> LoadLibrary(const std::vector<std::string> &rootDirs, st
 // 다음이 바뀌면 자동으로 다시 읽는다: 런처 버전, 롬 폴더 구성(2단계), metadata.pegasus.txt·gamelist.xml 의
 // 수정 시각·크기, 사용자 기종 표(custom_systems), emulators.txt 에 적은 이름. (롬·그림만 넣고 뺀 경우는 메뉴에서 새로 고침)
 namespace {
-const char *kCacheMagic = "JOYLIB A4";  // A3: 목록 루트 하위 폴더·압축 파일 규칙 (A20), A4: webp 그림·설명의 \\n (A24)
+const char *kCacheMagic = "JOYLIB A5";  // A3: 목록 루트 하위 폴더·압축 파일 규칙 (A20), A4: webp 그림·설명의 \\n (A24), A5: 루트 자동 인식·롬 파일 서명 (A28)
 
-void SigDir(const std::string &dir, int depth, std::string &sig) {
+// 목록을 다시 읽어야 하는지 가리는 서명. LoadLibrary 의 Scan 과 같은 규칙으로 훑는다:
+// 목록 파일이 있는 폴더는 그 파일의 시각·크기, 자동 인식하는 폴더(목록 파일도 없고 위 폴더에도 없음)는 롬 파일 이름.
+// 메타데이터 폴더 아래(게임 데이터 폴더, JoiPlay 게임 등)는 파일을 훑지 않는다 (느려짐 — RP6 에서 4초 → 21초 였음)
+void SigDir(const std::string &dir, int depth, std::string &sig, bool parentHasMeta) {
     if (IsMediaFolder(dir)) return;
     sig += "D" + dir + "\n";
+    bool meta = false;
     for (const char *f : {"/metadata.pegasus.txt", "/gamelist.xml"}) {
-        struct stat st;
-        if (stat((dir + f).c_str(), &st) == 0)
+        struct stat st;  // 직접 stat (폴더 기억으로 확인하면 맨 아래 폴더까지 통째로 읽게 되어 느림: JoiPlay 게임 폴더 등)
+        if (stat((dir + f).c_str(), &st) == 0) {
+            meta = true;
             sig += std::string(f) + " " + std::to_string((long long)st.st_mtime) + " " + std::to_string((long long)st.st_size) + "\n";
+        }
+    }
+    if (!meta && !parentHasMeta) {  // 자동 인식 폴더: 롬만 넣고 빼도 다음 시작 때 다시 읽게
+        const EmuSystem *sys = SystemForDir(dir);
+        bool user = !sys && EmuUserHas(Base(dir));
+        for (const auto &f : ListDir(dir, false))
+            if (IsRomFile(f, sys, user)) sig += "F" + f + "\n";
     }
     if (depth <= 0) return;
-    for (const auto &s : ListDir(dir, true)) SigDir(dir + "/" + s, depth - 1, sig);
+    for (const auto &s : ListDir(dir, true)) SigDir(dir + "/" + s, depth - 1, sig, meta || parentHasMeta);
 }
 
 std::string Esc(const std::string &s) {
@@ -848,6 +861,9 @@ std::string EsdeLocate(const std::vector<std::string> &rootDirs) {
 
 std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     std::string sig = std::string(kCacheMagic) + " " + __DATE__ + " " + __TIME__ + "\n";
+    // 폴더마다 한 번만 읽고(d_type) 기억해 둔다: 항목마다 stat 을 부르지 않음
+    gDirCache.clear();
+    gDirCacheOn = true;
     sig += EmuSignature();
     // ES-DE 폴더와 그 목록들
     FindEsde(rootDirs);
@@ -863,8 +879,10 @@ std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     for (const auto &r : rootDirs) {
         if (!IsDir(r)) continue;
         sig += "R" + r + "\n";
-        SigDir(r, 2, sig);
+        SigDir(r, 2, sig, false);
     }
+    gDirCacheOn = false;
+    gDirCache.clear();
     uint64_t h = 1469598103934665603ULL;
     for (unsigned char ch : sig) h = (h ^ ch) * 1099511628211ULL;
     char buf[32];

@@ -20,6 +20,7 @@ import android.os.Environment;
 import android.os.StrictMode;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
+import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -472,6 +473,75 @@ public class JoyActivity extends SDLActivity {
         } catch (Throwable t) {
             Log.w(TAG, "startApp: " + t);
             return t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
+        }
+    }
+
+    // ------------------------------------------------------------ 롬 폴더 고르기 (안드로이드 기본 파일 관리자의 폴더 선택)
+    private static final int REQ_FOLDER = 7301;
+    private static volatile int folderState = 0;       // 0 없음 / 1 고르는 중 / 2 결과 있음
+    private static volatile String folderResult = "";  // 실제 경로, "" = 취소, "!이유" = 쓸 수 없는 위치
+
+    // 폴더 선택 화면 열기. 열 수 없으면 false (앱 안 찾아보기로 대신)
+    public static boolean openFolderPicker() {
+        try {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            if (Build.VERSION.SDK_INT >= 26)
+                i.putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+                           DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:"));
+            if (i.resolveActivity(self.getPackageManager()) == null) return false;
+            folderResult = "";
+            folderState = 1;
+            self.startActivityForResult(i, REQ_FOLDER);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "openFolderPicker: " + t);
+            folderState = 0;
+            return false;
+        }
+    }
+
+    // 고른 결과 (한 번만). null = 아직 고르는 중 또는 연 적 없음
+    public static String folderPickerResult() {
+        if (folderState != 2) return null;
+        folderState = 0;
+        return folderResult;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQ_FOLDER) {
+            String r = "";
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) r = treeToPath(data.getData());
+            folderResult = r;
+            folderState = 2;
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    // content://com.android.externalstorage.documents/tree/primary%3AJY_Data%2FRoms → /storage/emulated/0/JY_Data/Roms
+    // SD 카드 "1234-ABCD:Roms" → 그 저장소 경로/Roms. 실제 경로가 없는 위치(클라우드·다른 앱)는 "!provider"
+    static String treeToPath(Uri uri) {
+        try {
+            if (!"com.android.externalstorage.documents".equals(uri.getAuthority())) return "!provider";
+            String id = DocumentsContract.getTreeDocumentId(uri);
+            int c = id.indexOf(':');
+            String vol = c < 0 ? id : id.substring(0, c), rel = c < 0 ? "" : id.substring(c + 1);
+            String root = null;
+            if ("primary".equals(vol)) root = primaryStorage();
+            else if ("home".equals(vol)) root = primaryStorage() + "/Documents";
+            else {
+                for (String line : storageVolumes()) {
+                    int t = line.indexOf('\t');
+                    if (t > 0 && line.substring(t + 1).equalsIgnoreCase(vol)) root = line.substring(0, t);
+                }
+                if (root == null && new File("/storage/" + vol).isDirectory()) root = "/storage/" + vol;
+            }
+            if (root == null) return "!volume";
+            while (rel.endsWith("/")) rel = rel.substring(0, rel.length() - 1);
+            return rel.isEmpty() ? root : root + "/" + rel;
+        } catch (Throwable t) {
+            return "!" + t.getClass().getSimpleName();
         }
     }
 
