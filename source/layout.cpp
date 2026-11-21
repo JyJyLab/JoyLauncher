@@ -317,6 +317,7 @@ Elem NewElem(const std::string &name) {
     e.selColor.name = "text";
     e.selection.name = "selection";
     e.countColor.name = "dim";
+    e.sbColor.name = "scrollbar";  // 테마에 color.scrollbar 가 없으면 dim 색
     e.titleColor.name = "text";
     return e;
 }
@@ -430,6 +431,14 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
         if (ParseInts(val, v4, 2)) { e.countX = v4[0]; e.countY = v4[1]; return true; }
         if (ParseInt(val, v4[0])) { e.countX = v4[0]; e.countY = -1; return true; }
         return bad("count_offset = x,y");
+    }
+    if (key == "scrollbar") return ParseChoice(val, {"auto", "on", "off"}, e.scrollbar) || bad("auto / on / off");
+    if (key == "scrollbar_color") return ParseColor(val, e.sbColor) || bad("color");
+    if (key == "scrollbar_width") return (ParseInt(val, e.sbW) && e.sbW >= 1 && e.sbW <= 30) || bad("1~30");
+    if (key == "scrollbar_offset") {
+        if (ParseInts(val, v4, 2)) { e.sbX = v4[0]; e.sbY = v4[1]; return true; }
+        if (ParseInt(val, v4[0])) { e.sbX = v4[0]; e.sbY = 0; return true; }
+        return bad("scrollbar_offset = x,y");
     }
     if (key == "card") { e.card = val; return true; }
     if (key == "card_color") { if (!ParseColor(val, e.cardColor)) return bad("color"); e.hasCardColor = true; return true; }

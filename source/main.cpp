@@ -1842,10 +1842,49 @@ static SDL_Color LC(const LColor &c) {
     auto it = gTheme.layout.colors.find(c.name);
     if (it != gTheme.layout.colors.end()) return {it->second.r, it->second.g, it->second.b, it->second.a};
     if (c.name == "dim") return kGrey;
+    if (c.name == "scrollbar") return LC(LColor{"dim"});  // color.scrollbar 가 없으면 dim 색
     if (c.name == "accent") return kAccent;
     if (c.name == "selection") return SelColor();
     if (c.name == "bar") return {kDark.r, kDark.g, kDark.b, (Uint8)(gBackDrawn ? 200 : 255)};
     return kWhite;  // text, selected, 모르는 이름
+}
+
+// 작은 스크롤바: 바탕(같은 색 25%) + 손잡이. pos = 맨 위(왼쪽)에 보이는 항목(소수 가능), visible = 한 번에 보이는 수
+static void DrawScrollbar(App &a, int x, int y, int len, int thick, bool vertical, float pos, float visible, int n, SDL_Color thumb) {
+    if (n <= 0 || len <= thick * 2 || thick <= 0) return;
+    SDL_Color track = thumb;
+    track.a = (Uint8)(thumb.a / 4);
+    int r = thick / 2;
+    if (vertical) DrawRound(a, x, y, thick, len, r, 0, track, track);
+    else DrawRound(a, x, y, len, thick, r, 0, track, track);
+    float frac = std::min(1.0f, visible / (float)n);
+    int tl = std::min(len, std::max(thick * 3, (int)lroundf(len * frac)));
+    float maxPos = std::max(0.0f, n - visible);
+    float t = maxPos > 0 ? std::max(0.0f, std::min(1.0f, pos / maxPos)) : 0.0f;
+    int off = (int)lroundf((len - tl) * t);
+    if (vertical) DrawRound(a, x, y + off, thick, tl, r, 0, thumb, thumb);
+    else DrawRound(a, x + off, y, tl, thick, r, 0, thumb, thumb);
+}
+
+// 목록 요소의 스크롤바 (scrollbar = auto 면 넘칠 때만). 줄·격자: 오른쪽 세로, 캐러셀: 가로는 아래 가운데·세로는 오른쪽
+// edge: 막대를 놓을 바깥 끝 (세로 = 오른쪽 x, 가로 = 아래 y, -1 = 요소 자리 끝). 확대된 캐러셀 칸과 겹치지 않게
+static void ElemScrollbar(App &a, const Elem &e, bool overflow, bool vertical, int len, float pos, float visible, int n, int edge = -1) {
+    if (e.scrollbar == 2 || (e.scrollbar == 0 && !overflow) || n <= 0) return;
+    int t = e.sbW, x, y;
+    if (vertical) {
+        x = std::min((edge >= 0 ? edge : e.x + e.w) + 6, W - t - 2);
+        y = e.y + (e.h - len) / 2;
+    } else {
+        x = e.x + (e.w - len) / 2;
+        y = std::min((edge >= 0 ? edge : e.y + e.h) + 6, H - t - 2);
+    }
+    DrawScrollbar(a, x + e.sbX, y + e.sbY, len, t, vertical, pos, visible, n, LC(e.sbColor));
+}
+
+// 메뉴 창(옵션·테마 선택·홈브루 즐겨찾기) 목록의 스크롤바: 창 오른쪽 안쪽
+static void MenuScrollbar(App &a, const MenuStyle &m, int bx, int by, int bw, int rows, int top, int n) {
+    if (n <= rows) return;
+    DrawScrollbar(a, bx + bw - 12, by + 62, rows * kRowH, 4, true, (float)top, (float)rows, n, m.dim);
 }
 
 // 테마 폴더 기준 파일 경로 (폴더 밖으로 나가는 경로는 무시)
@@ -2441,6 +2480,9 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
             if (!e.children.empty()) DrawCellChildren(a, e, c, idx, n, s, rowRc, 1.0f, false);
         }
         if (frac) SDL_RenderSetClipRect(a.r, nullptr);
+        int len = std::min(e.h, (int)(rows * e.rowH + 0.5f));
+        if (len <= 0) len = (int)(rows * e.rowH + 0.5f);
+        ElemScrollbar(a, e, n > rows, true, len, view, (float)rows, n);
         return;
     }
     // 격자·캐러셀 칸
@@ -2535,6 +2577,9 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
         for (int k = 1; k <= (int)half + 2 && gLoadBudget > 0; k++)
             for (int idx : {sel + (int)half + k, sel - (int)half - k})
                 if (idx >= 0 && idx < n) Thumb(a, cellPath(idx), tw, th, false, false);
+        int big = (int)((hz ? ch : cw) * maxSc / 2) + std::max(e.cardGrow, e.selectorGrow);  // 가장 크게 보이는 칸의 반
+        int edge = hz ? std::max(e.y + e.h, cy + big) : std::max(e.x + e.w, cx + big);
+        ElemScrollbar(a, e, n > 1, !hz, std::min(hz ? e.w : e.h, 320), pos, 1.0f, n, edge);
         return;
     }
     ListAnim &st = AnimFor(akey, listId, sel, (float)(top / std::max(1, cols)), ms);
@@ -2563,6 +2608,8 @@ static void DrawElemList(App &a, const Elem &e, const DrawCtx &c) {
     if (prevAnim) cell(st.prev, false, baseOf(st.prev), scaleOf(st.prev), 255);
     if (sel >= start && sel < end) cell(sel, true, baseOf(sel), scaleOf(sel), 255);  // 선택된 칸은 맨 위에 (확대했을 때 옆 칸을 덮음)
     if (frac) SDL_RenderSetClipRect(a.r, nullptr);
+    int totalRows = (n + cols - 1) / std::max(1, cols);
+    ElemScrollbar(a, e, totalRows > rows, true, e.h, vrow, (float)rows, totalRows);
     // 보이는 칸을 다 읽었으면 다음·이전 쪽 그림을 미리 읽어 둔다 (넘길 때 바로 보이게)
     for (int idx = end; idx < std::min(n, end + cols * rows) && gLoadBudget > 0; idx++) Thumb(a, cellPath(idx), iw, ih, false, false);
     for (int idx = start - 1; idx >= std::max(0, start - cols * rows) && gLoadBudget > 0; idx--) Thumb(a, cellPath(idx), iw, ih, false, false);
@@ -2768,6 +2815,7 @@ static void RenderThemePick(App &a) {
         SDL_Color c = dl ? m.title : sel ? m.selText : m.dim;
         DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
+    MenuScrollbar(a, m, bx, by, bw, rows, top, n);
     DrawText(a, a.fInfo, T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)"), W / 2, by + bh - 34, m.dim, 0, 1);
     if (a.themeDelAsk > 0 && a.themeDelAsk < n) {
         std::string name = a.themeDelAsk < (int)a.themeTitles.size() && !a.themeTitles[a.themeDelAsk].empty() ? a.themeTitles[a.themeDelAsk]
@@ -2800,6 +2848,7 @@ static void RenderHbPick(App &a) {
         std::string label = std::string(in ? "★ " : "☆ ") + g.title + "   " + g.file;
         DrawText(a, a.fList, label, bx + 32, y + 4, in ? m.on : sel ? m.selText : m.dim, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
+    MenuScrollbar(a, m, bx, by, bw, rows, top, n);
     DrawText(a, a.fInfo, Fmt(T("[A] 또는 [-] 넣기 / 빼기   [B] 닫기   (%d개)"), (int)gHbFav.size()), W / 2, by + bh - 34,
              m.dim, 0, 1);
 }
@@ -2827,6 +2876,7 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
         DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - (cat ? 104 : 64), 0, 0, 0, sel ? kScroll : 0);
         if (cat) DrawText(a, a.fList, "▶", bx + bw - 56, y + 4, c);
     }
+    MenuScrollbar(a, m, bx, by, bw, rows, top, n);
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
     bool opens = selIdx >= 0 && selIdx < n && OptCatOf(items[selIdx].act) > 0;
     const char *hint = sub ? (adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 뒤로") : T("[A] 선택   [B] 뒤로"))

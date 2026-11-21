@@ -75,6 +75,10 @@ static const PropDef kProps[] = {
     {"count_color", PK_COLOR, TL, "게임 수 색", nullptr, nullptr, "목록"},
     {"count_size", PK_INT, TL, "게임 수 크기", nullptr, nullptr, "목록"},
     {"count_offset", PK_INT2, TL, "게임 수 위치", nullptr, nullptr, "목록"},
+    {"scrollbar", PK_CHOICE, TL, "스크롤바", "auto|on|off", "auto = 넘칠 때만 / on = 항상 / off = 안 보임 (v1.3.4)", "목록"},
+    {"scrollbar_color", PK_COLOR, TL, "스크롤바 색", nullptr, "손잡이 색 (바탕은 같은 색 25%). 기본 = color.scrollbar, 없으면 dim", "목록"},
+    {"scrollbar_width", PK_INT, TL, "스크롤바 굵기", nullptr, "1~30 (기본 4)", "목록"},
+    {"scrollbar_offset", PK_INT2, TL, "스크롤바 옮기기 (x, y)", nullptr, "기본 자리: 목록 오른쪽 6px (가로 캐러셀은 아래 가운데)", "목록"},
     // 캐러셀·움직임
     {"direction", PK_CHOICE, TL, "캐러셀 방향", "horizontal|vertical", nullptr, "캐러셀·움직임"},
     {"visible_items", PK_INT, TL, "보이는 칸 수", nullptr, "가운데 + 양옆 (홀수 권장)", "캐러셀·움직임"},

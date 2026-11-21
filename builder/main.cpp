@@ -291,6 +291,10 @@ static std::string EffVal(const Elem &e, const std::string &k) {
     if (k == "count_color") return ColorStr(e.countColor);
     if (k == "count_size") return std::to_string(e.countSize);
     if (k == "count_offset") { snprintf(b, sizeof(b), "%d,%d", e.countX, e.countY); return b; }
+    if (k == "scrollbar") return ch(e.scrollbar, {"auto", "on", "off"});
+    if (k == "scrollbar_color") return ColorStr(e.sbColor);
+    if (k == "scrollbar_width") return std::to_string(e.sbW);
+    if (k == "scrollbar_offset") { snprintf(b, sizeof(b), "%d,%d", e.sbX, e.sbY); return b; }
     if (k == "overlay") return e.overlay ? "on" : "off";
     if (k == "title_color") return ColorStr(e.titleColor);
     if (k == "title_size") return std::to_string(e.titleSize);
@@ -2067,15 +2071,23 @@ static void ExportTheme(const std::string &target, bool zip) {
         B.doc.Set("theme", "requires", "1.1.0");
         Changed();
     }
-    // v1.3 키 (메뉴 창 모서리·테두리 굵기): 이전 판 런처는 모르는 키로 알림 → requires 를 1.3.0 이상으로
-    if (B.doc.Has("theme", "menu_radius") || B.doc.Has("theme", "menu_border_width")) {
+    // 새 판 키: 이전 판 런처는 모르는 키로 알림 → requires 를 그 판 이상으로
+    auto need = [](int mj, int mn, int pt, const char *ver) {
         int v[3] = {0, 0, 0};
         sscanf(B.doc.Get("theme", "requires").c_str(), "%d.%d.%d", &v[0], &v[1], &v[2]);
-        if (v[0] < 1 || (v[0] == 1 && v[1] < 3)) {
-            B.doc.Set("theme", "requires", "1.3.0");
+        if (v[0] < mj || (v[0] == mj && (v[1] < mn || (v[1] == mn && v[2] < pt)))) {
+            B.doc.Set("theme", "requires", ver);
             Changed();
         }
-    }
+    };
+    // v1.3.0: 메뉴 창 모서리·테두리 굵기
+    if (B.doc.Has("theme", "menu_radius") || B.doc.Has("theme", "menu_border_width")) need(1, 3, 0, "1.3.0");
+    // v1.3.4: 목록 스크롤바
+    bool sb = false;
+    for (const auto &sec : B.doc.secs)
+        for (const auto &kv : sec.kv)
+            if (!kv.raw && kv.key.rfind("scrollbar", 0) == 0) sb = true;
+    if (sb) need(1, 3, 4, "1.3.4");
     SaveFiles();
     std::string err;
     if (zip) {
