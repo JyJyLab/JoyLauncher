@@ -3396,18 +3396,20 @@ static void Clamp(App &a) {
     int total = (int)a.cols.size();
     a.catSel = std::max(0, std::min(a.catSel, total - 1));
     a.optSel = std::max(0, std::min(a.optSel, (int)OptItems(a.optCat).size() - 1));
-    // 목록 맨 위 항목(top)은 열 수의 배수 (격자는 줄 단위로 넘김)
-    auto keep = [](int sel, int &top, bool games) {
+    // 목록 맨 위 항목(top)은 열 수의 배수 (격자는 줄 단위로 넘김).
+    // 한 화면을 넘는 목록은 선택 줄을 화면 가운데에 고정하고 목록이 움직임.
+    // 처음·끝에서는 목록이 멈추고 선택이 위·아래 끝까지 감
+    auto keep = [](int sel, int &top, int n, bool games) {
         int cols, rows;
         ScreenGeom(games, cols, rows);
-        top = std::max(0, top) / cols * cols;
-        if (sel < top) top = sel / cols * cols;
-        if (sel >= top + cols * rows) top = (sel / cols - rows + 1) * cols;
+        int lines = (std::max(n, 1) + cols - 1) / cols;
+        int maxTop = std::max(0, lines - rows);
+        top = std::max(0, std::min(sel / cols - rows / 2, maxTop)) * cols;
     };
-    keep(a.catSel, a.catTop, false);
+    keep(a.catSel, a.catTop, total, false);
     int n = (int)CurCol(a).games.size();
     a.sel = std::max(0, std::min(a.sel, n - 1));
-    keep(a.sel, a.top, true);
+    keep(a.sel, a.top, n, true);
 }
 
 // 테마의 layout.txt 에 문제가 있으면 알림 (자세한 내용은 테마 폴더의 layout_errors.txt)

@@ -448,7 +448,19 @@ public class JoyActivity extends SDLActivity {
             }
             grantProviderUris(intent);
             Log.i(TAG, "start " + intent + " extras=" + intent.getExtras());
-            self.startActivity(intent);
+            try {
+                self.startActivity(intent);
+            } catch (SecurityException se) {
+                // 저장소 문서 주소(content://com.android.externalstorage.documents/...)는 런처가 그 폴더 권한이
+                // 없으면 넘겨줄 수 없다. 에뮬레이터가 스스로 폴더 권한을 받아 둔 경우(Azahar 등 게임 폴더 지정)를
+                // 위해 권한 넘기기 없이 다시 실행 (ES-DE 와 같은 방식)
+                Uri d = intent.getData();
+                if (d == null || !"content".equals(d.getScheme()) || JoyFileProvider.AUTHORITY.equals(d.getAuthority())) throw se;
+                Log.w(TAG, "startAm: " + se + " -> retry without URI grant");
+                intent.removeFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+                                   Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                self.startActivity(intent);
+            }
             return null;
         } catch (Throwable t) {
             Log.w(TAG, "startAm: " + t);
