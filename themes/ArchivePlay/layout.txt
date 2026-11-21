@@ -1,0 +1,445 @@
+[theme]
+requires = 1.1.0
+font = fonts/regular.otf
+font_bold = fonts/display.otf
+background_color = #f2f0e9
+color.text = #111110
+color.dim = #77756f
+color.accent = #ff650b
+color.selection = #dedbd3
+color.bar = #f2f0e9
+anim_ms = 180
+bg_fade_ms = 0
+transition = fade
+transition_ms = 220
+
+[names]
+ps1 = PlayStation
+psx = PlayStation
+ps = PlayStation
+ps2 = PlayStation 2
+sfc = Super Nintendo
+snes = Super Nintendo
+superfamicom = Super Nintendo
+gba = Game Boy Advance
+gameboyadvance = Game Boy Advance
+md = Mega Drive
+megadrive = Mega Drive
+genesis = Mega Drive
+fc = Famicom
+nes = Famicom
+famicom = Famicom
+psp = PlayStation Portable
+gb = Game Boy
+gameboy = Game Boy
+gbc = Game Boy Color
+gameboycolor = Game Boy Color
+nds = Nintendo DS
+n3ds = Nintendo 3DS
+3ds = Nintendo 3DS
+n64 = Nintendo 64
+gamecube = Nintendo GameCube
+switch = Nintendo Switch
+fds = Famicom Disk System
+md-cd = Mega-CD
+segacd = Mega-CD
+megacd = Mega-CD
+md-32x = Sega 32X
+sega32x = Sega 32X
+32x = Sega 32X
+sms = Master System
+mastersystem = Master System
+gg = Game Gear
+gamegear = Game Gear
+saturn = Sega Saturn
+ss = Sega Saturn
+dreamcast = Dreamcast
+dc = Dreamcast
+sg-1000 = SG-1000
+pce = PC Engine
+pcengine = PC Engine
+tg16 = PC Engine
+pce-cd = PC Engine CD
+pcenginecd = PC Engine CD
+pcecd = PC Engine CD
+pcfx = PC-FX
+pc-98 = PC-98
+pc98 = PC-98
+dos = MS-DOS
+msdos = MS-DOS
+ms-dos = MS-DOS
+act = Arcade Action
+ftg = Arcade Fighting
+stg = Arcade Shooting
+arcade = Arcade
+arcade_action = Arcade Action
+arcade_fighting = Arcade Fighting
+arcade_shooting = Arcade Shooting
+arcade_casual = Arcade Casual
+arcade_flying = Arcade Flying
+fbneo = Arcade (FBNeo)
+mame = Arcade (MAME)
+mame2003plus = Arcade (MAME)
+cps1 = CPS-1
+cps2 = CPS-2
+cps3 = CPS-3
+neogeo = Neo Geo
+neogeocd = Neo Geo CD
+ngp = Neo Geo Pocket
+ngpc = Neo Geo Pocket Color
+neogeopocket = Neo Geo Pocket
+neogeopocketcolor = Neo Geo Pocket Color
+ws = WonderSwan
+wswan = WonderSwan
+wsc = WonderSwan Color
+wswanc = WonderSwan Color
+wonderswan = WonderSwan
+wonderswancolor = WonderSwan Color
+atari2600 = Atari 2600
+atari7800 = Atari 7800
+atarijaguar = Atari Jaguar
+atarilynx = Atari Lynx
+lynx = Atari Lynx
+virtualboy = Virtual Boy
+vb = Virtual Boy
+pokemini = Pokemon Mini
+gameandwatch = Game & Watch
+gw = Game & Watch
+amiga = Amiga
+amstradcpc = Amstrad CPC
+c64 = Commodore 64
+colecovision = ColecoVision
+intellivision = Intellivision
+vectrex = Vectrex
+zxspectrum = ZX Spectrum
+msx = MSX
+msx1 = MSX
+msx2 = MSX2
+x68000 = Sharp X68000
+model2 = Sega Model 2
+model3 = Sega Model 3
+naomi = Sega NAOMI
+supergrafx = SuperGrafx
+satellaview = Satellaview
+cdimono1 = Philips CD-i
+cdi = Philips CD-i
+pico8 = PICO-8
+openbor = OpenBOR
+ports = Ports
+homebrew = Homebrew
+favorites = Favorites
+hbfav = Homebrew Favorites
+default = Other
+플레이스테이션 = PlayStation
+Play Station = PlayStation
+슈퍼 패미컴 = Super Nintendo
+슈퍼패미컴 = Super Nintendo
+게임보이 어드밴스 = Game Boy Advance
+메가드라이브 = Mega Drive
+패미컴 = Famicom
+게임보이 = Game Boy
+게임보이 컬러 = Game Boy Color
+마스터시스템 = Master System
+게임기어 = Game Gear
+드림캐스트 = Dreamcast
+새턴 = Sega Saturn
+PC엔진 = PC Engine
+원더스완 = WonderSwan
+네오지오 포켓 = Neo Geo Pocket
+아타리 링크스 = Atari Lynx
+버추얼보이 = Virtual Boy
+아케이드 (FBNeo) = Arcade (FBNeo)
+아케이드 (MAME) = Arcade (MAME)
+액션-아케이드 = Arcade Action
+대전-아케이드 = Arcade Fighting
+슈팅-아케이드 = Arcade Shooting
+비행-아케이드 = Arcade Flying
+캐주얼-아케이드 = Arcade Casual
+즐겨찾기 = Favorites
+
+[strings]
+hint.categories = [A] 열기  [B] 종료  [X] 홈브류  [Y] 옵션  ◀▶ 선택
+hint.games = [A] 실행  [B] 뒤로  [X] 홈브류  [Y] 옵션  [L/R] 카테고리  [ZL/ZR] 보기 전환  [-] 즐겨찾기
+
+[categories.background]
+visible = off
+
+[categories.topbar]
+visible = off
+
+[categories.bottombar]
+visible = off
+
+[categories.hint]
+visible = off
+
+[categories.clock]
+type = text
+text = {clock}
+visible = off
+rect = 1040,24,85,28
+size = 20
+color = text
+align = right
+
+[categories.battery]
+rect = 1140,25,104,20
+color = #111110
+type = battery
+visible = on
+z = 60
+
+[games.background]
+visible = off
+
+[games.topbar]
+visible = off
+
+[games.bottombar]
+visible = off
+
+[games.hint]
+visible = off
+
+[games.clock]
+type = text
+text = {clock}
+visible = off
+rect = 1040,24,85,28
+size = 20
+color = text
+align = right
+
+[games.battery]
+rect = 1140,25,104,20
+color = #111110
+type = battery
+visible = on
+z = 60
+
+[categories.preview]
+visible = off
+
+[categories.title]
+text = {category}
+rect = 34,110,1120,100
+size = 90
+font = bold
+color = text
+align = left
+logo = off
+scroll = on
+
+[categories.count]
+type = text
+text = {games} games in your collection
+rect = 36,208,1000,28
+size = 21
+color = dim
+
+[categories.position]
+type = text
+text = {category_index} / {category_count}
+rect = 1090,91,154,24
+size = 19
+color = text
+align = right
+
+[categories.list]
+style = carousel
+direction = horizontal
+rect = 0,242,1280,378
+item_size = 360,360
+spacing = 320
+visible_items = 5
+center_scale = 1.14
+side_scale = 0.77
+side_alpha = 190
+image = icon
+padding = 0
+card = ui/blank.png
+card_grow = 0
+selector = ui/blank.png
+selector_grow = 0
+label = auto
+size = 20
+color = text
+anim_ms = 220
+
+[games.title]
+text = {category}
+rect = 34,96,1030,77
+size = 64
+font = bold
+color = text
+align = left
+logo = off
+scroll = on
+
+[games.total]
+type = text
+text = {games} GAMES
+rect = 1090,129,154,28
+size = 18
+color = text
+align = right
+
+[games.info]
+visible = off
+
+[games.media]
+visible = off
+
+[games.prev]
+visible = off
+
+[games.pager]
+visible = off
+
+[games.view]
+visible = off
+
+[games.counter]
+visible = off
+
+[games.tab_all]
+type = text
+text = 전체
+rect = 36,177,65,30
+size = 19
+color = text
+
+[games.underline_all]
+type = rect
+rect = 36,208,65,3
+color = accent
+visible_if = {view=all?1:}
+
+[games.tab_fav]
+type = text
+text = 즐겨찾기
+rect = 130,177,110,30
+size = 19
+color = text
+
+[games.underline_fav]
+type = rect
+rect = 130,208,110,3
+color = accent
+visible_if = {view=fav?1:}
+
+[games.tab_recent]
+type = text
+text = 최근 실행
+rect = 266,177,110,30
+size = 19
+color = text
+
+[games.underline_recent]
+type = rect
+rect = 266,208,110,3
+color = accent
+visible_if = {view=recent?1:}
+
+[games.list]
+style = text
+rect = 34,242,540,392
+rows = 14
+row_height = 28
+label = off
+selector = ui/row-selection.png
+selector_grow = 0
+selection = #dedbd3
+color = text
+selected_color = text
+size = 18
+anim_ms = 180
+
+[games.list.number]
+type = text
+text = {num}
+rect = 12,0,34,28
+size = 14
+color = dim
+valign = center
+
+[games.list.name]
+type = text
+text = {title}
+rect = 56,0,445,28
+size = 18
+color = text
+valign = center
+scroll = on
+
+[games.list.favorite]
+type = text
+text = {fav}
+rect = 509,0,23,28
+size = 17
+color = text
+align = center
+valign = center
+
+[games.screen]
+type = image
+source = screenshot
+fallback = ui/no-image.png
+rect = 616,177,628,345
+fit = contain
+z = 30
+
+[games.cover]
+type = image
+source = boxart
+rect = 1084,411,150,172
+fit = contain
+z = 40
+
+[games.selected_title]
+type = text
+text = {title}
+rect = 616,533,450,42
+size = 28
+color = text
+font = bold
+scroll = on
+
+[games.metadata]
+type = text
+text = {developer,year,genre| / }
+rect = 616,582,628,26
+size = 16
+color = dim
+scroll = on
+
+[games.position]
+type = text
+text = {index} / {count}
+rect = 616,620,160,24
+size = 17
+color = text
+
+[games.collection]
+type = text
+text = {category} COLLECTION
+rect = 808,622,436,20
+size = 13
+color = dim
+align = right
+scroll = off
+
+[categories.canvas]
+type = image
+file = ui/categories.png
+rect = 0,0,1280,720
+fit = stretch
+z = 0
+
+[games.canvas]
+type = image
+file = ui/games.png
+rect = 0,0,1280,720
+fit = stretch
+z = 0
+

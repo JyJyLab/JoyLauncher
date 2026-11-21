@@ -12,7 +12,7 @@
 - 안드로이드용 페가수스 목록의 실행 설정(RetroArch 코어·PPSSPP 앱)을 스위치용으로 자동 변환 (`/JoyLauncher/cores.txt` 로 대체 규칙 지정)
 - 목록 파일이 없어도 기종별 폴더의 롬을 자동 인식, ES-DE 설정 팩(`ES-DE/gamelists`·`downloaded_media`) 지원 — 폴더마다 섞어 써도 됨
 - 박스·화면 사진, 화면 사진이 없으면 미리보기 영상에서 장면 추출
-- 카테고리별 배경 테마, 테마 팩 4종 포함(**기본테마 · 레트로테마 · 벽골김씨테마 · 레트로게임갤러리테마**), 실행 기록, 게임 목록 캐시(빠른 시작)
+- 카테고리별 배경 테마, 테마 팩 5종 포함(**기본테마 · 레트로테마 · 벽골김씨테마 · 레트로게임갤러리테마 · 아카이브플레이테마**), 실행 기록, 게임 목록 캐시(빠른 시작)
 - 테마의 `layout.txt` 로 화면 구성 바꾸기: 기종 카드 격자, 박스 사진 격자, 요소 위치·글꼴·색, 내 그림·글자 추가
 - 테마 확장 문법(v1.1.0~): 칸 안 요소, 조건(`visible_if`·`hidden_if`), 자리표, `[strings]` 문구 바꾸기, ES-DE 기종 이름 자동 연결
 - 화면 효과: 부드러운 목록 이동, 가로·세로 캐러셀 목록, 화면 전환(fade·slide), 배경 서서히 바뀜 (옵션 → 테마 설정에서 끄기 가능)
@@ -25,7 +25,7 @@
 - 즐겨찾기(− 버튼), 한국어 / 영어 화면, HOME 화면과 같은 배터리 표시
 - 배경 음악: 공통 BGM(`/JoyLauncher/bgm`) 또는 **테마 BGM**(테마 폴더의 `bgm`) 중 선택 (v1.2.0~)
 - 스위치에 RetroArch 코어(PSP 는 PPSSPP)가 있는 기종의 게임만 표시 (성능이 부족한 기종은 기본 숨김)
-- **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트) — 런처 본체만 바뀝니다. 테마 팩은 테마 설정 창의 "기본 테마 4종 내려받기" 또는 릴리스 zip 으로
+- **깃헙 릴리스 자동 업데이트** (Y 옵션 → 업데이트) — 런처 본체만 바뀝니다. 테마 팩은 테마 설정 창의 "기본 테마 5종 내려받기" 또는 릴리스 zip 으로
 
 ## 설치
 1. [Releases](https://github.com/JyJyLab/JoyLauncher/releases) 에서 최신 `JoyLauncher_<버전>.zip` 을 받아 `switch/` 와 `JoyLauncher/` 를 SD 카드 루트에 복사
@@ -66,5 +66,5 @@
 - 나눔고딕 글꼴: SIL Open Font License 1.1 (`OFL.txt`)
 - stb_image_write: Public Domain / MIT
 - 롬·BIOS 는 포함하지 않습니다.
-- 테마 팩: **기본테마**(`themes/JoyBasic`)는 자체 제작으로 자유롭게 쓰고 고칠 수 있습니다. **레트로테마**(`themes/RetroPack`)는 응애팩 테마 그림 발췌, **벽골김씨테마**(`themes/ByeokgolKim`)는 벽골김씨 님이 ES-DE 테마 Canvas(Siddy212, CC0 1.0)를 바탕으로 구성한 테마이며 글꼴은 Cafe24 Ohsquare air 입니다. 두 팩의 게임기 사진·로고·상표의 권리는 각 권리자에게 있고, 런처의 GPL 과는 별개입니다. **레트로게임갤러리테마**(`themes/DcGall`)는 글꼴 Noto Sans KR (SIL OFL 1.1, `fonts/OFL-NotoSansKR.txt`), 아이콘 ES-DE 테마 Canvas(Siddy212, CC0)이며, "dcinside" 글자는 패러디 표기로 디시인사이드와 관계없습니다. (각 폴더의 `README.txt`)
+- 테마 팩: **기본테마**(`themes/JoyBasic`)는 자체 제작으로 자유롭게 쓰고 고칠 수 있습니다. **레트로테마**(`themes/RetroPack`)는 응애팩 테마 그림 발췌, **벽골김씨테마**(`themes/ByeokgolKim`)는 벽골김씨 님이 ES-DE 테마 Canvas(Siddy212, CC0 1.0)를 바탕으로 구성한 테마이며 글꼴은 Cafe24 Ohsquare air·Noto Sans KR Bold(SIL OFL 1.1) 입니다. 두 팩의 게임기 사진·로고·상표의 권리는 각 권리자에게 있고, 런처의 GPL 과는 별개입니다. **레트로게임갤러리테마**(`themes/DcGall`)는 글꼴 Noto Sans KR (SIL OFL 1.1, `fonts/OFL-NotoSansKR.txt`), 아이콘 ES-DE 테마 Canvas(Siddy212, CC0)이며, "dcinside" 글자는 패러디 표기로 디시인사이드와 관계없습니다. **아카이브플레이테마**(`themes/ArchivePlay`)는 글꼴 Noto Sans KR (SIL OFL 1.1)·Nimbus Sans (URW, AGPL-3 + 글꼴 예외), 기종 카드는 시안을 바탕으로 새로 만든 그림이며 게임기 외형·로고·상표의 권리는 각 권리자에게 있습니다 (`licenses/`). (각 폴더의 `README.txt`)
 - 테마 빌더 라이브러리: Horizon·Iconic 그림은 CC BY-NC-SA (비상업·저작자 표시·같은 조건, `library/<세트>/CREDITS-LICENSE.txt`)

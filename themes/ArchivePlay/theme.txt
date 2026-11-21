@@ -1,0 +1,3 @@
+name=아카이브플레이테마
+name_en=Archive Play Theme
+dim=0

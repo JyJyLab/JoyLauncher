@@ -18,6 +18,7 @@ INFO = {
     "RetroPack": (6, "레트로", "기본 목록 구성 + 응애팩 페가수스 배경·로고"),
     "Horizon": (7, "Horizon (ES-DE)", "큰 세로 아트 5칸 + 오른쪽 목록 판. ES-DE 테마 이식 (CC BY-NC-SA)"),
     "Iconic": (8, "Iconic (ES-DE)", "게임기 그림 판 + 아래 로고 띠. ES-DE 테마 이식 (CC BY-NC-SA)"),
+    "ArchivePlay": (9, "아카이브 플레이", "가로 카드 캐러셀 + 14줄 글자 목록, 아이보리 바탕·주황 강조 (아카이브플레이테마)"),
 }
 tdir = os.path.join(root, "templates")
 tmp = tempfile.mkdtemp()

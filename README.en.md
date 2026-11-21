@@ -12,7 +12,7 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Converts the Android launch settings of Pegasus lists (RetroArch cores, PPSSPP app) for the Switch (mapping rules in `/JoyLauncher/cores.txt`)
 - Finds ROMs in per-system folders even without a list file; reads ES-DE packs (`ES-DE/gamelists`, `downloaded_media`) — formats can be mixed per folder
 - Box art and screenshots; grabs a frame from the preview video when there is no screenshot
-- Per-category background themes with four theme packs included (**Basic Theme, Retro Theme, WallStreetKim's Theme, Retro Game Gallery Theme**), launch log, cached game list (fast start)
+- Per-category background themes with five theme packs included (**Basic Theme, Retro Theme, WallStreetKim's Theme, Retro Game Gallery Theme, Archive Play Theme**), launch log, cached game list (fast start)
 - Theme layouts (`layout.txt`) and extension syntax (v1.1.0+): cell elements, conditions (`visible_if`, `hidden_if`), placeholders, `[strings]` text overrides, automatic ES-DE system-name matching
 - Screen effects: smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade (can be turned off in Options → Theme settings)
 - **Theme builder (PC, Windows/Linux)**: make themes while seeing the Switch screen as it will look, send them to the Switch over FTP — [docs/테마_빌더.md](docs/테마_빌더.md) (Korean)
@@ -24,7 +24,7 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Favorites (− button), Korean / English interface, HOME-style battery indicator
 - Background music: Common BGM (`/JoyLauncher/bgm`) or **Theme BGM** (the theme's `bgm` folder) (v1.2.0+)
 - Shows games only for systems that have a RetroArch core on the Switch (PSP: PPSSPP); systems too slow for the Switch are hidden by default
-- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the theme packs from "Download the 4 stock themes" in the theme picker or from the release zip
+- **Automatic updates from GitHub Releases** (Y Options → Update) — the launcher only; get the theme packs from "Download the 5 stock themes" in the theme picker or from the release zip
 
 ## Installation
 1. Download the latest `JoyLauncher_<version>.zip` from [Releases](https://github.com/JyJyLab/JoyLauncher/releases) and copy `switch/` and `JoyLauncher/` to the root of the SD card
@@ -63,5 +63,5 @@ If Joy Launcher helps you, you can support it — donations go to test devices a
 - NanumGothic font: SIL Open Font License 1.1 (`OFL.txt`)
 - stb_image_write: Public Domain / MIT
 - No ROMs or BIOS files are included.
-- Theme packs: **Basic Theme** (`themes/JoyBasic`) is self-made and free to use and modify. **Retro Theme** (`themes/RetroPack`) is an excerpt of the Eungae pack theme pictures; **WallStreetKim's Theme** (`themes/ByeokgolKim`) was arranged by WallStreetKim from the ES-DE theme Canvas (Siddy212, CC0 1.0) and uses the font Cafe24 Ohsquare air. Console photos, logos and trademarks in those two packs belong to their owners and are separate from the launcher's GPL. **Retro Game Gallery Theme** (`themes/DcGall`) uses the font Noto Sans KR (SIL OFL 1.1, `fonts/OFL-NotoSansKR.txt`) and icons from the ES-DE theme Canvas (Siddy212, CC0); the "dcinside" text is a parody label, unrelated to DCinside. (See `README.txt` in each folder)
+- Theme packs: **Basic Theme** (`themes/JoyBasic`) is self-made and free to use and modify. **Retro Theme** (`themes/RetroPack`) is an excerpt of the Eungae pack theme pictures; **WallStreetKim's Theme** (`themes/ByeokgolKim`) was arranged by WallStreetKim from the ES-DE theme Canvas (Siddy212, CC0 1.0) and uses the fonts Cafe24 Ohsquare air and Noto Sans KR Bold (SIL OFL 1.1). Console photos, logos and trademarks in those two packs belong to their owners and are separate from the launcher's GPL. **Retro Game Gallery Theme** (`themes/DcGall`) uses the font Noto Sans KR (SIL OFL 1.1, `fonts/OFL-NotoSansKR.txt`) and icons from the ES-DE theme Canvas (Siddy212, CC0); the "dcinside" text is a parody label, unrelated to DCinside. **Archive Play Theme** (`themes/ArchivePlay`) uses the fonts Noto Sans KR (SIL OFL 1.1) and Nimbus Sans (URW, AGPL-3 with font exception); its system cards are newly drawn from a design draft, and console shapes, logos and trademarks belong to their owners (`licenses/`). (See `README.txt` in each folder)
 - Theme builder library: the Horizon and Iconic pictures are CC BY-NC-SA (non-commercial, attribution, share-alike; `library/<set>/CREDITS-LICENSE.txt`)

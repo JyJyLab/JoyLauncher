@@ -663,6 +663,7 @@ static const ThemePack kPacks[] = {
     {"RetroPack", "레트로테마", "Retro Theme", "레트로팩", "Retro Pack"},
     {"ByeokgolKim", "벽골김씨테마", "WallStreetKim's Theme", "벽골김씨팩", "Byeokgol Kim Pack"},
     {"DcGall", "레트로게임갤러리테마", "Retro Game Gallery Theme", "디시 갤러리 (시험)", "DC Gallery (test)"},
+    {"ArchivePlay", "아카이브플레이테마", "Archive Play Theme", "아카이브 플레이", "Archive / Play"},
 };
 static const int kPackCount = (int)(sizeof(kPacks) / sizeof(kPacks[0]));
 

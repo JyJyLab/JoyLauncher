@@ -1,10 +1,12 @@
 # 벽골김씨테마 (ByeokgolKim) — Joy Launcher 화면 구성 (1280x720)
 # 기종 카드 격자 + 목록 판. 설명: docs/테마_레이아웃.md
+
 [theme]
 font = fonts/regular.ttf
-color.text = #ffffff
-color.dim = #d0d0d8
-color.accent = #ffffff
+font_bold = fonts/NotoSansKR-Bold.otf
+color.text = #000000
+color.dim = #000000
+color.accent = #000000
 # 메뉴 창(옵션·BGM·테마 선택 등) 색 — v1.3 부터 사용, 이전 판은 무시 (설명: docs/테마_레이아웃.md «메뉴 창 꾸미기»)
 color.menu = #26262cf2
 color.menu_border = #d2d2d8
@@ -15,13 +17,23 @@ color.menu_select = #54545e
 color.menu_select_text = #ffffff
 
 # ---------------------------------------------------------------- 카테고리 화면: 기종 카드 격자
+anim_ms = 197
+bg_fade_ms = 444
+transition = fade
+requires = 1.1.0
+
 [categories.background]
 fallback = backgrounds/default.jpg
+alpha = 255
+dim = 33
+rect = 1,1,1280,720
 
 [categories.topbar]
 visible = off
+
 [categories.bottombar]
 visible = off
+
 [categories.preview]
 visible = off
 
@@ -29,12 +41,15 @@ visible = off
 text = {category}
 size = 30
 rect = 240,26,800,0
+color = #484545
+font = bold
 
 [categories.count]
 type = text
 text = {games} GAMES
 size = 20
-color = dim
+font = bold
+color = #000000
 rect = 240,66,800,0
 align = center
 
@@ -42,7 +57,8 @@ align = center
 type = text
 text = {index} / {count}
 size = 20
-color = dim
+font = bold
+color = #000000
 rect = 40,30,0,0
 
 [categories.list]
@@ -62,19 +78,22 @@ selected_color = #101014
 
 [categories.hint]
 size = 18
-color = dim
+color = #595959
 rect = 640,676,0,0
 
 # ---------------------------------------------------------------- 게임 화면: 왼쪽 목록 판 + 오른쪽 사진·정보
+
 [games.background]
 fallback = backgrounds/default.jpg
 
 [games.topbar]
 visible = off
+
 [games.bottombar]
 visible = off
 
 # 목록 판 (640x732 그림을 제 크기로. 줄무늬 간격 50.4)
+
 [games.panel]
 type = image
 file = ui/panel.png
@@ -99,14 +118,20 @@ color = #606068
 size = 18
 
 # 오른쪽 위: 기종 로고 (없으면 이름 글자)
+
 [games.title]
 rect = 664,50,572,0
 logo_rect = 730,26,360,84
+color = #ffffff
 
 [games.prev]
 rect = 664,60,0,0
+color = #ffffff
+
 [games.pager]
 rect = 1016,60,220,0
+color = #ffffff
+
 [games.battery]
 rect = 1056,14,200,20
 
@@ -115,8 +140,14 @@ rect = 664,130,572,290
 
 [games.info]
 rect = 664,436,572,214
+title_color = #ffffff
+color = #ffffff
 
 [games.hint]
-size = 16
-color = dim
+size = 13
+color = #ffffff
 rect = 952,684,0,0
+
+[strings]
+hint.games = [A] 실행 [B] 카테고리 [L][R] 카테고리 이동 [ZL][ZR] 페이지 [-] 즐겨찾기 [X] 홈브루 [Y] 옵션
+hint.categories = [A] 열기 [B] 종료 [X] 홈브루 메뉴 [Y] 옵션

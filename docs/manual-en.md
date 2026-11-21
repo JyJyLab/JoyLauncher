@@ -38,6 +38,7 @@ JoyLauncher/themes/JoyBasic/         Basic Theme (section 8)
 JoyLauncher/themes/RetroPack/        Retro Theme
 JoyLauncher/themes/ByeokgolKim/      WallStreetKim's Theme
 JoyLauncher/themes/DcGall/           Retro Game Gallery Theme
+JoyLauncher/themes/ArchivePlay/      Archive Play Theme
 설명서.md                             Korean manual
 Manual_en.md                         this manual
 theme-guide-en.md                    how to add/make themes (section 8)
@@ -51,7 +52,7 @@ LICENSE                              launcher license (GPL-3.0)
 ## 3. Installation
 
 1. Copy `switch/` and `JoyLauncher/` from the zip to the root of the SD card.
-   - `JoyLauncher/` only contains the four theme packs. If `/JoyLauncher` already exists, merge it; your settings stay.
+   - `JoyLauncher/` only contains the five theme packs. If `/JoyLauncher` already exists, merge it; your settings stay.
    - If you don't want the default theme, copying `switch/` is enough. **`/JoyLauncher` is created automatically on first run.**
 2. Copy your Pegasus ROM pack (with its ROM folders) to `/roms` on the SD card (section 4).
 3. Start **Joy Launcher** from the Album (homebrew menu).
@@ -196,8 +197,9 @@ Images are matched by: category name in `theme.txt` → ROM folder name (e.g. `/
 | **Retro Theme** | `themes/RetroPack` | console photo backgrounds and logos per system (excerpt of the Eungae pack theme pictures) |
 | **WallStreetKim's Theme** | `themes/ByeokgolKim` | system card grid + list panel screens (a theme that changes the layout too, `layout.txt`) |
 | **Retro Game Gallery Theme** | `themes/DcGall` | gallery-board style screens (gallery cards + a board table with number, title and views), white/navy design. Needs launcher v1.1.0 or later |
+| **Archive Play Theme** | `themes/ArchivePlay` | horizontal card carousel + 14-row text list, ivory background with orange accents, fade transitions. Needs launcher v1.1.0 or later |
 
-> Themes are not installed by the automatic update. Use **"Download the 4 stock themes"** near the bottom of the theme picker ("Download the 4 stock themes again" when all four are there). It downloads the four packs one after another from the latest GitHub release, checks size and SHA-256, unpacks into `/JoyLauncher/themes/<folder>/`, replaces the stock images and keeps images you added. B cancels. (Needs internet; otherwise copy `JoyLauncher/themes/` from the release zip.)
+> Themes are not installed by the automatic update. Use **"Download the 5 stock themes"** near the bottom of the theme picker ("Download the 5 stock themes again" when all five are there). It downloads the five packs one after another from the latest GitHub release, checks size and SHA-256, unpacks into `/JoyLauncher/themes/<folder>/`, replaces the stock images and keeps images you added. B cancels. (Needs internet; otherwise copy `JoyLauncher/themes/` from the release zip.)
 
 - **Basic Theme**: color gradients with simple shapes and system names in NanumGothic Bold — all self-made, no company logos or game images, free to use and modify. Regenerate it with `tools/make_joybasic.py`.
 - **Retro Theme**: excerpt (systems the Switch launcher uses) of the theme pictures of the Eungae pack, an Android Pegasus collection. The pictures belong to their owners.

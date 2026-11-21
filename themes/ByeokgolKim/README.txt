@@ -8,10 +8,13 @@
 - 그림: ES-DE 테마 "Canvas" (Siddy212, https://github.com/Siddy212/canvas-es-de) — CC0 1.0 (LICENSE-Canvas.txt)
   게임기 사진과 로고·상표의 권리는 각 권리자에게 있습니다.
 - 글꼴: fonts/regular.ttf = Cafe24 Ohsquare air (카페24 무료 글꼴)
+- 굵은 글꼴: fonts/NotoSansKR-Bold.otf = Noto Sans KR (SIL OFL 1.1, fonts/OFL-NotoSansKR.txt)
+- V2 (Joy Launcher v1.3.3): 벽골김씨 님이 다시 구성한 화면(글자색·굵은 글꼴·화면 전환 효과)
 - 즐겨찾기·홈브루 즐겨찾기 카드 (icons/favorites.png, icons/hbfav.png): Joy Launcher 자체 제작 (v1.0.1). 글자는 Montserrat (SIL OFL 1.1)
 - 화면 구성(layout.txt)·이름 연결(theme.txt): Joy Launcher
 
 A theme with a system card grid and a list panel, for Joy Launcher v1.0.0 or later.
 Arrangement by WallStreetKim; pictures from the ES-DE theme "Canvas" by Siddy212 (CC0 1.0, see LICENSE-Canvas.txt).
-Console photos, logos and trademarks belong to their owners. Font: Cafe24 Ohsquare air.
+Console photos, logos and trademarks belong to their owners. Fonts: Cafe24 Ohsquare air, Noto Sans KR Bold (SIL OFL 1.1).
+V2 (Joy Launcher v1.3.3): screens rearranged by WallStreetKim (text colours, bold font, fade transitions).
 The Favorites and Homebrew Favorites cards (icons/favorites.png, icons/hbfav.png) are made for Joy Launcher (v1.0.1); lettering in Montserrat (SIL OFL 1.1).

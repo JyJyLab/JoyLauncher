@@ -30,14 +30,14 @@ jobs:
           mkdir -p pkg/switch/joylauncher
           cp joylauncher.nro pkg/switch/joylauncher/
           mkdir -p pkg/JoyLauncher/themes
-          cp -r themes/JoyBasic themes/RetroPack themes/ByeokgolKim themes/DcGall pkg/JoyLauncher/themes/   # 기본테마·레트로테마·벽골김씨테마·레트로게임갤러리테마
+          cp -r themes/JoyBasic themes/RetroPack themes/ByeokgolKim themes/DcGall themes/ArchivePlay pkg/JoyLauncher/themes/   # 기본테마·레트로테마·벽골김씨테마·레트로게임갤러리테마·아카이브플레이테마
           cp docs/설명서.md OFL.txt LICENSE pkg/
           cp docs/manual-en.md pkg/Manual_en.md
           cp docs/테마_만들기.md docs/theme-guide-en.md pkg/   # 테마 추가·제작 설명서 (한·영)
           cp docs/테마_레이아웃.md docs/theme-layout-en.md pkg/   # 테마 화면 구성 설명서 (한·영)
           cp docs/테마_빌더.md pkg/   # PC 테마 빌더 설명서
           # 런처의 테마 선택 창에서 받는 테마 팩 (팩마다 zip 하나)
-          (cd themes && for t in JoyBasic RetroPack ByeokgolKim DcGall; do zip -qr -X "../$t.zip" "$t"; done)
+          (cd themes && for t in JoyBasic RetroPack ByeokgolKim DcGall ArchivePlay; do zip -qr -X "../$t.zip" "$t"; done)
           (cd pkg && zip -qr -UN=UTF8 "../JoyLauncher_${VER}.zip" .)
           echo "VER=$VER" >> "$GITHUB_ENV"
       - name: Release notes
@@ -58,3 +58,4 @@ jobs:
             RetroPack.zip
             ByeokgolKim.zip
             DcGall.zip
+            ArchivePlay.zip
