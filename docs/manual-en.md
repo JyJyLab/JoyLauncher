@@ -205,7 +205,7 @@ Images are matched by: category name in `theme.txt` → ROM folder name (e.g. `/
 - **Retro Game Gallery Theme**: font Noto Sans KR (SIL Open Font License 1.1, `fonts/OFL-NotoSansKR.txt`), icons from the ES-DE theme Canvas (Siddy212, CC0). The "dcinside" text on screen is a parody label, unrelated to DCinside.
 - Basic, Retro and WallStreetKim's Theme map common ROM folder names (SFC, MD, PS1, GBA, PCE, WSC...) and the arcade categories of popular Korean packs in `theme.txt`.
 
-Change themes with **Y** Options → **"Theme"** → A. **"Default (no background)"** turns themes off. To use other pictures, make your own theme folder ([Theme guide](theme-guide-en.md)).
+Change themes with **Y** Options → Theme settings → **"Choose theme"** → A. **"Default (no background)"** turns themes off. To use other pictures, make your own theme folder ([Theme guide](theme-guide-en.md)).
 
 **Deleting a theme**: in the theme picker select a theme and press **X** (or **−**), then **A** to confirm; `/JoyLauncher/themes/<folder>` is deleted. If it was the theme in use, the launcher switches to Basic Theme (or no theme). (Hint line: `[A] Apply [X] Delete [B] Close`)
 
@@ -213,7 +213,7 @@ Change themes with **Y** Options → **"Theme"** → A. **"Default (no backgroun
 
 Send themes made on a PC over Wi-Fi without taking out the SD card.
 
-- **Y** Options → **"Receive themes from PC (FTP)"** (right below Theme, or the last row of the theme picker)
+- **Y** Options → Theme settings → **"Receive themes from PC (FTP)"** (or the last row of the theme picker)
 - The screen shows `ftp://<Switch IP>:<port>`. The port is 5000 (5001, 5002 or 5021 if it is busy).
 - FTP is open only while this screen is shown. Leave user and password empty (anonymous).
 - Only `/JoyLauncher/themes/…`, `/JoyLauncher/categories.txt` and `/JoyLauncher/categories/…` can be written or deleted; everything else is refused.
@@ -250,23 +250,24 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 
 ![Game list](images/en_02_games.png)
 
-**Y Options** (▲▼ select / A run / ◀▶ change value / B close; only installed items are shown):
+**Y Options** (▲▼ select / A run / ◀▶ change value / B close; only installed items are shown). Since v1.3.2 the top holds three groups plus Language, updates and Exit. On a group (▶) A opens it and B goes back to the top; windows opened from a group (theme list, Homebrew Favorites, BGM) return to it when closed with B. Y closes Options. If another menu took over as the default homebrew menu, "Set again" appears at the very top (section 3).
 
-| Item | |
-|---|---|
-| Homebrew menu (name version), RetroArch, PPSSPP | start them directly (installed and backed-up homebrew menus, the previous default first) |
-| Extract video frames | section 6 (only when frames are missing) |
-| Refresh game list | section 7 |
-| Check for updates / Install update | see "Automatic updates" |
-| Theme | section 8 |
-| Receive themes from PC (FTP) | section 8 |
-| Screen effects | on / off: theme motion (smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade) |
-| X button (open homebrew menu) | on / off: when off, X does nothing and `[X]` disappears from the hint line (no leaving the launcher by accident). X (delete) in the theme picker still works |
-| BGM / sound | A opens the sound window: Common BGM, Theme BGM or Silent, BGM volume and order; see "Background music" (green while a BGM choice is active) |
-| Language / 언어 | Auto (system language) → 한국어 → English, applied immediately |
-| Homebrew Favorites: add / remove | see "Homebrew Favorites" below (green when some nro are added) |
-| Set as default homebrew menu / Set again / Restore | section 3 ("Set again" appears at the top if another menu took over) |
-| Exit (HOME) | |
+| Group | Item | |
+|---|---|---|
+| **ROMs & homebrew** | Refresh game list | section 7 |
+| | Extract video frames | section 6 (only when frames are missing) |
+| | Manage Homebrew Favorites | see "Homebrew Favorites" below (green when some nro are added) |
+| | Launch: Homebrew menu (name version) | installed and backed-up homebrew menus, the previous default first |
+| | Launch: RetroArch / PPSSPP | start them directly |
+| **Theme settings** | Choose theme | section 8 |
+| | Screen effects | on / off: theme motion (smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade) |
+| | Receive themes from PC (FTP) | section 8 |
+| **System settings** | BGM / sound | A opens the sound window: Common BGM, Theme BGM or Silent, BGM volume and order; see "Background music" |
+| | X button (open homebrew menu) | on / off: when off, X does nothing and `[X]` disappears from the hint line. X (delete) in the theme picker still works |
+| | Set as default homebrew menu / Update / Restore | section 3 |
+| Language / 언어 | | Auto (system language) → 한국어 → English, applied immediately |
+| Check for updates / Install update | | see "Automatic updates" |
+| Exit (HOME) | | |
 
 ![Options](images/en_03_options.png)
 
@@ -274,7 +275,7 @@ The left and right sticks work like the D-pad, and holding a direction repeats.
 
 Games that come as an nro on the SD card (ports and other homebrew games) can be kept like favorites.
 
-- **Y** options → **"Homebrew Favorites: add / remove"** opens the list of nro files found under `/switch` on the SD card (two folder levels deep).
+- **Y** options → ROMs & homebrew → **"Manage Homebrew Favorites"** opens the list of nro files found under `/switch` on the SD card (two folder levels deep).
 - **A** or **−** adds (★, green) or removes (☆), **B** closes; the change applies at once.
 - As soon as one nro is added, a **"Homebrew Favorites"** category appears at the top of the category list (right below Favorites), with a ★ before each name. Names, authors, versions and icons come from the nro itself.
 - **−** in that category removes the nro from Homebrew Favorites (adding is done in the options window).
@@ -284,7 +285,7 @@ Games that come as an nro on the SD card (ports and other homebrew games) can be
 
 ### Background music (BGM)
 
-- **"BGM / sound"** in Options opens the sound window (B closes it). Choose one of three (● = current), since v1.2.0:
+- **"BGM / sound"** in Options → System settings opens the sound window (B closes it). Choose one of three (● = current), since v1.2.0:
   - **Common BGM**: **mp3 / ogg** files in `/JoyLauncher/bgm/`, the same songs with every theme.
   - **Theme BGM**: mp3 / ogg in the `bgm` folder of the theme in use (`/JoyLauncher/themes/<theme>/bgm/`). It follows the theme; a theme without songs is silent. See section 3 of the [theme guide](theme-guide-en.md).
   - **Silent** (default)

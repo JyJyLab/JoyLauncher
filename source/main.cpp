@@ -67,7 +67,8 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, XButton, InstallHb, RestoreHb, Exit };
+enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, XButton, InstallHb, RestoreHb, Exit,
+                     CatRom, CatTheme, CatSystem };  // Cat* = 옵션 창 맨 위의 분류 (A 로 그 분류 창)
 struct MenuItem {
     std::string label;
     std::string nro;
@@ -76,7 +77,10 @@ struct MenuItem {
     bool hb = false;  // 홈브루 메뉴 (X 버튼으로 바로 실행)
 };
 // 켜짐 초록색은 메뉴 창 꾸밈(uistyle.cpp MenuStyle::on)
-static std::vector<MenuItem> gMenu;
+static std::vector<MenuItem> gMenu;      // 옵션 창 맨 위: (기본 메뉴가 바뀌었을 때 알림 줄) · 롬 및 홈브루 · 테마 · 시스템 · 언어 · 업데이트 · 종료
+static std::vector<MenuItem> gRomMenu;   // 롬 및 홈브루 설정: 새로 고침 · 영상 장면 추출 · 홈브루 즐겨찾기 · 홈브루 메뉴·RetroArch·PPSSPP 실행
+static std::vector<MenuItem> gThemeMenu; // 테마 설정: 테마 선택 · 화면 효과 · PC에서 테마 받기
+static std::vector<MenuItem> gSysMenu;   // 시스템 설정: BGM · 소리 설정 · X 버튼 · 기본 홈브루 메뉴 설정
 static std::vector<MenuItem> gBgmMenu;  // 옵션 창의 "BGM · 소리 설정" 에서 여는 창
 // 앨범(애플릿)으로 실행됐는지. 애플릿 모드는 쓸 수 있는 메모리가 적어 큰 게임이 느리거나 실행되지 않을 수 있음
 static bool gAppletMode = false;
@@ -212,30 +216,40 @@ static std::string LanguageLabel() {
 }
 
 static void BuildMenu() {
-    gMenu.clear();
+    const char *onOff[2] = {T("꺼짐 (Off)"), T("켜짐 (On)")};
     HbKind hb = CurrentHbmenu();
     // Joy 를 기본 메뉴로 설정해 뒀는데 다른 메뉴로 바뀌었으면 (Atmosphere 업데이트 등) 맨 위에 다시 설정
     bool hbReplaced = hb != HbKind::Self && HbInstalledRecord();
-    if (hbReplaced)
-        gMenu.push_back({Fmt(T("Joy Launcher 를 기본 홈브루 메뉴로 다시 설정 (현재: %s)"), HbKindName(hb)), "", MenuAct::InstallHb});
-    for (const auto &m : HomebrewMenus()) gMenu.push_back({m.label, m.nro, MenuAct::Launch, false, true});
-    if (SdExists("/switch/retroarch_switch.nro"))
-        gMenu.push_back({"RetroArch", "/switch/retroarch_switch.nro", MenuAct::Launch});
-    if (SdExists("/switch/ppsspp/PPSSPP.nro"))
-        gMenu.push_back({"PPSSPP", "/switch/ppsspp/PPSSPP.nro", MenuAct::Launch});
+    std::string theme = gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName);
+    // 롬 및 홈브루 설정: 설정 줄 다음에 실행 줄 (홈브루 메뉴는 X 버튼으로도 실행)
+    gRomMenu.clear();
+    gRomMenu.push_back({T("게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)"), "", MenuAct::Refresh});
     if (gFramesPending > 0)
-        gMenu.push_back({Fmt(T("영상 장면 일괄 추출 (남은 게임 %d개)"), gFramesPending), "", MenuAct::Frames});
-    gMenu.push_back({T("게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)"), "", MenuAct::Refresh});
-    gMenu.push_back({gUpdateFound ? Fmt(T("업데이트 설치: v%s (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
-                                  : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
-                     "", MenuAct::Update});
-    gMenu.push_back({Fmt(T("테마 설정 (현재: %s)"), gThemeName.empty() ? T("기본") : ThemeTitle(gThemeName).c_str()), "",
-                     MenuAct::Theme});
-    gMenu.push_back({T("PC에서 테마 받기 (FTP)"), "", MenuAct::FtpRecv});
-    // BGM · 소리 설정 창: 소리는 셋 중 하나 (● = 지금 고른 것), 아래는 BGM 볼륨·순서
+        gRomMenu.push_back({Fmt(T("영상 장면 일괄 추출 (남은 게임 %d개)"), gFramesPending), "", MenuAct::Frames});
+    gRomMenu.push_back({Fmt(T("홈브루 즐겨찾기 목록 관리 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
+    for (const auto &m : HomebrewMenus()) gRomMenu.push_back({Fmt(T("실행: %s"), m.label.c_str()), m.nro, MenuAct::Launch, false, true});
+    if (SdExists("/switch/retroarch_switch.nro"))
+        gRomMenu.push_back({Fmt(T("실행: %s"), "RetroArch"), "/switch/retroarch_switch.nro", MenuAct::Launch});
+    if (SdExists("/switch/ppsspp/PPSSPP.nro"))
+        gRomMenu.push_back({Fmt(T("실행: %s"), "PPSSPP"), "/switch/ppsspp/PPSSPP.nro", MenuAct::Launch});
+    // 테마 설정
+    gThemeMenu.clear();
+    gThemeMenu.push_back({Fmt(T("테마 선택 (현재: %s)"), theme.c_str()), "", MenuAct::Theme});
+    gThemeMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), onOff[gEffects]), "", MenuAct::Effects, gEffects});
+    gThemeMenu.push_back({T("PC에서 테마 받기 (FTP)"), "", MenuAct::FtpRecv});
+    // 시스템 설정. BGM · 소리 설정 창: 소리는 셋 중 하나 (● = 지금 고른 것), 아래는 BGM 볼륨·순서
     bool bgmMode = gSound == "common" || gSound == "theme";
-    gMenu.push_back({bgmMode ? Fmt(T("BGM · 소리 설정 (%s · 볼륨 %d%%)"), SoundLabel(), gBgmVolume) : Fmt(T("BGM · 소리 설정 (%s)"), SoundLabel()),
-                     "", MenuAct::BgmMenu, bgmMode});
+    gSysMenu.clear();
+    gSysMenu.push_back({bgmMode ? Fmt(T("BGM · 소리 설정 (%s · 볼륨 %d%%)"), SoundLabel(), gBgmVolume) : Fmt(T("BGM · 소리 설정 (%s)"), SoundLabel()),
+                        "", MenuAct::BgmMenu, bgmMode});
+    gSysMenu.push_back({Fmt(T("X 버튼 (홈브루 메뉴 열기): %s"), onOff[gXButton]), "", MenuAct::XButton, gXButton});
+    if (hbReplaced) {
+    } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
+        gSysMenu.push_back({T("원래 홈브루 메뉴로 되돌리기"), "", MenuAct::RestoreHb});
+    else if (hb == HbKind::Self)
+        gSysMenu.push_back({T("기본 홈브루 메뉴를 Joy Launcher 로 업데이트 (현재: 이전 버전)"), "", MenuAct::InstallHb});
+    else
+        gSysMenu.push_back({Fmt(T("Joy Launcher 를 기본 홈브루 메뉴로 설정 (현재: %s)"), HbKindName(hb)), "", MenuAct::InstallHb});
     gBgmMenu.clear();
     auto mode = [](const char *id, const std::string &label, MenuAct act) {
         bool cur = gSound == id;
@@ -249,19 +263,25 @@ static void BuildMenu() {
     gBgmMenu.push_back({Fmt(T("BGM 볼륨: %d%%"), gBgmVolume), "", MenuAct::BgmVolume});
     gBgmMenu.push_back({gBgmShuffle ? T("BGM 순서: 무작위") : T("BGM 순서: 차례대로"), "", MenuAct::BgmOrder});
     if (bgmMode && BgmCountIn(BgmDir(gSound)) > 0) gBgmMenu.push_back({T("다음 곡"), "", MenuAct::BgmNext});
+    // 맨 위: (알림 줄) · 분류 셋 · 언어 · 업데이트 · 종료
+    gMenu.clear();
+    if (hbReplaced)
+        gMenu.push_back({Fmt(T("Joy Launcher 를 기본 홈브루 메뉴로 다시 설정 (현재: %s)"), HbKindName(hb)), "", MenuAct::InstallHb});
+    gMenu.push_back({T("롬 및 홈브루 설정  (새로 고침 · 홈브루 즐겨찾기 · 홈브루 메뉴 실행)"), "", MenuAct::CatRom});
+    gMenu.push_back({Fmt(T("테마 설정  (현재: %s)"), theme.c_str()), "", MenuAct::CatTheme});
+    gMenu.push_back({T("시스템 설정  (BGM · 소리 · X 버튼 · 기본 홈브루 메뉴)"), "", MenuAct::CatSystem});
     gMenu.push_back({LanguageLabel(), "", MenuAct::Language});
-    gMenu.push_back({Fmt(T("화면 효과 (움직임·전환): %s"), gEffects ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::Effects, gEffects});
-    gMenu.push_back({Fmt(T("X 버튼 (홈브루 메뉴 열기): %s"), gXButton ? T("켜짐 (On)") : T("꺼짐 (Off)")), "", MenuAct::XButton, gXButton});
-    gMenu.push_back({Fmt(T("홈브루 즐겨찾기 추가·빼기 (%d개)"), (int)gHbFav.size()), "", MenuAct::HbFav, !gHbFav.empty()});
-    if (hbReplaced) {
-    } else if (hb == HbKind::Self && NroTitle("/hbmenu.nro") == "Joy Launcher")
-        gMenu.push_back({T("원래 홈브루 메뉴로 되돌리기"), "", MenuAct::RestoreHb});
-    else if (hb == HbKind::Self)
-        gMenu.push_back({T("기본 홈브루 메뉴를 Joy Launcher 로 업데이트 (현재: 이전 버전)"), "", MenuAct::InstallHb});
-    else
-        gMenu.push_back({Fmt(T("Joy Launcher 를 기본 홈브루 메뉴로 설정 (현재: %s)"), HbKindName(hb)), "", MenuAct::InstallHb});
+    gMenu.push_back({gUpdateFound ? Fmt(T("업데이트 설치: v%s (현재 v%s)"), gUpdate.version.c_str(), CurrentVersion())
+                                  : Fmt(T("업데이트 확인 (현재 v%s)"), CurrentVersion()),
+                     "", MenuAct::Update});
     gMenu.push_back({T("종료 (HOME)"), "", MenuAct::Exit});
 }
+// 옵션 창의 단계: 0 = 맨 위, 1 = 롬 및 홈브루 설정, 2 = 테마 설정, 3 = 시스템 설정
+static std::vector<MenuItem> &OptItems(int cat) { return cat == 1 ? gRomMenu : cat == 2 ? gThemeMenu : cat == 3 ? gSysMenu : gMenu; }
+static const char *OptTitle(int cat) {
+    return cat == 1 ? T("롬 및 홈브루 설정") : cat == 2 ? T("테마 설정") : cat == 3 ? T("시스템 설정") : T("옵션");
+}
+static int OptCatOf(MenuAct m) { return m == MenuAct::CatRom ? 1 : m == MenuAct::CatTheme ? 2 : m == MenuAct::CatSystem ? 3 : 0; }
 
 struct TextCache {
     SDL_Renderer *r = nullptr;
@@ -987,8 +1007,9 @@ struct App {
     ThumbCache thumbs;           // 표시 크기로 줄인 그림 (테마 아이콘·격자 칸)
     std::string lastBack;        // 새 배경을 읽기 전까지 보여줄 직전 배경
     bool themePick = false;      // 테마 선택 창
-    bool optPick = false;        // 옵션 창 (Y): 홈브루 메뉴·RetroArch·PPSSPP·새로 고침·테마 등
+    bool optPick = false;        // 옵션 창 (Y): 맨 위 = 분류(롬 및 홈브루 · 테마 · 시스템) · 언어 · 업데이트 · 종료
     int optSel = 0;
+    int optCat = 0;              // 옵션 창 단계 (OptItems): 0 = 맨 위, 1 = 롬 및 홈브루, 2 = 테마, 3 = 시스템
     bool bgmPick = false;        // BGM 창 (옵션 창 위에 한 겹 더)
     int bgmSel = 0;
     bool hbPick = false;         // 홈브루 즐겨찾기 창 (옵션 창 위에 한 겹 더): SD 의 nro 를 골라 넣고 빼기
@@ -2786,8 +2807,8 @@ static bool Adjustable(MenuAct m) {
     return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::XButton || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
 }
 
-// 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비
-static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &items, int selIdx, int bw) {
+// 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비, sub: 옵션의 분류 창 (B = 뒤로)
+static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &items, int selIdx, int bw, bool sub = false) {
     int n = (int)items.size();
     int rows = std::min(n, (H - 16 - 110) / kRowH);  // 화면에 다 안 들어가면 커서를 따라 넘김
     int top = std::max(0, std::min(selIdx - rows / 2, n - rows));
@@ -2801,15 +2822,20 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
         bool sel = i == selIdx;
         if (sel) MenuSel(a, m, bx + 16, y - 4, bw - 32, kRowH);
         SDL_Color c = items[i].on ? m.on : sel ? m.selText : m.dim;
-        DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
+        bool cat = OptCatOf(items[i].act) > 0;  // 분류: 오른쪽 끝에 ▶
+        DrawText(a, a.fList, items[i].label, bx + 32, y + 4, c, bw - (cat ? 104 : 64), 0, 0, 0, sel ? kScroll : 0);
+        if (cat) DrawText(a, a.fList, "▶", bx + bw - 56, y + 4, c);
     }
     bool adjustable = selIdx >= 0 && selIdx < n && Adjustable(items[selIdx].act);
-    DrawText(a, a.fInfo, adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기"), W / 2, by + bh - 34, m.dim,
-             0, 1);
+    bool opens = selIdx >= 0 && selIdx < n && OptCatOf(items[selIdx].act) > 0;
+    const char *hint = sub ? (adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 뒤로") : T("[A] 선택   [B] 뒤로"))
+                     : opens ? T("[A] 열기   [B] 닫기")
+                     : adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기");
+    DrawText(a, a.fInfo, hint, W / 2, by + bh - 34, m.dim, 0, 1);
 }
 
 // 옵션 창 (Y)
-static void RenderOptions(App &a) { RenderPopup(a, T("옵션"), gMenu, a.optSel, 820); }
+static void RenderOptions(App &a) { RenderPopup(a, OptTitle(a.optCat), OptItems(a.optCat), a.optSel, 900, a.optCat > 0); }
 
 // PC에서 테마 받기 (FTP): 주소·포트, 받은 것
 static void RenderFtp(App &a) {
@@ -3103,7 +3129,7 @@ static void Clamp(App &a) {
     if (a.cols.empty()) return;
     int total = (int)a.cols.size();
     a.catSel = std::max(0, std::min(a.catSel, total - 1));
-    a.optSel = std::max(0, std::min(a.optSel, (int)gMenu.size() - 1));
+    a.optSel = std::max(0, std::min(a.optSel, (int)OptItems(a.optCat).size() - 1));
     // 목록 맨 위 항목(top)은 열 수의 배수 (격자는 줄 단위로 넘김)
     auto keep = [](int sel, int &top, bool games) {
         int cols, rows;
@@ -3321,7 +3347,7 @@ static bool LaunchGame(App &a) {
 #ifndef JOY_BUILDER
 int main(int argc, char **argv) {
     std::string shot;
-    int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1;
+    int wantCol = -1, wantSel = -1, wantMode = -1, wantCat = -1, wantOpt = -1, wantOptCat = 0;
     std::string wantTheme, wantLang;
     bool wantPick = false;
     bool wantHbPick = false;  // 데스크톱 확인용: 홈브루 게임즈 창
@@ -3347,6 +3373,7 @@ int main(int argc, char **argv) {
         else if (s == "--col" && i + 1 < argc) wantCol = atoi(argv[++i]);
         else if (s == "--cat" && i + 1 < argc) wantCat = atoi(argv[++i]);  // 카테고리 화면 커서
         else if (s == "--opt" && i + 1 < argc) wantOpt = atoi(argv[++i]);
+        else if (s == "--optcat" && i + 1 < argc) wantOptCat = atoi(argv[++i]);  // 옵션 창 분류 (1 롬 및 홈브루 · 2 테마 · 3 시스템)
         else if (s == "--applet") gAppletMode = true;  // 애플릿 모드 표시 확인용
         else if (s == "--lang" && i + 1 < argc) wantLang = argv[++i];  // ko / en (설정보다 우선)
         else if (s == "--update-install") {  // JOY_SDROOT 의 가짜 SD 에 최신 릴리스 설치 시험
@@ -3499,7 +3526,7 @@ int main(int argc, char **argv) {
         a.catSel = wantCat;
         a.catTop = CenterTop(a.catSel, false);
     }
-    if (wantOpt >= 0) { a.optPick = true; a.optSel = wantOpt; }
+    if (wantOpt >= 0) { a.optPick = true; a.optCat = std::max(0, std::min(3, wantOptCat)); a.optSel = wantOpt; Clamp(a); }
     if (wantBgm) {
         BuildMenu();
         a.bgmPick = true;
@@ -3815,19 +3842,23 @@ int main(int argc, char **argv) {
         BuildMenu();
         a.bgmSel = std::min(a.bgmSel, (int)gBgmMenu.size() - 1);  // BGM 이 아니면 "다음 곡" 이 빠짐
     };
+    // 옵션 창의 항목 실행. 분류 창에서 연 창(테마 선택·홈브루 즐겨찾기·BGM)은 B 로 닫으면 그 분류 창으로 돌아옴
     auto runMenu = [&](int idx) {
-        if (idx < 0 || idx >= (int)gMenu.size()) return;
-        const MenuItem m = gMenu[idx];
-        if (m.act == MenuAct::FtpRecv) {
+        const auto &items = OptItems(a.optCat);
+        if (idx < 0 || idx >= (int)items.size()) return;
+        const MenuItem m = items[idx];
+        if (OptCatOf(m.act) > 0) {
+            a.optCat = OptCatOf(m.act);
+            a.optSel = 0;
+            a.confirmIdx = -1;
+        } else if (m.act == MenuAct::FtpRecv) {
             openFtp();
         } else if (m.act == MenuAct::Theme) {
-            a.optPick = false;
             openThemePick();
         } else if (m.act == MenuAct::Frames) {
             a.optPick = false;
             RunFrameBatch(a);
         } else if (m.act == MenuAct::Refresh) {
-            a.optPick = false;
             SaveState(a);
             std::string log;
             LoadGames(a, true, log);
@@ -3838,7 +3869,6 @@ int main(int argc, char **argv) {
             a.message = Fmt(T("게임 목록을 새로 읽었습니다 (%d개)"), n);
             a.messageColor = {40, 100, 60, 240};
             a.messageModal = true;
-            a.optPick = false;
         } else if (m.act == MenuAct::Update) {
             runUpdate(idx);
         } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects || m.act == MenuAct::XButton) {
@@ -3987,24 +4017,36 @@ int main(int argc, char **argv) {
             return;
         }
         if (a.optPick) {
-            int n = (int)gMenu.size();
+            const auto &items = OptItems(a.optCat);
+            int n = (int)items.size();
             if (b == 13) a.optSel = (a.optSel + n - 1) % n;
             else if (b == 15) a.optSel = (a.optSel + 1) % n;
             else if (b == 0) runMenu(a.optSel);
-            else if ((b == 12 || b == 14) && Adjustable(gMenu[a.optSel].act)) adjust(gMenu[a.optSel].act, b == 14 ? 1 : -1);
-            else if (b == 1 || b == 3) a.optPick = false;
+            else if ((b == 12 || b == 14) && Adjustable(items[a.optSel].act)) adjust(items[a.optSel].act, b == 14 ? 1 : -1);
+            else if (b == 1 && a.optCat > 0) {  // 분류 창의 B: 맨 위로 (그 분류에 커서)
+                int from = a.optCat;
+                a.optCat = 0;
+                a.optSel = 0;
+                a.confirmIdx = -1;
+                for (int i = 0; i < (int)gMenu.size(); i++)
+                    if (OptCatOf(gMenu[i].act) == from) a.optSel = i;
+            } else if (b == 1 || b == 3) {
+                a.optPick = false;
+                a.optCat = 0;
+            }
             a.selChanged = SDL_GetTicks() - 1000;
             return;
         }
         if (b == 3) {  // Y: 옵션
             a.optPick = true;
+            a.optCat = 0;
             a.optSel = 0;
             a.confirmIdx = -1;
             return;
         }
         if (b == 2) {  // X: 홈브루 메뉴 (이전 기본 메뉴 → sphaira → nx-hbmenu → 기타 백업)
             if (!gXButton) return;  // 옵션에서 끔
-            for (const auto &m : gMenu)
+            for (const auto &m : gRomMenu)  // 홈브루 메뉴 실행 줄은 롬 및 홈브루 설정에 있음
                 if (m.hb) {
                     SaveState(a, true);
                     if (ChainLoad(a, m.nro, {})) running = false;

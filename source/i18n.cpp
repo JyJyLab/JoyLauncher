@@ -41,7 +41,6 @@ const char *const kTable[][2] = {
     {"게임 목록 새로 고침 (롬·그림·영상을 넣거나 뺐을 때)", "Refresh game list (after adding or removing ROMs, images, videos)"},
     {"업데이트 설치: v%s (현재 v%s)", "Install update: v%s (current v%s)"},
     {"업데이트 확인 (현재 v%s)", "Check for updates (current v%s)"},
-    {"테마 설정 (현재: %s)", "Theme (current: %s)"},
     {"기본", "Default"},
     {"언어 / Language: %s", "Language / 언어: %s"},
     {"자동 (%s)", "Auto (%s)"},
@@ -65,7 +64,6 @@ const char *const kTable[][2] = {
     {"X 버튼 (홈브루 메뉴 열기): %s", "X button (open homebrew menu): %s"},
     {"# X 버튼: on = 홈브루 메뉴 열기, off = 끔 (잘못 눌러 런처를 벗어나지 않게)", "# X button: on = open the homebrew menu, off = disabled (no leaving the launcher by accident)"},
     {"홈브루 즐겨찾기", "Homebrew Favorites"},
-    {"홈브루 즐겨찾기 추가·빼기 (%d개)", "Homebrew Favorites: add / remove (%d)"},
     {"[A] 또는 [-] 넣기 / 빼기   [B] 닫기   (%d개)", "[A] or [-] Add / remove   [B] Close   (%d)"},
     {"홈브루 즐겨찾기에서 뺐습니다", "Removed from Homebrew Favorites"},
     {"SD 의 /switch 에서 nro 를 찾지 못했습니다", "No nro found under /switch on the SD card"},
@@ -242,6 +240,19 @@ const char *const kTable[][2] = {
     {"새턴", "Saturn"},
     {"아타리 링크스", "Atari Lynx"},
     {"버추얼보이", "Virtual Boy"},
+    // 옵션 창 분류 (1.3.2 초안)
+    {"롬 및 홈브루 설정  (새로 고침 · 홈브루 즐겨찾기 · 홈브루 메뉴 실행)", "ROMs & homebrew  (refresh · favorites · launch menus)"},
+    {"테마 설정  (현재: %s)", "Theme settings  (current: %s)"},
+    {"시스템 설정  (BGM · 소리 · X 버튼 · 기본 홈브루 메뉴)", "System settings  (BGM · X button · default homebrew menu)"},
+    {"롬 및 홈브루 설정", "ROMs & homebrew"},
+    {"테마 설정", "Theme settings"},
+    {"시스템 설정", "System settings"},
+    {"테마 선택 (현재: %s)", "Choose theme (current: %s)"},
+    {"홈브루 즐겨찾기 목록 관리 (%d개)", "Manage Homebrew Favorites (%d)"},
+    {"실행: %s", "Launch: %s"},
+    {"[A] 열기   [B] 닫기", "[A] Open   [B] Close"},
+    {"[A] 선택   [B] 뒤로", "[A] Select   [B] Back"},
+    {"[A] 선택   ◀ ▶ 조절   [B] 뒤로", "[A] Select   ◀ ▶ Adjust   [B] Back"},
 };
 
 // 실행 기록의 "선택 방법" 문구 조각

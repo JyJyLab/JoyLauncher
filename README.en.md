@@ -14,7 +14,7 @@ A homebrew game launcher for the Nintendo Switch. Copy an Android **Pegasus ROM 
 - Box art and screenshots; grabs a frame from the preview video when there is no screenshot
 - Per-category background themes with four theme packs included (**Basic Theme, Retro Theme, WallStreetKim's Theme, Retro Game Gallery Theme**), launch log, cached game list (fast start)
 - Theme layouts (`layout.txt`) and extension syntax (v1.1.0+): cell elements, conditions (`visible_if`, `hidden_if`), placeholders, `[strings]` text overrides, automatic ES-DE system-name matching
-- Screen effects: smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade (can be turned off in Options)
+- Screen effects: smooth list movement, horizontal/vertical carousel lists, fade/slide screen transitions, background crossfade (can be turned off in Options → Theme settings)
 - **Theme builder (PC, Windows/Linux)**: make themes while seeing the Switch screen as it will look, send them to the Switch over FTP — [docs/테마_빌더.md](docs/테마_빌더.md) (Korean)
 - **Receive themes from PC (FTP)** screen in the launcher (no need to take out the SD card); delete themes in the theme picker
 - View tabs in the game list (ZL·ZR): All · Favorites · Recently played
