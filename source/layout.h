@@ -69,6 +69,11 @@ struct Elem {
     LColor countColor;
     int countSize = 22;
     int countX = 18, countY = -1;
+    // 스크롤바 (v1.3.4): 목록 오른쪽(캐러셀은 아래·오른쪽)에 지금 위치 표시
+    int scrollbar = 0;     // 0 auto(넘칠 때만) / 1 on(항상) / 2 off
+    LColor sbColor;        // 손잡이 색 (바탕은 같은 색 25%)
+    int sbW = 4;           // 굵기
+    int sbX = 0, sbY = 0;  // 기본 자리에서 옮기기
     std::string card;      // grid: 칸 바탕 그림
     bool hasCardColor = false;  // grid: 칸 바탕색 (그림 없이 색만 깔 때)
     LColor cardColor;

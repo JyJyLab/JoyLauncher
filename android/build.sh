@@ -17,7 +17,7 @@ rm -rf "$ASSETS"
 mkdir -p "$ASSETS/themes"
 cp -r "$ROOT/romfs/." "$ASSETS/"
 # 테마 팩: zip 안의 경로는 "<팩>/…" (스위치판 릴리스의 <팩>.zip 과 같은 구성)
-for t in JoyBasic RetroPack ByeokgolKim DcGall; do
+for t in JoyBasic RetroPack ByeokgolKim DcGall ArchivePlay; do
     [ -d "$ROOT/themes/$t" ] || { echo "build.sh: themes/$t missing" >&2; exit 1; }
     (cd "$ROOT/themes" && zip -qr -X "$ASSETS/themes/$t.zip" "$t")
 done

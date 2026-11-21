@@ -9,7 +9,7 @@ The Android version of Joy Launcher for the Switch. Screens and themes are the s
 2. On first start a screen explains that **access to all files on the storage** is required. Press any button or the screen to open the settings → **allow Joy Launcher** → go back and it continues.
    - It is needed to read your ROM folders and to keep settings and themes in the `JoyLauncher` folder at the root of the storage.
    - On Android 10 or earlier the storage permission dialog is shown instead.
-3. The four stock themes are unpacked into `JoyLauncher/themes` on first start.
+3. The five stock themes are unpacked into `JoyLauncher/themes` on first start.
 4. Then the **ROM folders** window opens.
    - If ROM folders were found automatically (internal / SD card) they are listed: **A = use these** (saved in `roots.txt`, automatic search stays on) · **B = choose myself**
    - Choose myself: the Android **file manager (folder picker)** opens. Go into your ROMS folder and tap **Use this folder → Allow**; the place is saved in `roots.txt` and the game list is read at once (the number of games is shown). Choosing yourself **turns the automatic search off so only the chosen folders are used** (turn it back on in Options → ROMs & apps → ROM folders)

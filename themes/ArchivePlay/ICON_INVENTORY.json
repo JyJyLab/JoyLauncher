@@ -1,0 +1,16 @@
+{
+  "required_count": 72,
+  "png_count": 72,
+  "missing": [],
+  "bad": [],
+  "new_generated": 63,
+  "existing_approved": 9,
+  "atlas_sources": [
+    "/workspace/scratch/7321b02c39f8/generated_images/exec-3d6824e8-1cf1-4fee-b561-4a8c3b302966.png",
+    "/workspace/scratch/7321b02c39f8/generated_images/exec-ad58d42c-1081-4c21-b07e-b82dbdf2f841.png",
+    "/workspace/scratch/7321b02c39f8/generated_images/exec-fcdb7218-4bdf-42b3-b743-11203787dfa8.png",
+    "/workspace/scratch/7321b02c39f8/generated_images/exec-fd25bb53-59d3-4fe6-8416-bfc2e30900f1.png"
+  ],
+  "generator": "built-in imagegen",
+  "packaging": "Uniform 4x4 atlas cell crop, then resize to 640 RGBA PNG; originals preserved."
+}

@@ -247,6 +247,12 @@ One per screen. `style` picks the look.
 | `selector` | path | selection picture, stretched over the row or cell |
 | `selector_grow` | number | make the selection picture this much larger on every side |
 | `font`, `size` | | text |
+| `scrollbar` | `auto` / `on` / `off` | scroll bar (v1.3.4). Default `auto` = only when the items do not fit. Text and grid lists: vertical, 6 px right of the list; horizontal carousel: centered below the largest cell (max 320 px); vertical carousel: on the right |
+| `scrollbar_color` | color | thumb color; the track is the same color at 25%. Default = `color.scrollbar` in `[theme]`, else `dim` |
+| `scrollbar_width` | number 1–30 | thickness (default 4) |
+| `scrollbar_offset` | `x` or `x,y` | move it from the default spot |
+
+> Launchers up to 1.3.3 report the scrollbar keys as unknown, so add `requires = 1.3.4` when you use them (the theme builder does it on export). Without the keys, 1.3.4 and later still show the default bar on lists that overflow; set `scrollbar = off` to hide it. Menu windows (options, theme picker, homebrew favorites…) also show one inside their right edge in `color.menu_dim` when they overflow.
 
 `style = text`: `row_height` (decimals allowed; rows = `h` ÷ `row_height`, or set `rows`), `text_offset = x` or `x,y` (text position in the row; without `y` it is centered vertically), `align`, and for the category list `count`, `count_color`, `count_size`, `count_offset`.
 

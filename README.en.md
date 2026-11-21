@@ -19,7 +19,7 @@ It reads **Pegasus metadata** or **ES-DE game lists** in your ROM folders, shows
 - **Button names follow the controller**: `+` `−` for Nintendo pads, `START` `SELECT` for the others. Option to swap A/B (select/cancel)
 - **On-screen controller**: touch buttons appear when no controller is connected
 - Box art, screenshots and **preview videos**: when the selected game has a video it plays in place of the screenshot (can be turned off in Options → Theme settings)
-- Themes: per-category backgrounds and logos, screen layouts with `layout.txt` (grids, carousels, fonts, colors, transitions). Four stock themes included. Also receives themes from the PC Theme Builder (Switch version) over FTP
+- Themes: per-category backgrounds and logos, screen layouts with `layout.txt` (grids, carousels, fonts, colors, transitions). Five stock themes included. Also receives themes from the PC Theme Builder (Switch version) over FTP
 - Favorites and recently played tabs, custom categories, Korean / English, battery indicator
 - The screen keeps the theme's 1280x720 coordinates while text and images are drawn at the device resolution, so it stays sharp on high-resolution displays
 
