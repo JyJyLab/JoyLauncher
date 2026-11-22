@@ -158,8 +158,8 @@ PC엔진 = PC Engine
 즐겨찾기 = Favorites
 
 [strings]
-hint.categories = [A] 열기  [B] 종료  [X] 홈브류  [Y] 옵션  ◀▶ 선택
-hint.games = [A] 실행  [B] 뒤로  [X] 홈브류  [Y] 옵션  [L/R] 카테고리  [ZL/ZR] 보기 전환  [-] 즐겨찾기
+hint.categories = [A] 열기    [B] 종료    [X] BGM    [Y] 옵션    ◀▶ 선택
+hint.games = [A] 실행   [B] 뒤로   [X] BGM   [Y] 옵션   [L/R] 카테고리   [ZL/ZR] 보기 전환   [-] 즐겨찾기
 
 [categories.background]
 visible = off
@@ -171,7 +171,11 @@ visible = off
 visible = off
 
 [categories.hint]
-visible = off
+rect = 1246,676,0,0
+size = 18
+color = text
+align = right
+visible = on
 
 [categories.clock]
 type = text
@@ -199,7 +203,11 @@ visible = off
 visible = off
 
 [games.hint]
-visible = off
+rect = 1246,676,0,0
+size = 18
+color = text
+align = right
+visible = on
 
 [games.clock]
 type = text
@@ -429,17 +437,92 @@ color = dim
 align = right
 scroll = off
 
-[categories.canvas]
-type = image
-file = ui/categories.png
-rect = 0,0,1280,720
-fit = stretch
-z = 0
+# ---- categories: 머리·바닥 (바탕 그림 대신 요소로: 안드로이드판의 4:3·16:10 화면에서도 글자·네모가 눌리지 않게)
+[categories.mark]
+type = text
+text = ■
+rect = 37,15,0,0
+size = 23
+color = accent
+scroll = off
+z = 5
 
-[games.canvas]
-type = image
-file = ui/games.png
-rect = 0,0,1280,720
-fit = stretch
-z = 0
+[categories.brand]
+type = text
+text = ARCHIVE / PLAY
+rect = 80,12,600,40
+size = 28
+font = bold
+color = text
+scroll = off
+z = 5
 
+[categories.headline]
+type = rect
+rect = 34,62,1213,1
+color = #111110
+z = 5
+
+[categories.footline]
+type = rect
+rect = 34,655,1213,1
+color = #111110
+z = 5
+
+# ---- games: 머리·바닥 (바탕 그림 대신 요소로: 안드로이드판의 4:3·16:10 화면에서도 글자·네모가 눌리지 않게)
+[games.mark]
+type = text
+text = ■
+rect = 37,15,0,0
+size = 23
+color = accent
+scroll = off
+z = 5
+
+[games.brand]
+type = text
+text = ARCHIVE / PLAY
+rect = 80,12,600,40
+size = 28
+font = bold
+color = text
+scroll = off
+z = 5
+
+[games.headline]
+type = rect
+rect = 34,62,1213,1
+color = #111110
+z = 5
+
+[games.footline]
+type = rect
+rect = 34,655,1213,1
+color = #111110
+z = 5
+
+[categories.motto]
+type = text
+text = CURATED FOR THE WAY YOU PLAY.
+rect = 81,679,0,0
+size = 14
+color = text
+z = 5
+
+[games.midline]
+type = rect
+rect = 34,158,1213,1
+color = #111110
+z = 5
+
+[games.vline]
+type = rect
+rect = 594,176,1,458
+color = #b9b7b0
+z = 5
+
+[games.list.rule]
+type = rect
+rect = 0,27,0,1
+color = #dedbd3
+z = -1

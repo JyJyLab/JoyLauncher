@@ -25,6 +25,7 @@ struct Elem {
     int z = 20;
     int x = 0, y = 0, w = 0, h = 0;
     bool hasRect = false;
+    int anchor = 0;  // 화면 폭이 1280 이 아닐 때 (v1.3.6 안드로이드): 0 scale(비례) / 1 left / 2 right / 3 center / 4 stretch / 5 fixed(그대로)
     LColor color;
 
     // text
@@ -108,17 +109,32 @@ struct Layout {
     std::string minVersion;
     // 화면 효과 (v1.1, 0 = 없음): 선택·스크롤 움직임, 배경 바뀜, 화면 전환
     int menuRadius = -1, menuBorderW = -1;  // [theme] menu_radius·menu_border_width: 메뉴 창 모서리·테두리 (-1 = 기본, v1.3)
+    bool autoFit = true;       // [theme] auto_fit = off: 화면비가 달라도 1280x720 그대로 (위아래·좌우 띠)
+    bool elemCustom = false;   // layout.txt 가 요소를 하나라도 바꿨는지 (아니면 정사각 화면에서 내장 1:1 구성을 씀)
+    int canvasW = 0, canvasH = 0;  // [theme] canvas = 720x720: 화면 좌표 크기 (0 = 1280x720, 안드로이드판 v1.4)
     bool buttonIcons = true;  // [theme] button_icons: 도움말의 [A]·[B]… 를 버튼 그림으로 (off = 글자 그대로)
     int animMs = 0, bgFadeMs = 0, transition = 0, transitionMs = 220;  // transition: 0 none / 1 fade / 2 slide                 // [theme] requires = 최소 Joy Launcher 버전
     bool custom = false;                   // 테마의 layout.txt 를 읽었는지
     std::vector<std::string> problems;     // 읽으면서 생긴 문제 ("줄 번호: 내용")
 };
 
-// 내장 기본 구성
-void LayoutDefault(Layout &l);
+// 내장 기본 구성 (square: 정사각 화면용 720x720 구성)
+void LayoutDefault(Layout &l, bool square = false);
+// 1280 폭 기준 구성을 폭 w 에 맞춘다 (가로 좌표 비례, anchor, 격자 열 수). w == 1280 이면 그대로
+void LayoutFitWidth(Layout &l, int w);
 // 기본 구성 위에 path 의 layout.txt 를 덮어쓴다. 파일이 없으면 false (기본 그대로)
-bool LayoutLoad(Layout &l, const std::string &path);
+bool LayoutLoad(Layout &l, const std::string &path, bool square = false);
 // 기본 구성 위에 글(layout.txt 내용)을 덮어쓴다 (테마 빌더 미리보기용)
-void LayoutLoadText(Layout &l, const std::string &text);
+void LayoutLoadText(Layout &l, const std::string &text, bool square = false);
 // 내장 기본 구성의 원문 (설명서·시험용)
 const char *LayoutDefaultText();
+// 화면비(가로/세로)에 맞는 구성 읽기 (v1.3.6, 안드로이드):
+//   정사각(0.8~1.25): base/layout_1x1.txt → 없으면 요소를 바꾸지 않은 테마는 내장 1:1 구성, 아니면 1280x720 그대로
+//   가로형(1.25 이상): layout.txt 를 폭 720×화면비(900~1600)에 맞춤 (auto_fit = off 나 canvas 가 있으면 그대로)
+//   세로형: 1280x720 그대로
+// base: 테마 폴더 ("" = 테마 없음). l.canvasW/H 를 채움 (0 = 1280x720). file: 읽은 파일 이름 ("" = 없음)
+void LayoutLoadFit(Layout &l, const std::string &base, float aspect, std::string &file);
+// 같은 일을 파일 대신 글로 (테마 빌더): mainText = layout.txt 글, sqText = layout_1x1.txt 글 (nullptr = 파일 없음)
+void LayoutLoadFitText(Layout &l, const std::string *mainText, const std::string *sqText, float aspect, std::string &file);
+// 화면비가 바뀌어 다시 읽어야 하는지 비교용: -1 정사각 / 0 세로형 / 그 밖 = 캔버스 폭
+int LayoutFitKey(float aspect);

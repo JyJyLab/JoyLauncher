@@ -1,0 +1,298 @@
+# 레트로게임갤러리테마 (DcGall) — 정사각 화면(1:1) 구성 (Joy Launcher 안드로이드판)
+# 화면 가로/세로가 0.8~1.25 인 기기(예: Anbernic RG Rotate 720x720)에서 layout.txt 대신 씀. 좌표 기준 720x720.
+# 스위치판·이전 버전은 이 파일을 읽지 않음. 설명: docs/테마_레이아웃.md 12-1-3
+
+[theme]
+requires = 1.1.0
+canvas = 720x720
+font = fonts/NotoSansKR-Regular.otf
+font_bold = fonts/NotoSansKR-Bold.otf
+background_color = #ffffff
+color.text = #222222
+color.dim = #777777
+color.navy = #3b4191
+color.menu = #ffffff
+color.menu_border = #3b4191
+color.menu_title = #3b4191
+color.menu_text = #222222
+color.menu_dim = #777777
+color.menu_select = #e4e6f6
+color.menu_select_text = #1d2160
+
+# ---------------------------------------------------------------- 카테고리 화면 (갤러리 목록, 3x2)
+[categories.background]
+visible = off
+
+[categories.topbar]
+rect = 0,0,720,64
+color = navy
+
+[categories.bottombar]
+rect = 0,672,720,48
+color = navy
+
+[categories.preview]
+visible = off
+
+[categories.applet]
+visible = off
+
+[categories.title]
+text = dcinside
+logo = off
+rect = 24,12,300,0
+size = 32
+color = #ffffff
+align = left
+
+[categories.battery]
+rect = 600,22,96,20
+color = #ffffff
+
+[categories.gall]
+type = text
+text = 레트로게임기 마이너 갤러리
+rect = 24,80,560,0
+size = 28
+color = navy
+
+[categories.rank]
+type = text
+text = {category_index} / {category_count}
+rect = 696,88,0,0
+align = right
+size = 18
+color = dim
+
+[categories.line]
+type = rect
+rect = 24,128,672,3
+color = navy
+
+[categories.tabs]
+type = text
+text = 전체 갤러리        즐겨찾기        최근 방문
+rect = 26,142,600,0
+size = 18
+
+[categories.list]
+style = grid
+rect = 24,180,672,480
+columns = 3
+rows = 2
+gap = 12,12
+card = ui/card.png
+selector = ui/selector.png
+selected_scale = 1.0
+image = icon
+padding = 60,16,60,108
+label = off
+
+[categories.list.short]
+type = text
+text = {short}
+rect = 0,130,0,0
+size = 15
+color = dim
+align = center
+
+[categories.list.name]
+text = {name}
+rect = 0,154,0,0
+size = 21
+align = center
+font = bold
+
+[categories.list.posts]
+text = 게시글 {games}
+rect = 0,186,0,0
+size = 17
+color = dim
+align = center
+
+[categories.list.selbg]
+type = rect
+rect = 2,2,-4,-4
+color = #eef0fa
+state = selected
+z = -1
+
+[categories.hint]
+rect = 360,684,0,0
+size = 18
+color = #ffffff
+align = center
+
+# ---------------------------------------------------------------- 게임 화면 (위 글 정보 + 아래 글 목록)
+[games.background]
+visible = off
+
+[games.topbar]
+rect = 0,0,720,64
+color = navy
+
+[games.bottombar]
+rect = 0,672,720,48
+color = navy
+
+[games.applet]
+visible = off
+
+[games.logo]
+type = text
+text = dcinside   레트로게임기 갤러리
+rect = 24,14,560,0
+size = 28
+color = #ffffff
+
+[games.battery]
+rect = 600,22,96,20
+color = #ffffff
+
+[games.title]
+text = {category} 갤러리
+logo = off
+rect = 24,78,440,0
+size = 28
+color = navy
+align = left
+scroll = on
+
+[games.prev]
+rect = 470,84,0,0
+color = #333333
+
+[games.pager]
+rect = 500,84,196,0
+color = #333333
+
+[games.line]
+type = rect
+rect = 24,124,672,3
+color = navy
+
+[games.media]
+rect = 24,140,320,180
+overlay = off
+
+[games.info]
+visible = off
+
+[games.tag]
+type = text
+text = [일반] 게임 정보
+rect = 360,140,336,0
+size = 16
+color = navy
+
+[games.gt]
+type = text
+text = {title}
+rect = 360,164,336,60
+size = 22
+wrap = on
+
+[games.meta2]
+type = text
+text = {developer,year,players,genre| | }
+rect = 360,230,336,0
+size = 16
+color = dim
+scroll = on
+
+[games.favbtn]
+type = rect
+rect = 360,286,180,32
+color = #f4f4f6
+
+[games.favtext]
+type = text
+text = {fav?★ 개념글:☆ 개념 보내기}
+rect = 360,286,180,32
+align = center
+valign = center
+size = 17
+color = #444444
+
+[games.tabbar]
+type = rect
+rect = 24,334,672,40
+color = #eef0f6
+
+[games.tabs]
+type = text
+text = 전체글       개념글       최근 실행
+rect = 40,342,560,0
+size = 18
+color = navy
+
+[games.head]
+type = text
+text = 번호        제목
+rect = 36,380,400,0
+size = 16
+color = dim
+
+[games.head2]
+type = text
+text = 조회
+rect = 684,380,0,0
+size = 16
+color = dim
+align = right
+
+[games.list]
+rect = 24,404,672,262
+rows = 7
+row_height = 37.3
+size = 20
+text_offset = 18
+color = #222222
+selected_color = navy
+selection = #e8eaf6
+label = off
+
+[games.list.rule]
+type = rect
+rect = 0,36,0,1
+color = #e0e0e4
+z = -1
+
+[games.list.num]
+text = {num_desc}
+rect = 6,0,60,37
+valign = center
+align = center
+size = 16
+color = dim
+
+[games.list.t]
+text = {fav?★ :}{title}
+rect = 76,0,520,37
+valign = center
+size = 20
+selected_color = navy
+
+[games.list.pc]
+text = {playcount}
+rect = 604,0,52,37
+valign = center
+align = right
+size = 16
+color = dim
+
+[games.counter]
+rect = 696,684,0,0
+align = right
+color = #ffffff
+size = 16
+
+[games.hint]
+rect = 330,684,0,0
+size = 16
+color = #ffffff
+align = center
+
+[strings]
+hint.categories = [A] 입갤    [B] 탈갤    [X] BGM    [Y] 갤 설정    ▲▼◀▶ 이동
+hint.games = [A] 실행  [B] 갤 목록  [L/R] 갤 이동  [-] 개념  [X] BGM  [Y] 옵션

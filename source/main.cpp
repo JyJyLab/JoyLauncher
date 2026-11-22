@@ -45,7 +45,10 @@
 static std::string gRoot = "roms";         // 데스크톱 시험판: --root (안드로이드는 저장소에서 롬 폴더를 찾음)
 static std::string gHome = "JoyLauncher";  // 설정·상태·테마 폴더 (안드로이드: <공용 저장소>/JoyLauncher)
 
-static const int W = 1280, H = 720;
+// 화면 좌표 크기 (캔버스). 기본 1280x720, 테마의 [theme] canvas 로 바뀜 (정사각 화면용 layout_1x1.txt 는 기본 720x720)
+static int W = 1280, H = 720;
+static float gOutAspect = 1280.0f / 720.0f;  // 기기 화면의 가로/세로 (UpdateScale 이 갱신)
+static int PopW(int w) { return std::min(w, W - 32); }  // 팝업 폭: 좁은 캔버스에서는 화면 안으로
 static const SDL_Color kWhite = {235, 235, 240, 255};
 static const SDL_Color kGrey = {150, 150, 165, 255};
 static const SDL_Color kAccent = {255, 196, 64, 255};
@@ -588,6 +591,8 @@ struct Theme {
     int dim = 150;
     std::string base;                             // 테마 폴더 ("" = 테마 없음)
     Layout layout;                                // 화면 구성 (layout.txt, 없으면 기본)
+    std::string layoutFile;                       // 읽은 구성 파일 (layout.txt / layout_1x1.txt, "" = 없음)
+    int fitKey = 0;                               // 읽을 때의 화면비 (LayoutFitKey): 바뀌면 다시 읽음
     std::map<std::string, std::map<std::string, std::string>> folders;  // 그 밖의 그림 폴더 (icons 등): 처음 쓸 때 읽음
     // alias 만 있는 테마는 의미 없음
     bool Active() const { return !bg.empty() || !logo.empty() || layout.custom; }
@@ -722,27 +727,31 @@ static std::string ThemeTitle(const std::string &folder) {
 static void LoadTheme(const std::string &name) {
     SetStringOverrides(nullptr, nullptr);  // gTheme 를 바꾸기 전에 (문구 표가 사라짐)
     gTheme = Theme();
-    LayoutDefault(gTheme.layout);
     gThemeSerial++;
     gThemeName.clear();
-    if (name.empty()) return;
-    std::string base = gHome + "/themes/" + name;
-    if (!IsDirPath(base)) return;
+    gTheme.fitKey = LayoutFitKey(gOutAspect);
+    std::string base = name.empty() ? "" : gHome + "/themes/" + name;
+    if (!base.empty() && !IsDirPath(base)) base.clear();
+    // 화면비에 맞는 구성: 정사각이면 layout_1x1.txt (또는 내장 1:1), 16:10·4:3 등은 layout.txt 를 폭에 맞춤
+    LayoutLoadFit(gTheme.layout, base, gOutAspect, gTheme.layoutFile);
+    if (base.empty()) {
+        gTheme.layout.custom = false;
+        return;
+    }
     gTheme.name = gThemeName = name;
     gTheme.base = base;
-    LayoutLoad(gTheme.layout, base + "/layout.txt");
     if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, std::string(CurrentVersion()).substr(0, std::string(CurrentVersion()).find('-'))) > 0)
         gTheme.layout.problems.insert(gTheme.layout.problems.begin(),
                                       Fmt(T("이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)"), gTheme.layout.minVersion.c_str(), CurrentVersion()));
     SetStringOverrides(&gTheme.layout.strings, &gTheme.layout.stringsEn);
     // layout.txt 의 문제는 테마 폴더의 layout_errors.txt 에 적어 둔다 (문제가 없으면 지움)
     if (gTheme.layout.custom) {
-        std::string ep = base + "/layout_errors.txt";
+        std::string ep = base + (gTheme.layoutFile == "layout_1x1.txt" ? "/layout_1x1_errors.txt" : "/layout_errors.txt");
         if (gTheme.layout.problems.empty()) {
             remove(ep.c_str());
         } else {
             std::ofstream eo(ep, std::ios::binary);
-            eo << "layout.txt problems (line: what)\r\n";
+            eo << gTheme.layoutFile << " problems (line: what)\r\n";
             for (const auto &pr : gTheme.layout.problems) eo << pr << "\r\n";
         }
     }
@@ -2382,6 +2391,27 @@ static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
         int th = FontH(f);
         y += e.valign == 1 ? (e.h - th) / 2 : e.h - th;
     }
+    // 폭을 정하지 않은 한 줄 글자(도움말 등)가 화면 밖으로 넘치면 글자를 줄여 맞춤 (좁은 화면비: 4:3·1:1)
+    if (e.w == 0) {
+        int avail = e.align == 1 ? 2 * (std::min(ax, W - ax) - 80) : e.align == 2 ? ax - 8 : W - ax - 8;  // 가운데: 양옆 80 은 번호 등 자리
+        bool btn = s.find('[') != std::string::npos && ButtonIconsOn();
+        int fh0 = FontH(f);
+        for (int sz = e.size; avail > 40 && sz >= std::max(10, e.size * 3 / 5); sz--) {
+            TTF_Font *ff = sz == e.size ? f : FontFor(e.bold, sz, s);
+            if (!ff) break;
+            int yy = y + (fh0 - FontH(ff)) / 2;
+            if (btn) {
+                if (DrawTextButtons(a, ff, s, ax, yy, col, avail, e.align)) return;
+                continue;
+            }
+            int tw = 0;
+            TTF_SizeUTF8(ff, s.c_str(), &tw, nullptr);
+            if (FromPx(tw) <= avail) {
+                DrawText(a, ff, s, ax, yy, col, 0, e.align, 0, 0, e.scroll ? kScroll : 0);
+                return;
+            }
+        }
+    }
     DrawText(a, f, s, ax, y, col, e.w, e.align, 0, 0, e.scroll ? kScroll : 0);
 }
 
@@ -2913,7 +2943,7 @@ static const char *PackName(const ThemePack &p) { return CurrentLang() == Lang::
 static void RenderThemePick(App &a) {
     int n = (int)a.themeList.size();
     int rows = std::min(n, 10);
-    int bw = 640, bh = 110 + rows * kRowH;
+    int bw = PopW(640), bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = (H - bh) / 2;
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh);
@@ -2941,14 +2971,14 @@ static void RenderThemePick(App &a) {
         DrawText(a, a.fList, label, bx + 32, y + 4, c, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     MenuScrollbar(a, m, bx, by, bw, rows, top, n);
-    DrawText(a, a.fInfo, PadHint(T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)")), W / 2, by + bh - 34, m.dim, 0, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 적용   [X] 삭제   [B] 닫기   (테마 폴더: /JoyLauncher/themes)")), W / 2, by + bh - 34, m.dim, bw - 40, 1, 0, 0, kScrollMsg);
     if (a.themeDelAsk > 0 && a.themeDelAsk < n) {
         std::string name = a.themeDelAsk < (int)a.themeTitles.size() && !a.themeTitles[a.themeDelAsk].empty() ? a.themeTitles[a.themeDelAsk]
                                                                                                              : a.themeList[a.themeDelAsk];
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-        NoticeBox(a, m, 240, 270, 800, 170, {120, 40, 40, 245});
-        DrawText(a, a.fList, Fmt(T("'%s' 테마를 지울까요?"), name.c_str()), W / 2, 296, kWhite, 760, 1, 0, 0, kScrollMsg);
-        DrawText(a, a.fInfo, Fmt(T("/JoyLauncher/themes/%s 폴더가 삭제됩니다"), a.themeList[a.themeDelAsk].c_str()), W / 2, 344, kWhite, 760, 1);
+        NoticeBox(a, m, (W - PopW(800)) / 2, 270, PopW(800), 170, {120, 40, 40, 245});
+        DrawText(a, a.fList, Fmt(T("'%s' 테마를 지울까요?"), name.c_str()), W / 2, 296, kWhite, PopW(800) - 40, 1, 0, 0, kScrollMsg);
+        DrawText(a, a.fInfo, Fmt(T("/JoyLauncher/themes/%s 폴더가 삭제됩니다"), a.themeList[a.themeDelAsk].c_str()), W / 2, 344, kWhite, PopW(800) - 40, 1);
         DrawText(a, a.fInfo, PadHint(T("[A] 삭제   [B] 취소")), W / 2, 392, kAccent, 0, 1);
     }
 }
@@ -2957,7 +2987,7 @@ static void RenderThemePick(App &a) {
 static void RenderAppPick(App &a) {
     int n = (int)a.appList.size();
     int rows = std::min(n, (H - 16 - 110) / kRowH);
-    int bw = 980, bh = 110 + rows * kRowH;
+    int bw = PopW(980), bh = 110 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh);
@@ -2975,14 +3005,14 @@ static void RenderAppPick(App &a) {
     }
     MenuScrollbar(a, m, bx, by, bw, rows, top, n);
     DrawText(a, a.fInfo, PadHint(Fmt(T("[A] 실행   [-] 앱 즐겨찾기에 넣기 / 빼기   [B] 닫기   (즐겨찾기 %d개)"), (int)gAppFav.size())), W / 2,
-             by + bh - 34, m.dim, 0, 1);
+             by + bh - 34, m.dim, bw - 40, 1, 0, 0, kScrollMsg);
 }
 
 // 에뮬레이터 선택 창: 지금 카테고리(롬 폴더)의 기종에서 쓸 수 있는 에뮬레이터. 초록 = 설치됨
 static void RenderEmuPick(App &a) {
     int n = (int)a.emuList.size();
     int rows = std::min(n, (H - 16 - 150) / kRowH);
-    int bw = 900, bh = 150 + rows * kRowH;
+    int bw = PopW(900), bh = 150 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh);
@@ -3005,7 +3035,7 @@ static void RenderEmuPick(App &a) {
         DrawText(a, a.fList, label, bx + 32, y + 4, col, bw - 64, 0, 0, 0, sel ? kScroll : 0);
     }
     MenuScrollbar(a, m, bx, by, bw, rows, top, n, 102);
-    DrawText(a, a.fInfo, PadHint(T("[A] 선택   [B] 닫기   (기록: /JoyLauncher/emulators.txt)")), W / 2, by + bh - 34, m.dim, 0, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 선택   [B] 닫기   (기록: /JoyLauncher/emulators.txt)")), W / 2, by + bh - 34, m.dim, bw - 40, 1, 0, 0, kScrollMsg);
 }
 
 static bool Adjustable(MenuAct m) {
@@ -3019,6 +3049,7 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
     int rows = std::min(n, (H - 16 - 110) / kRowH);  // 화면에 다 안 들어가면 커서를 따라 넘김
     int top = std::max(0, std::min(selIdx - rows / 2, n - rows));
     int bh = 110 + rows * kRowH;
+    bw = PopW(bw);
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh);
@@ -3038,7 +3069,7 @@ static void RenderPopup(App &a, const char *title, const std::vector<MenuItem> &
                      : opens ? T("[A] 열기   [B] 닫기")
                      : adjustable ? T("[A] 선택   ◀ ▶ 조절   [B] 닫기") : T("[A] 선택   [B] 닫기");
     MenuScrollbar(a, m, bx, by, bw, rows, top, n);
-    DrawText(a, a.fInfo, PadHint(hint), W / 2, by + bh - 34, m.dim, 0, 1);
+    DrawText(a, a.fInfo, PadHint(hint), W / 2, by + bh - 34, m.dim, bw - 40, 1, 0, 0, kScrollMsg);
 }
 
 // 옵션 창 (Y)
@@ -3047,7 +3078,7 @@ static void RenderOptions(App &a) { RenderPopup(a, OptTitle(a.optCat), OptItems(
 // PC에서 테마 받기 (FTP): 주소·포트, 받은 것
 static void RenderFtp(App &a) {
     FtpServerStatus st = FtpServerGet();
-    int bw = 900, bh = 520, bx = (W - bw) / 2, by = (H - bh) / 2;
+    int bw = PopW(900), bh = 520, bx = (W - bw) / 2, by = (H - bh) / 2;
     MenuStyle m = Menu();
     MenuPanel(a, m, bx, by, bw, bh, 150, 248);
     DrawText(a, a.fBig, T("PC에서 테마 받기 (FTP)"), W / 2, by + 18, m.title, 0, 1);
@@ -3068,9 +3099,9 @@ static void RenderFtp(App &a) {
 // 종료 확인
 static void RenderExitAsk(App &a) {
     MenuStyle m = Menu();
-    MenuPanel(a, m, 340, 270, 600, 160);
-    DrawText(a, a.fBig, T("런처를 종료합니다"), W / 2, 300, m.text, 560, 1);
-    DrawText(a, a.fInfo, PadHint(T("[A] 종료   [B] 돌아가기")), W / 2, 372, m.dim, 560, 1);
+    MenuPanel(a, m, (W - PopW(600)) / 2, 270, PopW(600), 160);
+    DrawText(a, a.fBig, T("런처를 종료합니다"), W / 2, 300, m.text, PopW(600) - 40, 1);
+    DrawText(a, a.fInfo, PadHint(T("[A] 종료   [B] 돌아가기")), W / 2, 372, m.dim, PopW(600) - 40, 1);
 }
 
 // 롬 폴더 고르기 창
@@ -3078,7 +3109,7 @@ static void RenderRootPick(App &a) {
     MenuStyle m = Menu();
     int n = (int)a.rootItems.size();
     int rows = std::max(1, std::min(n, (H - 16 - 170) / kRowH));
-    int bw = 1100, bh = 170 + rows * kRowH;
+    int bw = PopW(1100), bh = 170 + rows * kRowH;
     int bx = (W - bw) / 2, by = std::max(8, (H - bh) / 2);
     MenuPanel(a, m, bx, by, bw, bh);
     bool firstList = a.rootFirst && a.rootDir.empty();
@@ -3124,7 +3155,7 @@ static void RenderRootPick(App &a) {
 // 업데이트 창: 앱이 apk 를 받아 설치하지 않는다 (다른 앱 설치 권한 문제) → 릴리스 페이지를 알려 주고 브라우저로 연다
 static void RenderUpdateLink(App &a) {
     MenuStyle m = Menu();
-    int bw = 960, bh = 350, bx = (W - bw) / 2, by = (H - bh) / 2;
+    int bw = PopW(960), bh = 350, bx = (W - bw) / 2, by = (H - bh) / 2;
     MenuPanel(a, m, bx, by, bw, bh);
     bool newer = gUpdateFound && !gUpdate.version.empty();
     std::string title = newer ? Fmt(T("새 버전 v%s 이 있습니다"), gUpdate.version.c_str())
@@ -3286,15 +3317,15 @@ static void Render(App &a) {
     if (a.cols.empty()) {
         Frame(a, "Joy Launcher", PadHint(T("[A] 롬 폴더 고르기     [B] 종료     [X] BGM     [Y] 옵션")));
         DrawText(a, a.fBig, T("게임 목록이 없습니다"), W / 2, 280, kWhite, 0, 1);
-        DrawText(a, a.fInfo, PadHint(T("[A] 를 눌러 게임(롬)이 든 폴더를 고르세요 — 고른 폴더는 다음에도 그대로 씁니다")), W / 2, 340, kGrey, 1180, 1);
-        DrawText(a, a.fInfo, T("저장소의 ROMs·Roms·roms 폴더와 페가수스·ES-DE 의 롬 폴더는 자동으로 찾습니다"), W / 2, 376, kGrey, 1180, 1);
+        DrawText(a, a.fInfo, PadHint(T("[A] 를 눌러 게임(롬)이 든 폴더를 고르세요 — 고른 폴더는 다음에도 그대로 씁니다")), W / 2, 340, kGrey, W - 100, 1);
+        DrawText(a, a.fInfo, T("저장소의 ROMs·Roms·roms 폴더와 페가수스·ES-DE 의 롬 폴더는 자동으로 찾습니다"), W / 2, 376, kGrey, W - 100, 1);
     } else if (a.mode == Mode::Categories) {
         RenderCategories(a);
     } else {
         RenderGames(a);
     }
     if (a.optPick) RenderOptions(a);
-    if (a.bgmPick) RenderPopup(a, T("BGM · 소리 설정"), gBgmMenu, a.bgmSel, 760);
+    if (a.bgmPick) RenderPopup(a, T("BGM · 소리 설정"), gBgmMenu, a.bgmSel, PopW(760));
     if (a.themePick) RenderThemePick(a);
     if (a.appPick) RenderAppPick(a);
     if (a.emuPick) RenderEmuPick(a);
@@ -3308,9 +3339,9 @@ static void Render(App &a) {
         for (std::string l; std::getline(ss, l, '\n');) lines.push_back(l);
         int n = std::max(1, (int)lines.size()), lh = 40, boxH = 100 + n * lh, top = 350 - boxH / 2;
         Fill(a, 0, 0, W, H, {0, 0, 0, 120});
-        NoticeBox(a, Menu(), 240, top, 800, boxH, a.messageColor);
+        NoticeBox(a, Menu(), (W - PopW(800)) / 2, top, PopW(800), boxH, a.messageColor);
         for (int i = 0; i < (int)lines.size(); i++)
-            DrawText(a, i ? a.fInfo : a.fList, lines[i], W / 2, top + 30 + i * lh + (i ? 4 : 0), kWhite, 760, 1, 0, 0, kScrollMsg);
+            DrawText(a, i ? a.fInfo : a.fList, lines[i], W / 2, top + 30 + i * lh + (i ? 4 : 0), kWhite, PopW(800) - 40, 1, 0, 0, kScrollMsg);
         DrawText(a, a.fInfo, PadHint(T("[B] 닫기")), W / 2, top + 50 + n * lh, kWhite, 0, 1);
     } else if (!a.message.empty() && SDL_GetTicks() < a.messageUntil) {
         // 여러 줄 알림 ("\n" 으로 나눔): 줄마다 가운데 정렬, 한 번에 보이게
@@ -3319,9 +3350,9 @@ static void Render(App &a) {
         for (std::string l; std::getline(ss, l, '\n');) lines.push_back(l);
         int n = std::max(1, (int)lines.size()), lh = 40;
         int boxH = 50 + n * lh, top = 345 - boxH / 2;
-        NoticeBox(a, Menu(), 240, top, 800, boxH, a.messageColor);
+        NoticeBox(a, Menu(), (W - PopW(800)) / 2, top, PopW(800), boxH, a.messageColor);
         for (int i = 0; i < n; i++)
-            DrawText(a, a.fList, lines[i], W / 2, top + 30 + i * lh - (n > 1 ? 5 : 0), kWhite, 760, 1, 0, 0, kScrollMsg);
+            DrawText(a, a.fList, lines[i], W / 2, top + 30 + i * lh - (n > 1 ? 5 : 0), kWhite, PopW(800) - 40, 1, 0, 0, kScrollMsg);
     }
 }
 
@@ -3332,7 +3363,9 @@ static Uint32 gTrAt = 0;
 static int gTrDir = 1, gTrCol = -1, gTrView = 0;
 static Mode gTrMode = Mode::Categories;
 static bool gTrInit = false, gTrPrevOk = false;
+static void ApplyCanvas(App &a);
 static void RenderFrame(App &a, SDL_Texture *out) {
+    ApplyCanvas(a);
     const Layout &l = gTheme.layout;
     bool on = l.transition > 0 && l.transitionMs > 0 && AnimOn();
     if (!on) {
@@ -3875,27 +3908,37 @@ static std::string RootParent(const std::string &dir) {
 
 // 처음 실행: APK 에 든 기본 테마(assets 의 themes/<팩>.zip)를 /JoyLauncher/themes 에 풀어 둔다.
 // 설정 파일이 이미 있으면(= 처음이 아님) 하지 않는다: 사용자가 테마를 지운 것일 수 있음
+// APK 에 든 기본 테마 하나(assets 의 themes/<팩>.zip)를 /JoyLauncher/themes/<팩> 에 풀기.
+// 1 = 됨, 0 = 실패 (err), -1 = 앱에 없음 (err = "noasset", 데스크톱 시험판 등)
+static int InstallBundledPack(const ThemePack &p, int &files, std::string &err) {
+    files = 0;
+    std::vector<char> zip;
+    if (!plat::ReadAsset(std::string("themes/") + p.folder + ".zip", zip)) { err = "noasset"; return -1; }
+    mkdir((gHome + "/themes").c_str(), 0777);
+    std::string tmp = plat::PrivateDir() + "/joy_theme_tmp.zip";
+    FILE *f = fopen(tmp.c_str(), "wb");
+    if (!f) { err = "tmp"; return 0; }
+    bool ok = fwrite(zip.data(), 1, zip.size(), f) == zip.size();
+    if (fclose(f) != 0) ok = false;
+    if (ok) ok = ExtractThemeZip(tmp, std::string(p.folder) + "/", gHome + "/themes/" + p.folder, files, err);
+    else err = "write";
+    remove(tmp.c_str());
+    return ok ? 1 : 0;
+}
+
+// 처음 실행: APK 에 든 기본 테마를 /JoyLauncher/themes 에 풀어 둔다.
+// 설정 파일이 이미 있으면(= 처음이 아님) 하지 않는다: 사용자가 테마를 지운 것일 수 있음
 static void InstallBundledThemes(App &a) {
     if (!ThemeNames().empty() || std::ifstream(gHome + "/settings.txt").good()) return;
-    mkdir((gHome + "/themes").c_str(), 0777);
     for (const auto &p : kPacks) {
-        std::vector<char> zip;
-        if (!plat::ReadAsset(std::string("themes/") + p.folder + ".zip", zip)) continue;
         SDL_SetRenderDrawColor(a.r, 16, 16, 22, 255);
         SDL_RenderClear(a.r);
         DrawText(a, a.fBig, T("기본 테마를 준비하는 중..."), W / 2, 300, kWhite, 0, 1);
         DrawText(a, a.fInfo, PackName(p), W / 2, 360, kGrey, 0, 1);
         SDL_RenderPresent(a.r);
-        std::string tmp = plat::PrivateDir() + "/joy_theme_tmp.zip";
-        FILE *f = fopen(tmp.c_str(), "wb");
-        if (!f) continue;
-        bool ok = fwrite(zip.data(), 1, zip.size(), f) == zip.size();
-        if (fclose(f) != 0) ok = false;
         int files = 0;
         std::string err;
-        if (ok && !ExtractThemeZip(tmp, std::string(p.folder) + "/", gHome + "/themes/" + p.folder, files, err))
-            printf("bundled theme %s: %s\n", p.folder, err.c_str());
-        remove(tmp.c_str());
+        if (InstallBundledPack(p, files, err) == 0) printf("bundled theme %s: %s\n", p.folder, err.c_str());
     }
 }
 
@@ -3951,9 +3994,9 @@ static bool WaitStorageAccess(App &a) {
         SDL_SetRenderDrawColor(a.r, 16, 16, 22, 255);
         SDL_RenderClear(a.r);
         DrawText(a, a.fTitle, "Joy Launcher", W / 2, 150, kAccent, 0, 1);
-        DrawText(a, a.fBig, T("저장소의 모든 파일에 접근할 권한이 필요합니다"), W / 2, 260, kWhite, 1180, 1);
-        DrawText(a, a.fInfo, T("롬 폴더를 읽고, 저장소의 JoyLauncher 폴더에 설정·테마를 두기 위해서입니다"), W / 2, 330, kGrey, 1180, 1);
-        DrawText(a, a.fInfo, T("아무 버튼이나 화면을 누르면 설정 화면이 열립니다 → Joy Launcher 를 허용한 뒤 돌아오세요"), W / 2, 372, kGrey, 1180, 1);
+        DrawText(a, a.fBig, T("저장소의 모든 파일에 접근할 권한이 필요합니다"), W / 2, 260, kWhite, W - 100, 1);
+        DrawText(a, a.fInfo, T("롬 폴더를 읽고, 저장소의 JoyLauncher 폴더에 설정·테마를 두기 위해서입니다"), W / 2, 330, kGrey, W - 100, 1);
+        DrawText(a, a.fInfo, T("아무 버튼이나 화면을 누르면 설정 화면이 열립니다 → Joy Launcher 를 허용한 뒤 돌아오세요"), W / 2, 372, kGrey, W - 100, 1);
         DrawText(a, a.fInfo, T("뒤로 가기 = 종료"), W / 2, 450, kGrey, 0, 1);
         SDL_RenderPresent(a.r);
         SDL_Delay(30);
@@ -3976,6 +4019,7 @@ static void OpenAppFonts(App &a) {
 static bool UpdateScale(App &a) {
     int ow = 0, oh = 0;
     if (SDL_GetRendererOutputSize(a.r, &ow, &oh) != 0 || ow <= 0 || oh <= 0) return false;
+    gOutAspect = ow / (float)oh;
     float s = std::max(0.5f, std::min(4.0f, std::min(ow / (float)W, oh / (float)H)));
     if (fabsf(s - gScale) < 0.001f) return false;
     gScale = s;
@@ -3983,6 +4027,19 @@ static bool UpdateScale(App &a) {
 }
 
 static void ResetGpu(App &a, bool all);
+static void Rescale(App &a);
+// 테마가 정한 화면 좌표 크기(canvas)로 바꾼다. 바뀌면 배율·글꼴·전환 그림을 다시 만든다
+static void ApplyCanvas(App &a) {
+    int w = gTheme.layout.canvasW > 0 ? gTheme.layout.canvasW : 1280, h = gTheme.layout.canvasH > 0 ? gTheme.layout.canvasH : 720;
+    if (w == W && h == H) return;
+    W = w;
+    H = h;
+    SDL_SetRenderTarget(a.r, nullptr);
+    SDL_RenderSetLogicalSize(a.r, W, H);
+    UpdateScale(a);
+    Rescale(a);
+    OverlayReset();
+}
 // 배율이 바뀌었을 때 (화면 크기 변경): 글꼴·글자·작은 그림을 새 해상도로 다시 만든다
 static void Rescale(App &a) {
     a.text.Clear();
@@ -4353,6 +4410,7 @@ int main(int argc, char **argv) {
     OverlayInit(a.r, &gFontBold);
 
     if (!shot.empty()) {
+        ApplyCanvas(a);
 #ifndef __ANDROID__
         // 실행을 먼저 시도한 뒤의 화면 (실행 실패 알림 등 확인용)
         if (getenv("JOY_SHOT_LAUNCH") && wantSel >= 0 && a.mode == Mode::Games) { LaunchGame(a); wantSel = -1; }
@@ -4429,8 +4487,8 @@ int main(int argc, char **argv) {
     auto showBusy = [&](const std::string &text) {
         Render(a);
         MenuStyle m = Menu();
-        MenuPanel(a, m, 240, 300, 800, 90, 0);
-        DrawText(a, a.fList, text, W / 2, 330, m.text, 760, 1, 0, 0, kScrollMsg);
+        MenuPanel(a, m, (W - PopW(800)) / 2, 300, PopW(800), 90, 0);
+        DrawText(a, a.fList, text, W / 2, 330, m.text, PopW(800) - 40, 1, 0, 0, kScrollMsg);
         SDL_RenderPresent(a.r);
     };
     auto modal = [&](const std::string &text, bool ok) {
@@ -4446,10 +4504,10 @@ int main(int argc, char **argv) {
             lastDraw = SDL_GetTicks();
             Render(a);
             MenuStyle m = Menu();
-            MenuPanel(a, m, 240, 280, 800, 150, 0);
-            DrawText(a, a.fList, title, W / 2, 300, m.text, 760, 1);
+            MenuPanel(a, m, (W - PopW(800)) / 2, 280, PopW(800), 150, 0);
+            DrawText(a, a.fList, title, W / 2, 300, m.text, PopW(800) - 40, 1);
             ProgressBar(a, m, 280, 350, 720, 14, part);
-            DrawText(a, a.fInfo, PadHint(T("[B] 취소")), W / 2, 380, m.dim, 760, 1);
+            DrawText(a, a.fInfo, PadHint(T("[B] 취소")), W / 2, 380, m.dim, PopW(800) - 40, 1);
             SDL_RenderPresent(a.r);
         }
         return !cancel;
@@ -4473,21 +4531,32 @@ int main(int argc, char **argv) {
         a.updLink = true;
     };
     // 테마 선택 창의 "기본 테마 n종 내려받기": 최신 릴리스에서 팩마다 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기
+    // 테마 선택 창의 "기본 테마 n종 내려받기": 최신 릴리스(스위치판과 같은 테마)에서 팩마다 받아 /JoyLauncher/themes/<팩 폴더> 에 풀기.
+    // 받지 못하면 (인터넷 없음 등) APK 에 든 같은 테마를 푼다
     auto runThemeDownload = [&]() {
-        int cur = 0;
+        std::vector<int> list;
+        for (int i = 0; i < kPackCount; i++) list.push_back(i);
+        int cnt = (int)list.size(), k = 0, cur = 0;
         auto progress = [&](long long got, long long total) {
             double part = total > 0 ? (double)got / total : 0.0;
-            return drawProgress(Fmt(T("%s 내려받는 중 (%d/%d)  %.1f / %.1f MB"), PackName(kPacks[cur]), cur + 1, kPackCount, got / 1048576.0,
+            return drawProgress(Fmt(T("%s 내려받는 중 (%d/%d)  %.1f / %.1f MB"), PackName(kPacks[cur]), k + 1, cnt, got / 1048576.0,
                                     total / 1048576.0),
-                                (cur + part) / kPackCount);
+                                (k + part) / cnt);
         };
         showBusy(T("최신 릴리스 확인 중..."));
         int total = 0, got = 0;
         std::string failed;
-        for (cur = 0; cur < kPackCount; cur++) {
+        for (k = 0; k < cnt; k++) {
+            cur = list[k];
             int files = 0;
             std::string e;
-            if (DownloadTheme(gHome + "/themes", kPacks[cur].folder, files, e, progress)) {
+            progress(0, 1);
+            bool ok = DownloadTheme(gHome + "/themes", kPacks[cur].folder, files, e, progress);
+            if (!ok && e != T("취소했습니다")) {
+                std::string e2;
+                if (InstallBundledPack(kPacks[cur], files, e2) == 1) ok = true;
+            }
+            if (ok) {
                 total += files;
                 got++;
             } else {
@@ -4508,10 +4577,10 @@ int main(int argc, char **argv) {
             }
         openThemePick();
         if (!failed.empty()) {
-            modal(Fmt(T("기본 테마 %d종 받음 (전체 %d종) · 실패: "), got, kPackCount) + failed, false);
+            modal(Fmt(T("기본 테마 %d종 받음 (전체 %d종) · 실패: "), got, cnt) + failed, false);
             return;
         }
-        Notice(a, PadHint(Fmt(T("기본 테마 %d종을 받았습니다 (파일 %d개) · 테마를 골라 [A] 로 적용합니다"), kPackCount, total)), kMsgGreen, 4000);
+        Notice(a, PadHint(Fmt(T("기본 테마 %d종을 받았습니다 (파일 %d개) · 테마를 골라 [A] 로 적용합니다"), cnt, total)), kMsgGreen, 4000);
     };
     // 옵션 창에서 값을 바꾸는 항목 (A 또는 ◀ ▶). dir: +1 / -1
     auto adjust = [&](MenuAct act, int dir) {
@@ -5023,6 +5092,9 @@ int main(int argc, char **argv) {
             Rescale(a);
             OverlayReset();
         }
+        // 화면 비율이 바뀌면 (창 크기 변경·화면 회전) 테마 구성을 다시 맞춘다
+        if (LayoutFitKey(gOutAspect) != gTheme.fitKey) LoadTheme(gThemeName);
+        ApplyCanvas(a);
         // 화면 컨트롤러: 켬 = 항상, 자동 = 컨트롤러가 없거나 마지막 입력이 터치일 때
 #ifdef __ANDROID__
         bool wantOverlay = gOverlayMode == "on" || (gOverlayMode == "auto" && (lastInput == InTouch || (lastInput == InNone && pads.empty())));

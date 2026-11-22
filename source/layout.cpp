@@ -1,6 +1,7 @@
 #include "layout.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -201,6 +202,199 @@ scroll=off
 z=50
 )LAYOUT";
 
+// 정사각 화면(가로/세로 0.8~1.25)용 내장 구성: 720x720. 요소 이름은 kDefault 와 같다
+static const char *kDefaultSquare = R"LAYOUT(
+[categories.background]
+type=image
+source=background
+rect=0,0,720,720
+fit=cover
+z=0
+
+[categories.topbar]
+type=rect
+rect=0,0,720,64
+color=bar
+z=10
+
+[categories.bottombar]
+type=rect
+rect=0,672,720,48
+color=bar
+z=10
+
+[categories.list]
+type=list
+style=text
+rect=24,76,672,336
+row_height=42
+size=26
+color=dim
+selected_color=text
+selection=selection
+text_offset=12,8
+count=on
+count_color=dim
+count_size=21
+count_offset=18,12
+z=30
+
+[categories.preview]
+type=preview
+rect=24,424,672,236
+columns=4
+rows=1
+gap=10,10
+z=30
+
+[categories.title]
+type=text
+text={app}
+font=bold
+size=30
+color=accent
+rect=160,14,400,0
+align=center
+z=50
+
+[categories.applet]
+type=text
+text={applet}
+size=20
+color=#eb3c3c
+rect=24,22,0,0
+z=50
+
+[categories.battery]
+type=battery
+rect=576,22,120,20
+color=text
+z=50
+
+[categories.hint]
+type=text
+text={hint}
+size=18
+color=text
+rect=360,684,0,0
+align=center
+scroll=off
+z=50
+
+[games.background]
+type=image
+source=background
+rect=0,0,720,720
+fit=cover
+z=0
+
+[games.topbar]
+type=rect
+rect=0,0,720,72
+color=bar
+z=10
+
+[games.bottombar]
+type=rect
+rect=0,672,720,48
+color=bar
+z=10
+
+[games.list]
+type=list
+style=text
+rect=24,84,672,294
+row_height=42
+size=25
+color=dim
+selected_color=text
+selection=selection
+text_offset=12,8
+z=30
+
+[games.media]
+type=media
+rect=24,384,330,276
+z=30
+
+[games.info]
+type=info
+rect=370,384,326,276
+color=dim
+title_color=text
+title_size=24
+size=19
+desc_size=17
+z=30
+
+[games.title]
+type=text
+text={category}
+logo=on
+logo_rect=220,4,280,38
+font=bold
+size=26
+color=accent
+rect=160,6,400,0
+align=center
+z=50
+
+[games.applet]
+type=text
+text={applet}
+size=16
+color=#eb3c3c
+rect=200,46,0,0
+z=50
+
+[games.prev]
+type=text
+text=◀ L
+size=16
+color=dim
+rect=24,46,0,0
+z=50
+
+[games.battery]
+type=battery
+rect=576,14,120,20
+color=text
+z=50
+
+[games.pager]
+type=pager
+size=16
+color=dim
+rect=548,46,148,0
+z=51
+
+[games.view]
+type=text
+text={view_name}
+size=16
+color=accent
+rect=90,46,0,0
+z=50
+
+[games.counter]
+type=text
+text={index} / {count}
+size=17
+color=dim
+rect=24,684,0,0
+z=50
+
+[games.hint]
+type=text
+text={hint}
+size=16
+color=text
+rect=390,686,0,0
+align=center
+scroll=off
+z=50
+)LAYOUT";
+
 const char *LayoutDefaultText() { return kDefault; }
 
 const Elem *Screen::Find(const std::string &name) const {
@@ -336,6 +530,7 @@ bool SetProp(Elem &e, const std::string &key, const std::string &val, bool isNew
         if (isNew && e.type == ElemType::Image) e.align = e.valign = 1;  // 그림은 칸 가운데가 기본
         return true;
     }
+    if (key == "anchor") return ParseChoice(val, {"scale", "left", "right", "center", "stretch", "fixed"}, e.anchor) || bad("scale / left / right / center / stretch / fixed");
     if (key == "visible") { if (!ParseBool(val, b)) return bad("on / off"); e.visible = b; return true; }
     if (key == "visible_if") { e.visibleIf = val; return true; }
     if (key == "hidden_if") { e.hiddenIf = val; return true; }
@@ -580,6 +775,19 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
                 if (!ParseInt(val, v) || v < 0 || v > mx) problem(key + ": 0~" + std::to_string(mx));
                 else (key == "menu_radius" ? l.menuRadius : l.menuBorderW) = v;
             }
+            else if (key == "auto_fit") {
+                bool b;
+                if (!ParseBool(val, b)) problem("auto_fit: on / off");
+                else l.autoFit = b;
+            }
+            else if (key == "canvas") {
+                int w = 0, h = 0;
+                char sep = 0;
+                if (sscanf(val.c_str(), "%d %c %d", &w, &sep, &h) != 3 || (sep != 'x' && sep != 'X' && sep != ',') || w < 320 || w > 2560 ||
+                    h < 320 || h > 2560)
+                    problem("canvas: <w>x<h> (320~2560)");
+                else { l.canvasW = w; l.canvasH = h; }
+            }
             else if (key == "background_color") {
                 if (ParseColor(val, l.clear) && l.clear.name.empty()) l.hasClear = true;
                 else problem("background_color: #rrggbb");
@@ -604,6 +812,7 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
         }
         Elem *ep = inElem ? FindElem(l, section) : nullptr;
         if (!ep) { problem("section 밖의 줄: " + line); continue; }
+        if (!builtin) l.elemCustom = true;
         std::string why;
         if (key == "type") fresh.erase(section);
         if (!SetProp(*ep, key, val, created.count(section) > 0, why)) problem("[" + section + "] " + key + "=" + val + " (" + why + ")");
@@ -627,24 +836,145 @@ void Parse(Layout &l, std::istream &in, bool builtin) {
 
 }  // namespace
 
-void LayoutDefault(Layout &l) {
+void LayoutDefault(Layout &l, bool square) {
     l = Layout();
-    std::istringstream in(kDefault);
+    std::istringstream in(square ? kDefaultSquare : kDefault);
     Parse(l, in, true);
 }
 
-void LayoutLoadText(Layout &l, const std::string &text) {
-    LayoutDefault(l);
+// 가로 좌표 하나: 1280 폭 기준 x·w 를 폭 W 로 (anchor 에 따라)
+static void FitX(int anchor, float fx, int dW, int &x, int &w) {
+    switch (anchor) {
+    case 1: break;                          // left
+    case 2: x += dW; break;                 // right
+    case 3: x += dW / 2; break;             // center
+    case 4: if (w > 0) w += dW; break;      // stretch
+    case 5: break;                          // fixed
+    default:                                // scale
+        x = (int)lroundf(x * fx);
+        w = (int)lroundf(w * fx);
+    }
+}
+
+// 칸 안 요소: 칸 폭의 비율(cx)로
+static void FitChildren(Elem &e, float cx) {
+    for (auto &ch : e.children) {
+        if (ch.anchor == 5 || ch.anchor == 1) continue;
+        ch.x = (int)lroundf(ch.x * cx);
+        if (ch.w != 0) ch.w = (int)lroundf(ch.w * cx);
+        ch.lx = (int)lroundf(ch.lx * cx);
+        ch.lw = (int)lroundf(ch.lw * cx);
+    }
+}
+
+static void FitElem(Elem &e, float fx, int dW) {
+    if (e.anchor == 5) return;
+    int ow = e.w;
+    // w == 0 인 가운데·오른쪽 정렬 글자는 기준점이 x 라서 비례만 해도 맞음
+    FitX(e.anchor, fx, dW, e.x, e.w);
+    if (e.lw > 0) FitX(e.anchor, fx, dW, e.lx, e.lw);
+    if (e.type != ElemType::List && e.type != ElemType::Preview) return;
+    float ex = ow > 0 ? e.w / (float)ow : fx;  // 이 요소의 실제 가로 배율
+    if (e.type == ElemType::List && e.style == 1 && e.columns > 1) {
+        // 격자: 열 수를 줄여 칸 모양을 지킴 (5열 → 4:3 화면에서 4열)
+        int oc = e.columns, nc = std::max(1, (int)lroundf(oc * ex));
+        e.gapX = (int)lroundf(e.gapX * std::min(1.0f, ex));
+        float oldCell = ow > 0 ? (ow - e.gapX * (oc - 1)) / (float)oc : 0, newCell = (e.w - e.gapX * (nc - 1)) / (float)nc;
+        e.columns = nc;
+        if (e.itemW > 0) e.itemW = (int)lroundf(e.itemW * (oldCell > 0 ? newCell / oldCell : 1.0f));
+        FitChildren(e, oldCell > 0 ? newCell / oldCell : 1.0f);
+        e.pad[0] = (int)lroundf(e.pad[0] * (oldCell > 0 ? newCell / oldCell : 1.0f));
+        e.pad[2] = (int)lroundf(e.pad[2] * (oldCell > 0 ? newCell / oldCell : 1.0f));
+        return;
+    }
+    if (e.type == ElemType::List && e.style == 2) {
+        // 캐러셀: 칸 크기(그림 비율)는 그대로, 칸 사이만 좁힘
+        // 좁아질 때는 칸도 같은 비율로 줄임 (그림 비율 유지), 넓어질 때는 칸 크기 그대로
+        float k = std::min(1.0f, ex);
+        if (e.direction == 0 && e.spacing > 0) e.spacing = (int)lroundf(e.spacing * ex);
+        if (e.itemW > 0) { e.itemW = (int)lroundf(e.itemW * k); e.itemH = (int)lroundf(e.itemH * k); FitChildren(e, k); }
+        else FitChildren(e, ex);
+        return;
+    }
+    e.gapX = (int)lroundf(e.gapX * ex);
+    e.pad[0] = (int)lroundf(e.pad[0] * ex);
+    e.pad[2] = (int)lroundf(e.pad[2] * ex);
+    FitChildren(e, ex);
+}
+
+void LayoutFitWidth(Layout &l, int w) {
+    if (w == 1280 || w <= 0) return;
+    float fx = w / 1280.0f;
+    for (Screen *s : {&l.categories, &l.games})
+        for (auto &e : s->elems) FitElem(e, fx, w - 1280);
+}
+
+void LayoutLoadText(Layout &l, const std::string &text, bool square) {
+    LayoutDefault(l, square);
     l.custom = true;
     std::istringstream in(text);
     Parse(l, in, false);
 }
 
-bool LayoutLoad(Layout &l, const std::string &path) {
-    LayoutDefault(l);
+bool LayoutLoad(Layout &l, const std::string &path, bool square) {
+    LayoutDefault(l, square);
     std::ifstream in(path);
     if (!in) return false;
     l.custom = true;
     Parse(l, in, false);
     return true;
+}
+
+
+int LayoutFitKey(float aspect) {
+    if (aspect > 0.8f && aspect < 1.25f) return -1;
+    if (aspect < 0.8f) return 0;
+    return std::max(900, std::min(1600, (int)lroundf(720 * aspect)));
+}
+
+void LayoutLoadFitText(Layout &l, const std::string *mainText, const std::string *sqText, float aspect, std::string &file) {
+    int key = LayoutFitKey(aspect);
+    file = mainText ? "layout.txt" : "";
+    if (key == -1) {
+        if (sqText) {
+            LayoutLoadText(l, *sqText, true);
+            file = "layout_1x1.txt";
+            if (!l.canvasW) l.canvasW = l.canvasH = 720;
+            return;
+        }
+        // layout_1x1.txt 가 없는 테마: 요소를 바꾸지 않았으면 (글꼴·색만) 내장 1:1 구성 위에
+        Layout t;
+        if (mainText) LayoutLoadText(t, *mainText);
+        else LayoutDefault(t);
+        if (!mainText || (!t.elemCustom && t.autoFit && !t.canvasW)) {
+            if (!mainText) LayoutDefault(l, true);
+            else LayoutLoadText(l, *mainText, true);
+            l.canvasW = l.canvasH = 720;
+            return;
+        }
+        l = t;  // 1280x720 그대로 (위아래 띠)
+        return;
+    }
+    if (!mainText) LayoutDefault(l);
+    else LayoutLoadText(l, *mainText);
+    if (key > 0 && !l.canvasW && l.autoFit && key != 1280) {
+        LayoutFitWidth(l, key);
+        l.canvasW = key;
+        l.canvasH = 720;
+    }
+}
+
+static bool ReadText(const std::string &p, std::string &out) {
+    std::ifstream in(p, std::ios::binary);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    out = ss.str();
+    return true;
+}
+
+void LayoutLoadFit(Layout &l, const std::string &base, float aspect, std::string &file) {
+    std::string mt, st;
+    bool hm = !base.empty() && ReadText(base + "/layout.txt", mt), hs = !base.empty() && ReadText(base + "/layout_1x1.txt", st);
+    LayoutLoadFitText(l, hm ? &mt : nullptr, hs ? &st : nullptr, aspect, file);
 }
