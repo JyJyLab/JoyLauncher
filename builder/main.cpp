@@ -31,7 +31,7 @@
 #include <thread>
 #include <tuple>
 
-static const int SW = 1280, SH = 720;
+static int SW = 1280, SH = 720;  // 미리보기 캔버스 (화면비 미리보기에서 바뀜: 4:3 = 960x720, 1:1 = 720x720 …)
 
 // ---------------------------------------------------------------- 상태
 struct Builder {
@@ -78,6 +78,10 @@ struct Builder {
     std::string bulkSet;
     uintmax_t themeSize = 0;
     Uint32 sizeAt = 0;
+    // 화면비 미리보기 (안드로이드판): 0 16:9 · 1 16:10 · 2 4:3 · 3 1:1
+    int aspect = 0;
+    bool sqEdit = false;   // 1:1 에서 layout_1x1.txt 를 편집 중 (doc = 그 파일, mainText = layout.txt)
+    std::string mainText;
     std::string tabReq;   // 처음 열 아래 탭 (시험용 --panel)
     bool assetUser = false;  // 그림 넣을 곳: false 테마 / true 내 그림 폴더 (work/categories, 모든 테마 공통)
     int catSel = -1;
@@ -137,6 +141,18 @@ static void Thumb(const std::string &path, float box) {
 // 화면 구성 반영은 다음 프레임 처음에 (그리는 도중에 다시 읽으면 레이어·속성 창이 들고 있는 요소가 사라져 꺼짐)
 static bool gApplyPending = false, gReloadPending = false;
 static void Apply() { gApplyPending = true; }
+static std::string SquarePath() { return ThemeDir() + "/layout_1x1.txt"; }
+// 지금 문서를 미리보기에 (1:1 이면 layout_1x1.txt 도 함께)
+static void ApplyNow() {
+    if (B.sqEdit) {
+        std::string sq = B.doc.Str();
+        JoySetLayoutText(B.mainText, &sq);
+        return;
+    }
+    std::string sq;
+    bool hs = B.aspect == 3 && !B.theme.empty() && ReadFile(SquarePath(), sq);
+    JoySetLayoutText(B.doc.Str(), hs ? &sq : nullptr);
+}
 static void FlushApply() {
     if (gReloadPending) {
         JoyLoadTheme(B.theme);
@@ -144,13 +160,13 @@ static void FlushApply() {
         gApplyPending = true;
     }
     if (gApplyPending) {
-        JoySetLayoutText(B.doc.Str());
+        ApplyNow();
         gApplyPending = false;
     }
 }
 static void SaveFiles() {
     if (B.theme.empty()) return;
-    WriteFile(ThemeDir() + "/layout.txt", B.doc.Str());
+    WriteFile(ThemeDir() + (B.sqEdit ? "/layout_1x1.txt" : "/layout.txt"), B.doc.Str());
     WriteFile(ThemeDir() + "/theme.txt", B.ttxt.Str());
 }
 static void PushUndo() {
@@ -182,7 +198,9 @@ static void Redo() {
     Changed();
     gReloadPending = true;
 }
+static void EnterSquareEdit();
 static void OpenTheme(const std::string &name) {
+    B.sqEdit = false;
     B.theme = name;
     std::string text;
     ReadFile(ThemeDir() + "/layout.txt", text);
@@ -194,7 +212,8 @@ static void OpenTheme(const std::string &name) {
     B.sel.clear();
     JoyLoadTheme(name);
     gReloadPending = false;
-    JoySetLayoutText(B.doc.Str());
+    if (B.aspect == 3) EnterSquareEdit();  // 1:1 미리보기 중이면 그 테마의 layout_1x1.txt 를 편집 (없으면 그대로)
+    ApplyNow();
     gApplyPending = false;
     B.sizeAt = 0;
     Status("열림: " + name);
@@ -1082,8 +1101,87 @@ static std::string CurrentSystemId() {
     }
     return Lower(cols[c].shortName.empty() ? cols[c].name : cols[c].shortName);
 }
+// ---------------------------------------------------------------- 화면비 미리보기 (안드로이드판)
+static const float kAspects[] = {1280.0f / 720.0f, 1.6f, 4.0f / 3.0f, 1.0f};
+static const char *kAspectNames[] = {"16:9 (스위치·기본)", "16:10 (안드로이드)", "4:3 (안드로이드)", "1:1 (안드로이드)"};
+static void EnterSquareEdit() {
+    std::string sq;
+    if (B.sqEdit || B.theme.empty() || !ReadFile(SquarePath(), sq)) return;
+    SaveFiles();
+    B.mainText = B.doc.Str();
+    B.doc.Parse(sq);
+    B.sqEdit = true;
+    B.undo.clear();
+    B.redo.clear();
+    B.sel.clear();
+}
+static void LeaveSquareEdit() {
+    if (!B.sqEdit) return;
+    SaveFiles();
+    B.doc.Parse(B.mainText);
+    B.sqEdit = false;
+    B.undo.clear();
+    B.redo.clear();
+    B.sel.clear();
+}
+static void SetAspect(int i) {
+    LeaveSquareEdit();
+    B.aspect = i;
+    JoySetAspect(kAspects[i]);
+    if (i == 3) EnterSquareEdit();
+    B.sel.clear();
+    Apply();
+}
+// 1:1 구성 만들기: layout.txt 의 [theme]·[names]·[strings] 를 옮기고 canvas = 720x720 (요소는 내장 1:1 구성에서 시작)
+static void CreateSquare() {
+    if (B.theme.empty()) return;
+    std::string main = B.doc.Str(), out = "# 정사각 화면(1:1) 구성 — 안드로이드판에서 화면 가로/세로 0.8~1.25 일 때 layout.txt 대신 씀. 좌표 720x720\n";
+    std::istringstream in(main);
+    std::string line, sec;
+    bool keep = false, wroteCanvas = false;
+    while (std::getline(in, line)) {
+        std::string t = line;
+        while (!t.empty() && (t.back() == '\r' || t.back() == ' ')) t.pop_back();
+        if (!t.empty() && t[0] == '[') {
+            sec = Lower(t);
+            keep = sec == "[theme]" || sec == "[names]" || sec == "[strings]" || sec == "[strings.en]";
+            if (keep) out += "\n" + t + "\n";
+            if (sec == "[theme]") { out += "canvas = 720x720\n"; wroteCanvas = true; }
+            continue;
+        }
+        if (keep && !t.empty() && Lower(t).rfind("canvas", 0) != 0) out += t + "\n";
+    }
+    if (!wroteCanvas) out = "[theme]\ncanvas = 720x720\n" + out;
+    WriteFile(SquarePath(), out);
+    EnterSquareEdit();
+    Apply();
+    Status("1:1 구성 만듦: layout_1x1.txt (요소는 내장 1:1 구성에서 시작)");
+}
+
 static void Canvas() {
     // 위 도구 줄
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("화면비", kAspectNames[B.aspect])) {
+        for (int i = 0; i < 4; i++)
+            if (ImGui::Selectable(kAspectNames[i], i == B.aspect) && i != B.aspect) SetAspect(i);
+        ImGui::EndCombo();
+    }
+    bool editable = B.aspect == 0 || B.sqEdit;  // 16:10·4:3 은 layout.txt 를 폭에 맞춘 결과 (끌기 편집은 16:9 에서)
+    if (B.aspect == 1 || B.aspect == 2) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("자동 맞춤 (끌기는 16:9)");
+    } else if (B.aspect == 3) {
+        ImGui::SameLine();
+        if (B.sqEdit) ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "layout_1x1.txt 편집");
+        else {
+            int cw, ch;
+            JoyCanvas(cw, ch);
+            ImGui::TextDisabled(cw == ch ? "내장 1:1" : "16:9 그대로");
+            ImGui::SameLine();
+            if (!B.theme.empty() && ImGui::Button("1:1 구성 만들기")) CreateSquare();
+        }
+    }
+    ImGui::SameLine();
     auto cols = JoyCollections();
     int cat = JoyCategory();
     ImGui::SetNextItemWidth(220);
@@ -1157,7 +1255,7 @@ static void Canvas() {
     const Elem *se = B.sel.empty() ? nullptr : FindElemKey(B.sel);
     bool child = IsChildKey(B.sel);
     // 손잡이 (폭·높이가 정해진 요소만)
-    bool sizable = se && se->w > 0 && se->h > 0 && !child;
+    bool sizable = editable && se && se->w > 0 && se->h > 0 && !child;
     ImVec2 hs[8];
     if (se && sr.w > 0) {
         dl->AddRect(toScr(sr.x, sr.y), toScr(sr.x + sr.w, sr.y + sr.h), IM_COL32(255, 200, 60, 255), 0, 0, 2);
@@ -1185,7 +1283,7 @@ static void Canvas() {
             }
         }
         se = B.sel.empty() ? nullptr : FindElemKey(B.sel);
-        if (se) {
+        if (se && editable) {
             PushUndo();
             B.dragging = true;
             B.handle = h;
@@ -2754,6 +2852,7 @@ int main(int argc, char **argv) {
     fs::current_path(P(ExeDir(argv[0])), ec);
     std::string shot;
     std::string openName, selArg, newArg, ftpHost, ftpDel;
+    int aspectArg = 0;
     int ftpPort = 0, wizArg = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -2761,6 +2860,7 @@ int main(int argc, char **argv) {
         else if (a == "--theme" && i + 1 < argc) openName = argv[++i];
         else if (a == "--select" && i + 1 < argc) selArg = argv[++i];
         else if (a == "--games") B.games = true;
+        else if (a == "--aspect" && i + 1 < argc) aspectArg = atoi(argv[++i]);  // 시험: 화면비 미리보기 0 16:9 · 1 16:10 · 2 4:3 · 3 1:1
         else if (a == "--tab" && i + 1 < argc) B.assetKind = argv[++i];
         else if (a == "--panel" && i + 1 < argc) B.tabReq = argv[++i];
         else if (a == "--wizard" && i + 1 < argc) wizArg = atoi(argv[++i]);  // 시험: 마법사 단계
@@ -2802,6 +2902,7 @@ int main(int argc, char **argv) {
     LoadCats();
     LoadFtpSettings();
     if (!openName.empty() && IsDir(B.home + "/themes/" + openName)) OpenTheme(openName);
+    if (aspectArg > 0 && aspectArg < 4) SetAspect(aspectArg);
     else {
         auto ts = ListDir(B.home + "/themes", true);
         if (!ts.empty()) OpenTheme(ts[0]);
@@ -2939,6 +3040,16 @@ int main(int argc, char **argv) {
         }
         // 미리보기 그리기 (지난 프레임에 바꾼 화면 구성을 여기서 반영)
         FlushApply();
+        {  // 화면비 미리보기: 캔버스 크기가 바뀌면 미리보기 그림을 새 크기로
+            int cw, ch;
+            JoyCanvas(cw, ch);
+            if (cw != SW || ch != SH) {
+                SW = cw;
+                SH = ch;
+                if (B.preview) SDL_DestroyTexture(B.preview);
+                B.preview = SDL_CreateTexture(B.r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, SW, SH);
+            }
+        }
         SDL_SetRenderTarget(B.r, B.preview);
         JoyRender(B.games);
         SDL_SetRenderTarget(B.r, nullptr);

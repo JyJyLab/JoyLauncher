@@ -59,7 +59,11 @@ static std::string gHome = "JoyLauncher";
 #endif
 static const char *kOldStateDir = "/config/templauncher";  // 이전 이름(Temp Launcher) 시절 설정
 
+#ifdef JOY_BUILDER
+static int W = 1280, H = 720;  // 테마 빌더: 화면비 미리보기 (안드로이드판의 16:10·4:3·1:1 구성)
+#else
 static const int W = 1280, H = 720;
+#endif
 static const SDL_Color kWhite = {235, 235, 240, 255};
 static const SDL_Color kGrey = {150, 150, 165, 255};
 static const SDL_Color kAccent = {255, 196, 64, 255};
@@ -2291,6 +2295,29 @@ static void DrawElemText(App &a, const Elem &e, const DrawCtx &c) {
         int th = TTF_FontHeight(f);
         y += e.valign == 1 ? (e.h - th) / 2 : e.h - th;
     }
+#ifdef JOY_BUILDER
+    // 안드로이드판과 같게: 좁은 화면비에서 폭을 정하지 않은 한 줄 글자(도움말 등)가 넘치면 글자를 줄여 맞춤 (스위치 1280 폭에서는 쓰지 않음)
+    if (e.w == 0 && W != 1280) {
+        int avail = e.align == 1 ? 2 * (std::min(ax, W - ax) - 80) : e.align == 2 ? ax - 8 : W - ax - 8;
+        bool btn = s.find('[') != std::string::npos && ButtonIconsOn();
+        int fh0 = TTF_FontHeight(f);
+        for (int sz = e.size; avail > 40 && sz >= std::max(10, e.size * 3 / 5); sz--) {
+            TTF_Font *ff = sz == e.size ? f : FontFor(e.bold, sz, s);
+            if (!ff) break;
+            int yy = y + (fh0 - TTF_FontHeight(ff)) / 2;
+            if (btn) {
+                if (DrawTextButtons(a, ff, s, ax, yy, col, avail, e.align)) return;
+                continue;
+            }
+            int tw = 0;
+            TTF_SizeUTF8(ff, s.c_str(), &tw, nullptr);
+            if (tw <= avail) {
+                DrawText(a, ff, s, ax, yy, col, 0, e.align, 0, 0, e.scroll ? kScroll : 0);
+                return;
+            }
+        }
+    }
+#endif
     DrawText(a, f, s, ax, y, col, e.w, e.align, 0, 0, e.scroll ? kScroll : 0);
 }
 

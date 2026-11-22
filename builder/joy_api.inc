@@ -52,10 +52,27 @@ void JoyLoadTheme(const std::string &folder) {
     Clamp(gB);
 }
 
-void JoySetLayoutText(const std::string &text) {
+// 화면비 미리보기 (안드로이드판): 가로/세로. 16:9 = 스위치와 같은 1280x720
+static float gBAspect = 1280.0f / 720.0f;
+static std::string gBLayoutFile = "layout.txt";
+void JoySetAspect(float aspect) { gBAspect = aspect; }
+void JoyCanvas(int &w, int &h) { w = W; h = H; }
+const std::string &JoyLayoutFile() { return gBLayoutFile; }
+
+void JoySetLayoutText(const std::string &text, const std::string *square) {
     std::string oldFont = gTheme.layout.font, oldBold = gTheme.layout.fontBold;
     SetStringOverrides(nullptr, nullptr);
-    LayoutLoadText(gTheme.layout, text);
+    LayoutLoadFitText(gTheme.layout, &text, square, gBAspect, gBLayoutFile);
+    int cw = gTheme.layout.canvasW > 0 ? gTheme.layout.canvasW : 1280, ch = gTheme.layout.canvasH > 0 ? gTheme.layout.canvasH : 720;
+    if (cw != W || ch != H) {  // 캔버스 크기가 바뀜: 화면 전환용 그림을 새 크기로
+        W = cw;
+        H = ch;
+        if (gTrCur) SDL_DestroyTexture(gTrCur);
+        if (gTrPrev) SDL_DestroyTexture(gTrPrev);
+        gTrCur = gTrPrev = nullptr;
+        gTrInit = gTrPrevOk = false;
+        gBatteryLeft = W;
+    }
     if (!gTheme.layout.minVersion.empty() && CompareVersions(gTheme.layout.minVersion, std::string(CurrentVersion()).substr(0, std::string(CurrentVersion()).find('-'))) > 0)
         gTheme.layout.problems.insert(gTheme.layout.problems.begin(),
                                       Fmt(T("이 테마는 Joy Launcher v%s 이상이 필요합니다 (지금 v%s)"), gTheme.layout.minVersion.c_str(), CurrentVersion()));

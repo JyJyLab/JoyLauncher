@@ -16,8 +16,15 @@ bool JoyInit(SDL_Renderer *r, const std::string &home, const std::string &roms, 
 void JoySetRoms(const std::string &roms, std::string &log);
 // home/themes/<folder> 를 테마로 (그림 다시 읽기). "" = 테마 없음
 void JoyLoadTheme(const std::string &folder);
-// 지금 테마 위에 layout.txt 글을 다시 적용 (그림은 그대로)
-void JoySetLayoutText(const std::string &text);
+// 지금 테마 위에 layout.txt 글을 다시 적용 (그림은 그대로). square: layout_1x1.txt 글 (nullptr = 파일 없음)
+// 화면비(JoySetAspect)에 맞춰 구성을 고른다: 1:1 이면 square → 없으면 내장 1:1 또는 16:9 그대로, 16:10·4:3 은 폭에 맞춤
+void JoySetLayoutText(const std::string &text, const std::string *square = nullptr);
+// 미리보기 화면비 (가로/세로, 기본 16:9). 바꾼 뒤 JoySetLayoutText 를 다시 부를 것
+void JoySetAspect(float aspect);
+// 지금 미리보기 캔버스 크기 (16:9 = 1280x720, 4:3 = 960x720, 1:1 = 720x720 …)
+void JoyCanvas(int &w, int &h);
+// 마지막으로 적용한 구성 파일 ("layout.txt" / "layout_1x1.txt" / "" = 내장)
+const std::string &JoyLayoutFile();
 const Layout &JoyLayout();
 void JoySetLang(bool en);
 // 지금 렌더 대상(1280x720)에 화면 그리기. games: 게임 목록 화면
