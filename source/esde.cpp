@@ -14,7 +14,7 @@ const std::vector<EsdeSystem> kSystems = {
     {"nes", "패미컴", "Famicom / NES"}, {"fds", "디스크 시스템", "Famicom Disk System"}, {"snes", "슈퍼패미컴", "Super Famicom / SNES"},
     {"satellaview", "새틀라뷰", "Satellaview"}, {"n64", "닌텐도 64", "Nintendo 64"}, {"gc", "게임큐브", "GameCube"},
     {"gb", "게임보이", "Game Boy"}, {"gbc", "게임보이 컬러", "Game Boy Color"}, {"gba", "게임보이 어드밴스", "Game Boy Advance"},
-    {"nds", "닌텐도 DS", "Nintendo DS"}, {"virtualboy", "버추얼보이", "Virtual Boy"}, {"gameandwatch", "게임&워치", "Game & Watch"},
+    {"nds", "닌텐도 DS", "Nintendo DS"}, {"n3ds", "닌텐도 3DS", "Nintendo 3DS"}, {"virtualboy", "버추얼보이", "Virtual Boy"}, {"gameandwatch", "게임&워치", "Game & Watch"},
     {"pokemini", "포켓몬 미니", "Pokémon Mini"}, {"mastersystem", "마스터 시스템", "Master System"},
     {"megadrive", "메가드라이브", "Mega Drive"}, {"sega32x", "메가드라이브 32X", "32X"}, {"segacd", "메가 CD", "Mega-CD"},
     {"gamegear", "게임기어", "Game Gear"}, {"sg-1000", "SG-1000", "SG-1000"}, {"saturn", "새턴", "Saturn"}, {"dreamcast", "드림캐스트", "Dreamcast"},
@@ -42,7 +42,8 @@ const std::map<std::string, std::string> kAlias = {
     {"wonderswan", "wswan"}, {"wsc", "wswanc"}, {"wonderswancolor", "wswanc"}, {"neogeopocket", "ngp"}, {"neogeopocketcolor", "ngpc"},
     {"msx", "msx1"}, {"pc-98", "pc98"}, {"msdos", "dos"}, {"poke mini", "pokemini"}, {"gameboy", "gb"}, {"gameboycolor", "gbc"},
     {"gameboyadvance", "gba"}, {"ss", "saturn"}, {"dc", "dreamcast"}, {"ngc", "gc"}, {"gamecube", "gc"}, {"vb", "virtualboy"},
-    {"game watch", "gameandwatch"}, {"gw", "gameandwatch"}, {"lynx", "atarilynx"}, {"atari", "atari2600"}, {"cd-i", "cdimono1"},
+    {"game watch", "gameandwatch"}, {"3ds", "n3ds"}, {"nintendo 3ds", "n3ds"}, {"닌텐도 3ds", "n3ds"},
+    {"playstation 2", "ps2"}, {"sony playstation 2", "ps2"}, {"플레이스테이션 2", "ps2"}, {"playstation2", "ps2"}, {"gw", "gameandwatch"}, {"lynx", "atarilynx"}, {"atari", "atari2600"}, {"cd-i", "cdimono1"},
     {"cdi", "cdimono1"}, {"pico-8", "pico8"}, {"neogeo-cd", "neogeocd"}, {"fba", "arcade"}, {"fbneo", "arcade"}, {"mame", "arcade"},
     {"mame2003plus", "arcade"}, {"mame2010", "arcade"}, {"fbalpha2012", "arcade"}, {"all", "default"}, {"main", "default"},
     // 응애팩 카테고리 / 런처가 붙이는 이름 (한글)

@@ -374,6 +374,12 @@ std::string Quote(const std::string &nro) { return "\"" + nro + "\" \"{file.path
 // DraStic 스위치판 (DrasticDS_nx). 롬 경로를 넘기면 바로 그 게임을 실행
 const char *const kDrastic = "/switch/DrasticDS.nro";
 const char *const kDrastic2 = "/switch/drastic/DrasticDS.nro";
+// NetherSX2 스위치판 (NaGaa95/NetherSX2_nx, PS2). 첫 인자로 디스크 파일(iso·chd·cso 등)을 주면 바로 그 게임
+const char *const kNetherSX2 = "/switch/NetherSX2.nro";
+const char *const kNetherSX2b = "/switch/nethersx2/NetherSX2.nro";
+// Dekopon (PalindromicBreadLoaf/dekopon, 3DS, Azahar 기반). 첫 인자로 롬을 주면 바로 그 게임
+const char *const kDekopon = "/switch/dekopon.nro";
+const char *const kDekopon2 = "/switch/dekopon/dekopon.nro";
 
 // ---------------------------------------------------------------- 기종 표
 struct System {
@@ -392,6 +398,7 @@ const std::vector<System> &Systems() {
         {"드림캐스트", {"dc", "dreamcast", "segadreamcast"}, {"cdi", "gdi", "chd", "cue", "m3u"}, {"flycast"}},
         {"PlayStation", {"psx", "ps1", "playstation", "playstation1", "ps"}, {"chd", "cue", "pbp", "m3u", "iso", "img", "ccd", "bin"}, {"pcsx_rearmed"}},
         {"PSP", {"psp", "pspminis"}, {"iso", "cso", "chd", "pbp", "elf"}, {"/switch/ppsspp/PPSSPP.nro", "ppsspp"}},
+        {"PlayStation 2", {"ps2", "playstation2", "sonyplaystation2"}, {"chd", "iso", "cso", "zso", "gz", "bin", "img", "mdf", "nrg"}, {kNetherSX2, kNetherSX2b}},
         {"GBA", {"gba", "gameboyadvance"}, {"gba", "zip", "7z"}, {"mgba", "vba_next", "gpsp"}},
         {"게임보이", {"gb", "gbc", "gameboy", "gameboycolor"}, {"gb", "gbc", "sgb", "zip", "7z"}, {"gambatte", "sameboy", "mgba"}},
         {"패미컴", {"nes", "fc", "famicom", "fds"}, {"nes", "fds", "unf", "unif", "zip", "7z"}, {"fceumm", "nestopia", "mesen"}},
@@ -404,6 +411,7 @@ const std::vector<System> &Systems() {
         {"원더스완", {"ws", "wsc", "wonderswan*"}, {"ws", "wsc", "pc2", "zip", "7z"}, {"mednafen_wswan"}},
         {"네오지오 포켓", {"ngp", "ngpc", "neogeopocket*"}, {"ngp", "ngc", "zip", "7z"}, {"mednafen_ngp", "race"}},
         {"NDS", {"nds", "nintendods"}, {"nds", "zip", "7z", "rar"}, {kDrastic, kDrastic2, "melonds", "desmume"}},
+        {"3DS", {"3ds", "n3ds", "nintendo3ds"}, {"3ds", "cci", "cxi", "3dsx"}, {kDekopon, kDekopon2}},
         {"N64", {"n64", "nintendo64"}, {"n64", "z64", "v64", "zip", "7z"}, {"mupen64plus_next"}},
         {"새턴", {"ss", "saturn", "segasaturn"}, {}, {"yabause"}},
         {"PC-98", {"pc98", "pc9801"}, {"hdi", "fdi", "d88", "hdm", "nhd"}, {"np2kai"}},
@@ -418,14 +426,15 @@ const std::vector<System> &Systems() {
 
 // 스위치 성능/에뮬레이터 부재로 제외하는 폴더
 bool ExcludedFolder(const std::string &key) {
-    static const std::set<std::string> ex = {"ps2", "playstation2", "3ds", "n3ds", "gc", "gamecube", "ngc", "wii", "wiiu",
+    // PS2(NetherSX2)·3DS(Dekopon)는 1.4.0 부터 대상
+    static const std::set<std::string> ex = {"gc", "gamecube", "ngc", "wii", "wiiu",
                                              "psvita", "vita", "switch", "ps3", "xbox", "xbox360", "apk", "app", "android",
                                              "win", "windows", "pc"};
     if (ex.count(key)) return true;
     // CPS2·CPS3(캡콤 아케이드)는 이름 안에 ps2·ps3 가 들어 있어도 제외 대상이 아님
     if (key.find("cps") != std::string::npos) return false;
     // "Sony PlayStation 2", "Nintendo 3DS" 처럼 이름 안에 들어 있는 경우
-    static const char *part[] = {"playstation2", "playstation3", "playstation4", "ps2", "ps3", "ps4", "3ds", "gamecube",
+    static const char *part[] = {"playstation3", "playstation4", "ps3", "ps4", "gamecube",
                                  "wiiu", "psvita", "nintendoswitch", "xbox"};
     for (const char *p : part)
         if (key.find(p) != std::string::npos) return true;
@@ -466,7 +475,8 @@ int SystemByExt(const std::string &ext) {
         {"ngp", "네오지오 포켓"}, {"ngc", "네오지오 포켓"}, {"nds", "NDS"}, {"n64", "N64"}, {"z64", "N64"}, {"v64", "N64"},
         {"cso", "PSP"}, {"pbp", "PlayStation"}, {"cue", "PlayStation"}, {"chd", "PlayStation"}, {"lnx", "아타리 링크스"},
         {"vb", "버추얼보이"}, {"cdi", "드림캐스트"}, {"gdi", "드림캐스트"}, {"hdi", "PC-98"}, {"fdi", "PC-98"}, {"d88", "PC-98"},
-        {"dosz", "DOS"}, {"zip", "아케이드 (FBNeo)"}, {"7z", "아케이드 (FBNeo)"},
+        {"dosz", "DOS"}, {"cci", "3DS"}, {"cxi", "3DS"}, {"3ds", "3DS"}, {"zso", "PlayStation 2"},
+        {"zip", "아케이드 (FBNeo)"}, {"7z", "아케이드 (FBNeo)"},
     };
     auto it = uniq.find(ext);
     if (it == uniq.end()) return -1;
@@ -481,10 +491,12 @@ int SystemByExt(const std::string &ext) {
 // (위에서부터 부분 일치. 더 구체적인 이름을 먼저)
 int SystemByIdent(const std::string &ident) {
     static const std::vector<std::pair<const char *, const char *>> t = {
-        // 제외 기종: PS2·PS3·3DS·GC/Wii/WiiU·스위치·비타·엑스박스·윈도우
-        {"aethersx2", "-"}, {"nethersx2", "-"}, {"armsx2", "-"}, {"pcsx2", "-"}, {"lrps2", "-"}, {"virtualapplications.play", "-"},
-        {"rpcs3", "-"}, {"aps3e", "-"}, {"citra", "-"}, {"lime3ds", "-"}, {"azahar", "-"}, {"mandarine", "-"},
-        {"panda3ds", "-"}, {"dolphin", "-"}, {"cemu", "-"}, {"yuzu", "-"}, {"suyu", "-"}, {"sudachi", "-"},
+        // PS2 (NetherSX2) · 3DS (Dekopon)
+        {"aethersx2", "PlayStation 2"}, {"nethersx2", "PlayStation 2"}, {"armsx2", "PlayStation 2"}, {"pcsx2", "PlayStation 2"},
+        {"lrps2", "PlayStation 2"}, {"virtualapplications.play", "PlayStation 2"},
+        {"citra", "3DS"}, {"lime3ds", "3DS"}, {"azahar", "3DS"}, {"mandarine", "3DS"}, {"panda3ds", "3DS"}, {"dekopon", "3DS"},
+        // 제외 기종: PS3·GC/Wii/WiiU·스위치·비타·엑스박스·윈도우
+        {"rpcs3", "-"}, {"aps3e", "-"}, {"dolphin", "-"}, {"cemu", "-"}, {"yuzu", "-"}, {"suyu", "-"}, {"sudachi", "-"},
         {"citron", "-"}, {"dev.eden", "-"}, {"strato", "-"}, {"skyline", "-"}, {"ryujinx", "-"}, {"vita3k", "-"},
         {"xenia", "-"}, {"winlator", "-"}, {"mobox", "-"}, {"exagear", "-"}, {"gamehub", "-"},
         // 성능상 기본 숨김 기종 (settings.txt 의 hide_cores 로 표시 가능)
@@ -1382,6 +1394,8 @@ std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     sig += CoreExists("/switch/ppsspp/PPSSPP.nro") ? "PPSSPP\n" : "";
     sig += CoreExists(kDrastic) ? "DRASTIC\n" : "";
     sig += CoreExists(kDrastic2) ? "DRASTIC2\n" : "";
+    sig += CoreExists(kNetherSX2) || CoreExists(kNetherSX2b) ? "NETHERSX2\n" : "";
+    sig += CoreExists(kDekopon) || CoreExists(kDekopon2) ? "DEKOPON\n" : "";
     // ES-DE 폴더와 그 목록들
     FindEsde(rootDirs);
     if (!gEsdeDir.empty()) {
