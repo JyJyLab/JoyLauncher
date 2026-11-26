@@ -62,6 +62,7 @@ SYSTEMS = [
     ("GBC", "GBC", "nin_hand"),
     ("GBA", "GBA", "nin_hand"),
     ("NDS", "NDS", "nin_hand"),
+    ("3DS", "3DS", "nin_hand"),
     ("VB", "VB", "nin_hand"),
     ("POKE MINI", "POKE MINI", "nin_hand"),
     ("GAME WATCH", "GAME & WATCH", "nin_hand"),
@@ -104,6 +105,7 @@ ALIASES = [
     ("카테고리 이름 (응애팩 등)", [
         ("액션-아케이드", "arcade_action"), ("캐주얼-아케이드", "arcade_casual"), ("비행-아케이드", "arcade_flying"),
         ("대전-아케이드", "arcade_fighting"), ("슈팅-아케이드", "arcade_shooting"), ("Play Station", "PS1"),
+        ("PlayStation 2", "PS2"), ("Sony PlayStation 2", "PS2"), ("Nintendo 3DS", "3DS"),
     ]),
     ("런처가 폴더로 추정한 기종 이름", [
         ("아케이드 (FBNeo)", "ARCADE"), ("아케이드 (MAME)", "ARCADE"), ("드림캐스트", "DC"), ("게임보이", "GB"),
@@ -122,6 +124,7 @@ ALIASES = [
         ("lynx", "LYNX"), ("atarilynx", "LYNX"), ("atari2600", "ATARI"), ("cdi", "CD-i"), ("pico8", "PICO-8"),
         ("fbneo", "ARCADE"), ("fba", "ARCADE"), ("mame", "ARCADE"), ("mame2003plus", "ARCADE"), ("neogeo", "ARCADE"),
         ("cps1", "ARCADE"), ("cps2", "ARCADE"), ("cps3", "ARCADE"), ("dos", "DOS"),
+        ("playstation2", "PS2"), ("n3ds", "3DS"), ("nintendo3ds", "3DS"),
     ]),
 ]
 
