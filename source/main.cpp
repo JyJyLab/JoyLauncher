@@ -236,6 +236,10 @@ static void BuildMenu() {
         gRomMenu.push_back({Fmt(T("실행: %s"), "RetroArch"), "/switch/retroarch_switch.nro", MenuAct::Launch});
     if (SdExists("/switch/ppsspp/PPSSPP.nro"))
         gRomMenu.push_back({Fmt(T("실행: %s"), "PPSSPP"), "/switch/ppsspp/PPSSPP.nro", MenuAct::Launch});
+    for (const char *n : {"/switch/NetherSX2.nro", "/switch/nethersx2/NetherSX2.nro"})
+        if (SdExists(n)) { gRomMenu.push_back({Fmt(T("실행: %s"), "NetherSX2"), n, MenuAct::Launch}); break; }
+    for (const char *n : {"/switch/dekopon.nro", "/switch/dekopon/dekopon.nro"})
+        if (SdExists(n)) { gRomMenu.push_back({Fmt(T("실행: %s"), "Dekopon"), n, MenuAct::Launch}); break; }
     // 테마 설정
     gThemeMenu.clear();
     gThemeMenu.push_back({Fmt(T("테마 선택 (현재: %s)"), theme.c_str()), "", MenuAct::Theme});
