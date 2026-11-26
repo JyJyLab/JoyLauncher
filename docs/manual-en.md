@@ -24,6 +24,8 @@ Joy Launcher reads an Android **Pegasus ROM pack** copied to the Switch SD card 
 |---|---|---|
 | RetroArch for Switch + cores | `/switch/retroarch_switch.nro`, `/retroarch/` | Arcade to PS1 |
 | PPSSPP (Switch homebrew) | `/switch/ppsspp/PPSSPP.nro` | PSP |
+| NetherSX2 for Switch (NetherSX2_nx) | `/switch/NetherSX2.nro` (or `/switch/nethersx2/NetherSX2.nro`) | PS2 (optional, BIOS in `/switch/nethersx2/bios/`) |
+| Dekopon (3DS emulator) | `/switch/dekopon.nro` (or `/switch/dekopon/dekopon.nro`) | 3DS (optional) |
 | Joy Launcher | `/switch/joylauncher/joylauncher.nro` | This launcher |
 
 ROMs and ROM packs are not included.
@@ -146,7 +148,9 @@ Other notes:
 **Exception 1 – hidden by default:** NDS, N64, Saturn, Dreamcast and NAOMI/Atomiswave are hidden even with a core, because they are too slow. Remove them from `hide_cores` in `settings.txt` to show them.
 NDS is shown and launched with the DraStic Switch port (`/switch/DrasticDS.nro`, DrasticDS_nx) when it is installed. It runs `.nds`, `.zip` and `.rar`; `.7z` is hidden. After a game you return to the launcher through the DrasticDS screen (quit there).
 
-**Exception 2 – PS2 etc.:** systems without a Switch core (PS2, PS3, 3DS, GameCube/Wii/Wii U, PS Vita, Switch, Xbox, Windows/Android apps) are filtered by folder name (`PS2`, `Sony PlayStation 2`, `3DS`...) and by the emulator named in the list (AetherSX2, NetherSX2, ARMSX2, Citra, Azahar, Dolphin, Yuzu, Vita3K...), so they are not mistaken for PS1 etc. (PS2 `.chd`/`.iso` share extensions with PS1.)
+**PS2 · 3DS (1.4.0+):** with NetherSX2 for Switch (`/switch/NetherSX2.nro`) PS2 games (`.chd`, `.iso`, `.cso`, `.zso`...) and with Dekopon (`/switch/dekopon.nro`) 3DS games (`.cci`, `.3ds`, `.cxi`) are shown and launched directly. The system is decided by folder name (`PS2`, `Sony PlayStation 2`, `3DS`) and by the emulator in the list (AetherSX2/NetherSX2/PCSX2 → PS2, Citra/Lime3DS/Azahar... → 3DS). Both run only in title mode (hold **R** while starting a game); hide them with `NetherSX2` / `dekopon` in `hide_cores` of `settings.txt`. In Dekopon press **+ and −** together for its menu.
+
+**Exception 2 – unsupported systems:** systems without a Switch emulator (PS3, GameCube/Wii/Wii U, PS Vita, Switch, Xbox, Windows/Android apps) are filtered by folder name and by the emulator named in the list (Dolphin, Yuzu, Vita3K...) so they are not mistaken for PS1 etc.
 
 The Android core named in the list is mapped to a Switch core in this order: `cores.txt` `[user]` → `cores.txt` `[auto]` → a Switch core with the same name → the system judged from the core/emulator name → folder name / extension. MAME games use MAME 2003-Plus or MAME 2010, whichever supports the romset.
 
