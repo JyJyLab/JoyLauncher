@@ -46,7 +46,8 @@ void SetEsdeHint(const std::string &path);
 // 게임 목록 저장/불러오기. 서명(sig)이 같을 때만 저장된 목록을 쓴다.
 std::string LibrarySignature(const std::vector<std::string> &rootDirs);
 bool SaveLibraryCache(const std::string &path, const std::string &sig, const std::vector<Collection> &cols);
-bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vector<Collection> &cols);
+// trust = true: 변경 확인(sig) 없이 저장된 목록을 그대로 씀 (게임을 하고 돌아온 직후)
+bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vector<Collection> &cols, bool trust = false);
 
 // launch 템플릿을 실행 파일 경로와 인자 문자열로 나눈다. {file.path} 를 치환한다.
 // 에뮬레이터 고르기: psp = auto/ppsspp/ppsspp-nx, n3ds = auto/dekopon/raikopon
