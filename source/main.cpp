@@ -236,13 +236,13 @@ static void BuildMenu() {
     for (const auto &m : HomebrewMenus()) gRomMenu.push_back({Fmt(T("실행: %s"), m.label.c_str()), m.nro, MenuAct::Launch, false, true});
     if (SdExists("/switch/retroarch_switch.nro"))
         gRomMenu.push_back({Fmt(T("실행: %s"), "RetroArch"), "/switch/retroarch_switch.nro", MenuAct::Launch});
-    // 에뮬레이터 고르기 (둘 이상 있을 때 의미). auto = 있는 것 중 기본 순서
+    // 에뮬레이터 고르기: 둘 다 설치돼 있을 때만 메뉴를 보임 (하나만 있으면 그것을 자동 사용)
     auto emuLabel = [](const std::string &v, const char *a, const char *an, const char *b, const char *bn) {
         return v == a ? std::string(an) : v == b ? std::string(bn) : std::string(T("자동"));
     };
-    if (EmuInstalled("ppsspp") || EmuInstalled("ppsspp-nx"))
+    if (EmuInstalled("ppsspp") && EmuInstalled("ppsspp-nx"))
         gRomMenu.push_back({Fmt(T("PSP 에뮬레이터: %s"), emuLabel(gPspEmu, "ppsspp", "PPSSPP", "ppsspp-nx", "PPSSPP-nx").c_str()), "", MenuAct::PspEmu});
-    if (EmuInstalled("dekopon") || EmuInstalled("raikopon"))
+    if (EmuInstalled("dekopon") && EmuInstalled("raikopon"))
         gRomMenu.push_back({Fmt(T("3DS 에뮬레이터: %s"), emuLabel(g3dsEmu, "dekopon", "Dekopon", "raikopon", "Raikopon").c_str()), "", MenuAct::N3dsEmu});
     if (SdExists("/switch/ppsspp/PPSSPP.nro"))
         gRomMenu.push_back({Fmt(T("실행: %s"), "PPSSPP"), "/switch/ppsspp/PPSSPP.nro", MenuAct::Launch});

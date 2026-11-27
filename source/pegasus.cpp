@@ -405,11 +405,15 @@ static std::string PreferredNro(const std::string &nro) {
         return "";
     };
     if (l == Lower(kPpsspp) || l == Lower(kPpssppNx)) {
-        std::string r = gPspEmu == "ppsspp" ? first({kPpsspp}) : gPspEmu == "ppsspp-nx" ? first({kPpssppNx}) : "";
+        // 고른 것 -> 없으면 설치된 것 (하나만 있으면 그것)
+        std::string r = gPspEmu == "ppsspp-nx" ? first({kPpssppNx, kPpsspp}) : gPspEmu == "ppsspp" ? first({kPpsspp, kPpssppNx})
+                        : CoreExists(nro) ? nro : first({kPpsspp, kPpssppNx});
         return r.empty() ? nro : r;
     }
     if (l == Lower(kDekopon) || l == Lower(kDekopon2) || l == Lower(kRaikopon) || l == Lower(kRaikopon2)) {
-        std::string r = g3dsEmu == "dekopon" ? first({kDekopon, kDekopon2}) : g3dsEmu == "raikopon" ? first({kRaikopon, kRaikopon2}) : "";
+        std::string r = g3dsEmu == "raikopon" ? first({kRaikopon, kRaikopon2, kDekopon, kDekopon2})
+                        : g3dsEmu == "dekopon" ? first({kDekopon, kDekopon2, kRaikopon, kRaikopon2})
+                        : CoreExists(nro) ? nro : first({kDekopon, kDekopon2, kRaikopon, kRaikopon2});
         return r.empty() ? nro : r;
     }
     return nro;
