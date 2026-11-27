@@ -380,6 +380,40 @@ const char *const kNetherSX2b = "/switch/nethersx2/NetherSX2.nro";
 // Dekopon (PalindromicBreadLoaf/dekopon, 3DS, Azahar 기반). 첫 인자로 롬을 주면 바로 그 게임
 const char *const kDekopon = "/switch/dekopon.nro";
 const char *const kDekopon2 = "/switch/dekopon/dekopon.nro";
+// Raikopon (Raibatsu/raikopon, 3DS, Dekopon 포크·최신 Azahar). 첫 인자로 롬
+const char *const kRaikopon = "/switch/raikopon.nro";
+const char *const kRaikopon2 = "/switch/raikopon/raikopon.nro";
+// PPSSPP: 기본판과 ppsspp-nx (NaGaa95/ppsspp-nx, 데이터는 /switch/ppsspp-nx 고정)
+const char *const kPpsspp = "/switch/ppsspp/PPSSPP.nro";
+const char *const kPpssppNx = "/switch/ppsspp-nx/PPSSPP.nro";
+
+// 에뮬레이터 고르기 (옵션). auto = 있는 것 중 앞의 것
+static std::string gPspEmu = "auto", g3dsEmu = "auto";
+void SetEmuPrefsImpl(const std::string &psp, const std::string &n3ds) { gPspEmu = psp; g3dsEmu = n3ds; }
+bool EmuInstalledImpl(const std::string &which) {
+    if (which == "ppsspp") return CoreExists(kPpsspp);
+    if (which == "ppsspp-nx") return CoreExists(kPpssppNx);
+    if (which == "dekopon") return CoreExists(kDekopon) || CoreExists(kDekopon2);
+    if (which == "raikopon") return CoreExists(kRaikopon) || CoreExists(kRaikopon2);
+    return false;
+}
+// 실행할 nro 를 옵션에 맞게 바꾼다 (PSP·3DS 독립 에뮬만). 고른 것이 없으면 그대로
+static std::string PreferredNro(const std::string &nro) {
+    std::string l = Lower(nro);
+    auto first = [](std::initializer_list<const char *> v) -> std::string {
+        for (const char *n : v) if (CoreExists(n)) return n;
+        return "";
+    };
+    if (l == Lower(kPpsspp) || l == Lower(kPpssppNx)) {
+        std::string r = gPspEmu == "ppsspp" ? first({kPpsspp}) : gPspEmu == "ppsspp-nx" ? first({kPpssppNx}) : "";
+        return r.empty() ? nro : r;
+    }
+    if (l == Lower(kDekopon) || l == Lower(kDekopon2) || l == Lower(kRaikopon) || l == Lower(kRaikopon2)) {
+        std::string r = g3dsEmu == "dekopon" ? first({kDekopon, kDekopon2}) : g3dsEmu == "raikopon" ? first({kRaikopon, kRaikopon2}) : "";
+        return r.empty() ? nro : r;
+    }
+    return nro;
+}
 
 // ---------------------------------------------------------------- 기종 표
 struct System {
@@ -397,7 +431,7 @@ const std::vector<System> &Systems() {
         {"NAOMI", {"naomi*", "atomiswave*"}, {"zip", "7z", "lst", "dat"}, {"flycast"}},
         {"드림캐스트", {"dc", "dreamcast", "segadreamcast"}, {"cdi", "gdi", "chd", "cue", "m3u"}, {"flycast"}},
         {"PlayStation", {"psx", "ps1", "playstation", "playstation1", "ps"}, {"chd", "cue", "pbp", "m3u", "iso", "img", "ccd", "bin"}, {"pcsx_rearmed"}},
-        {"PSP", {"psp", "pspminis"}, {"iso", "cso", "chd", "pbp", "elf"}, {"/switch/ppsspp/PPSSPP.nro", "ppsspp"}},
+        {"PSP", {"psp", "pspminis"}, {"iso", "cso", "chd", "pbp", "elf"}, {kPpsspp, kPpssppNx, "ppsspp"}},
         {"PlayStation 2", {"ps2", "playstation2", "sonyplaystation2"}, {"chd", "iso", "cso", "zso", "gz", "bin", "img", "mdf", "nrg"}, {kNetherSX2, kNetherSX2b}},
         {"GBA", {"gba", "gameboyadvance"}, {"gba", "zip", "7z"}, {"mgba", "vba_next", "gpsp"}},
         {"게임보이", {"gb", "gbc", "gameboy", "gameboycolor"}, {"gb", "gbc", "sgb", "zip", "7z"}, {"gambatte", "sameboy", "mgba"}},
@@ -411,7 +445,7 @@ const std::vector<System> &Systems() {
         {"원더스완", {"ws", "wsc", "wonderswan*"}, {"ws", "wsc", "pc2", "zip", "7z"}, {"mednafen_wswan"}},
         {"네오지오 포켓", {"ngp", "ngpc", "neogeopocket*"}, {"ngp", "ngc", "zip", "7z"}, {"mednafen_ngp", "race"}},
         {"NDS", {"nds", "nintendods"}, {"nds", "zip", "7z", "rar"}, {kDrastic, kDrastic2, "melonds", "desmume"}},
-        {"3DS", {"3ds", "n3ds", "nintendo3ds"}, {"3ds", "cci", "cxi", "3dsx"}, {kDekopon, kDekopon2}},
+        {"3DS", {"3ds", "n3ds", "nintendo3ds"}, {"3ds", "cci", "cxi", "3dsx"}, {kDekopon, kDekopon2, kRaikopon, kRaikopon2}},
         {"N64", {"n64", "nintendo64"}, {"n64", "z64", "v64", "zip", "7z"}, {"mupen64plus_next"}},
         {"새턴", {"ss", "saturn", "segasaturn"}, {}, {"yabause"}},
         {"PC-98", {"pc98", "pc9801"}, {"hdi", "fdi", "d88", "hdm", "nhd"}, {"np2kai"}},
@@ -630,7 +664,7 @@ const CoreMap &BuiltinCoreMap() {
         {"mame2010", "mame2010,mame2003_plus"},
         {"mamearcade", "mame2003_plus,mame2010"},
         {"mame", "mame2003_plus,mame2010"},
-        {"org.ppsspp.ppsspp", "/switch/ppsspp/PPSSPP.nro,ppsspp"},
+        {"org.ppsspp.ppsspp", "/switch/ppsspp/PPSSPP.nro,/switch/ppsspp-nx/PPSSPP.nro,ppsspp"},
         {"melonds", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
         {"desmume", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,desmume,melonds"},
         {"com.dsemu.drastic", "/switch/DrasticDS.nro,/switch/drastic/DrasticDS.nro,melonds,desmume"},
@@ -1198,6 +1232,9 @@ std::vector<std::string> Tokenize(const std::string &s) {
 
 }  // namespace
 
+void SetEmuPrefs(const std::string &psp, const std::string &n3ds) { SetEmuPrefsImpl(psp, n3ds); }
+bool EmuInstalled(const std::string &which) { return EmuInstalledImpl(which); }
+
 void SetHiddenCores(const std::vector<std::string> &cores) { gHiddenCores = cores; }
 
 void LoadCoreConfig(const std::string &path) {
@@ -1308,7 +1345,7 @@ bool BuildLaunch(const Game &g, std::string &nroPath, std::string &argString) {
         std::string t = tok[i];
         size_t p;
         while ((p = t.find("{file.path}")) != std::string::npos) t.replace(p, 11, g.file);
-        if (i == 0) nroPath = t;
+        if (i == 0) t = nroPath = PreferredNro(t);
         if (!argString.empty()) argString += " ";
         argString += "\"" + t + "\"";
     }
@@ -1391,11 +1428,13 @@ std::string LibrarySignature(const std::vector<std::string> &rootDirs) {
     if (const char *sd = getenv("JOY_SDROOT")) coreDir = std::string(sd) + coreDir;
 #endif
     for (const auto &n : ListDir(coreDir, false)) sig += "C" + n + "\n";
-    sig += CoreExists("/switch/ppsspp/PPSSPP.nro") ? "PPSSPP\n" : "";
+    sig += CoreExists(kPpsspp) ? "PPSSPP\n" : "";
     sig += CoreExists(kDrastic) ? "DRASTIC\n" : "";
     sig += CoreExists(kDrastic2) ? "DRASTIC2\n" : "";
     sig += CoreExists(kNetherSX2) || CoreExists(kNetherSX2b) ? "NETHERSX2\n" : "";
     sig += CoreExists(kDekopon) || CoreExists(kDekopon2) ? "DEKOPON\n" : "";
+    sig += CoreExists(kPpssppNx) ? "PPSSPPNX\n" : "";
+    sig += CoreExists(kRaikopon) || CoreExists(kRaikopon2) ? "RAIKOPON\n" : "";
     // ES-DE 폴더와 그 목록들
     FindEsde(rootDirs);
     if (!gEsdeDir.empty()) {
