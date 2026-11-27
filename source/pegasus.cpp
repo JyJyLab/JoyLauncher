@@ -1485,10 +1485,11 @@ bool SaveLibraryCache(const std::string &path, const std::string &sig, const std
     return rename(tmp.c_str(), path.c_str()) == 0;
 }
 
-bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vector<Collection> &cols) {
+bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vector<Collection> &cols, bool trust) {
     std::ifstream in(path, std::ios::binary);
     std::string line;
-    if (!std::getline(in, line) || line != std::string(kCacheMagic) + "\t" + sig) return false;
+    if (!std::getline(in, line)) return false;
+    if (trust ? line.rfind(std::string(kCacheMagic) + "\t", 0) != 0 : line != std::string(kCacheMagic) + "\t" + sig) return false;
     std::vector<Collection> out;
     bool end = false;
     while (std::getline(in, line)) {

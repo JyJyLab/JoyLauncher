@@ -3097,8 +3097,13 @@ static void RebuildHbFavorites(App &a, bool keepPos) {
 
 static void LoadGames(App &a, bool force, std::string &log) {
     std::string cache = gHome + "/library.cache";
-    std::string sig = LibrarySignature(gRoots);
-    if (!force && LoadLibraryCache(cache, sig, a.cols)) {
+    // 게임에서 돌아온 직후: 롬 폴더 변경 확인 없이 저장된 목록 사용 (홈브루·FTP 등에서 돌아오면 평소대로 확인)
+    std::string quick = gHome + "/cache/game_return";
+    bool fromGame = !force && remove(quick.c_str()) == 0;
+    std::string sig;
+    if (fromGame && LoadLibraryCache(cache, "", a.cols, true)) {
+        log += "[cache quick] " + cache + "\n";
+    } else if (sig = LibrarySignature(gRoots), !force && LoadLibraryCache(cache, sig, a.cols)) {
         log += "[cache] " + cache + "\n";
     } else {
         if (a.r && !gShotMode) {
@@ -3444,7 +3449,11 @@ static bool LaunchGame(App &a) {
     }
     SaveState(a, true);
     bool ok = ChainLoad(a, nro, {g.file});
-    if (ok) CountPlay(g.file);
+    if (ok) {
+        CountPlay(g.file);
+        // 게임을 하고 돌아오면 롬 폴더가 그대로이므로 다음 시작 때 변경 확인(수 초)을 건너뜀
+        std::ofstream(gHome + "/cache/game_return") << "1\n";
+    }
     LogLaunch(a, g, nro, ok ? std::string(T("실행 예약됨")) : T("실패: ") + a.message);
     return ok;
 }
