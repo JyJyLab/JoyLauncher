@@ -71,7 +71,7 @@ static const SDL_Color kDark = {20, 20, 26, 255};
 static const SDL_Color kSel = {70, 70, 96, 255};
 
 // 카테고리 화면 아래쪽 메뉴 (게임 외 항목). 실제로 있는 프로그램만 표시
-enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, XButton, InstallHb, RestoreHb, Exit,
+enum class MenuAct { Launch, Theme, FtpRecv, Frames, Refresh, Update, Language, Effects, BgmMenu, SoundCommon, SoundTheme, SoundOff, BgmVolume, BgmOrder, BgmNext, HbFav, XButton, PspEmu, N3dsEmu, InstallHb, RestoreHb, Exit,
                      CatRom, CatTheme, CatSystem };  // Cat* = 옵션 창 맨 위의 분류 (A 로 그 분류 창)
 struct MenuItem {
     std::string label;
@@ -107,6 +107,8 @@ static bool gBgmLive = false;               // 시작 준비가 끝남 (그 전�
 static int gBgmVolume = 60;                 // 0~100
 static bool gBgmShuffle = false;
 static bool gEffects = true;      // 설정: 화면 효과 (effects=on/off)
+static std::string gPspEmu = "auto";   // 설정: PSP 에뮬 (psp_emu=auto/ppsspp/ppsspp-nx)
+static std::string g3dsEmu = "auto";   // 설정: 3DS 에뮬 (n3ds_emu=auto/dekopon/raikopon)
 static bool gXButton = true;      // 설정: X 버튼으로 홈브루 메뉴 열기 (x_button=on/off). 끄면 X 는 아무것도 안 하고 도움말에서 빠짐
 static bool gAnimAllowed = true;  // 데스크톱 스냅샷에서는 끔
 static bool AnimOn() { return gEffects && gAnimAllowed; }
@@ -234,12 +236,24 @@ static void BuildMenu() {
     for (const auto &m : HomebrewMenus()) gRomMenu.push_back({Fmt(T("실행: %s"), m.label.c_str()), m.nro, MenuAct::Launch, false, true});
     if (SdExists("/switch/retroarch_switch.nro"))
         gRomMenu.push_back({Fmt(T("실행: %s"), "RetroArch"), "/switch/retroarch_switch.nro", MenuAct::Launch});
+    // 에뮬레이터 고르기: 둘 다 설치돼 있을 때만 메뉴를 보임 (하나만 있으면 그것을 자동 사용)
+    auto emuLabel = [](const std::string &v, const char *a, const char *an, const char *b, const char *bn) {
+        return v == a ? std::string(an) : v == b ? std::string(bn) : std::string(T("자동"));
+    };
+    if (EmuInstalled("ppsspp") && EmuInstalled("ppsspp-nx"))
+        gRomMenu.push_back({Fmt(T("PSP 에뮬레이터: %s"), emuLabel(gPspEmu, "ppsspp", "PPSSPP", "ppsspp-nx", "PPSSPP-nx").c_str()), "", MenuAct::PspEmu});
+    if (EmuInstalled("dekopon") && EmuInstalled("raikopon"))
+        gRomMenu.push_back({Fmt(T("3DS 에뮬레이터: %s"), emuLabel(g3dsEmu, "dekopon", "Dekopon", "raikopon", "Raikopon").c_str()), "", MenuAct::N3dsEmu});
     if (SdExists("/switch/ppsspp/PPSSPP.nro"))
         gRomMenu.push_back({Fmt(T("실행: %s"), "PPSSPP"), "/switch/ppsspp/PPSSPP.nro", MenuAct::Launch});
+    if (SdExists("/switch/ppsspp-nx/PPSSPP.nro"))
+        gRomMenu.push_back({Fmt(T("실행: %s"), "PPSSPP-nx"), "/switch/ppsspp-nx/PPSSPP.nro", MenuAct::Launch});
     for (const char *n : {"/switch/NetherSX2.nro", "/switch/nethersx2/NetherSX2.nro"})
         if (SdExists(n)) { gRomMenu.push_back({Fmt(T("실행: %s"), "NetherSX2"), n, MenuAct::Launch}); break; }
     for (const char *n : {"/switch/dekopon.nro", "/switch/dekopon/dekopon.nro"})
         if (SdExists(n)) { gRomMenu.push_back({Fmt(T("실행: %s"), "Dekopon"), n, MenuAct::Launch}); break; }
+    for (const char *n : {"/switch/raikopon.nro", "/switch/raikopon/raikopon.nro"})
+        if (SdExists(n)) { gRomMenu.push_back({Fmt(T("실행: %s"), "Raikopon"), n, MenuAct::Launch}); break; }
     // 테마 설정
     gThemeMenu.clear();
     gThemeMenu.push_back({Fmt(T("테마 선택 (현재: %s)"), theme.c_str()), "", MenuAct::Theme});
@@ -896,6 +910,9 @@ static void SaveSettings() {
     o << "effects=" << (gEffects ? "on" : "off") << "\n";
     o << T("# X 버튼: on = 홈브루 메뉴 열기, off = 끔 (잘못 눌러 런처를 벗어나지 않게)") << "\n";
     o << "x_button=" << (gXButton ? "on" : "off") << "\n";
+    o << T("# 에뮬레이터: psp_emu = auto/ppsspp/ppsspp-nx, n3ds_emu = auto/dekopon/raikopon (auto = 있는 것 중 앞의 것)") << "\n";
+    o << "psp_emu=" << gPspEmu << "\n";
+    o << "n3ds_emu=" << g3dsEmu << "\n";
 }
 
 static void LoadSettings() {
@@ -923,7 +940,10 @@ static void LoadSettings() {
         if (line.rfind("bgm_shuffle=", 0) == 0) gBgmShuffle = line.substr(12) == "on";
         if (line.rfind("effects=", 0) == 0) gEffects = line.substr(8) != "off";
         if (line.rfind("x_button=", 0) == 0) gXButton = line.substr(9) != "off";
+        if (line.rfind("psp_emu=", 0) == 0) { std::string v = line.substr(8); gPspEmu = v == "ppsspp" || v == "ppsspp-nx" ? v : "auto"; }
+        if (line.rfind("n3ds_emu=", 0) == 0) { std::string v = line.substr(9); g3dsEmu = v == "dekopon" || v == "raikopon" ? v : "auto"; }
     }
+    SetEmuPrefs(gPspEmu, g3dsEmu);
     if (!haveSound && oldBgm >= 0) gSound = oldBgm == 1 ? "common" : "off";  // 예전 설정: BGM 을 켜 두었으면 공통 BGM
     ApplyLanguage();
     // 설정이 없으면 기본 테마 JoyBasic (없으면 첫 번째 테마)
@@ -2885,7 +2905,8 @@ static void RenderHbPick(App &a) {
 }
 
 static bool Adjustable(MenuAct m) {
-    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::XButton || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder;
+    return m == MenuAct::Language || m == MenuAct::Effects || m == MenuAct::XButton || m == MenuAct::BgmVolume || m == MenuAct::BgmOrder ||
+           m == MenuAct::PspEmu || m == MenuAct::N3dsEmu;
 }
 
 // 항목을 고르는 창 (옵션 창, BGM 창). bw: 창 너비, sub: 옵션의 분류 창 (B = 뒤로)
@@ -3901,6 +3922,18 @@ int main(int argc, char **argv) {
             gEffects = !gEffects;
         } else if (act == MenuAct::XButton) {
             gXButton = !gXButton;
+        } else if (act == MenuAct::PspEmu || act == MenuAct::N3dsEmu) {
+            bool psp = act == MenuAct::PspEmu;
+            static const char *const kPsp[] = {"auto", "ppsspp", "ppsspp-nx"}, *const k3ds[] = {"auto", "dekopon", "raikopon"};
+            const char *const *v = psp ? kPsp : k3ds;
+            std::string &cur = psp ? gPspEmu : g3dsEmu;
+            int i = cur == v[1] ? 1 : cur == v[2] ? 2 : 0;
+            for (int k = 0; k < 3; k++) {  // 설치된 것만 (auto 는 항상)
+                i = (i + 3 + dir) % 3;
+                if (i == 0 || EmuInstalled(v[i])) break;
+            }
+            cur = v[i];
+            SetEmuPrefs(gPspEmu, g3dsEmu);
         } else if (act == MenuAct::SoundCommon || act == MenuAct::SoundTheme || act == MenuAct::SoundOff) {
             // 소리 선택: 셋 중 하나만
             gSound = act == MenuAct::SoundCommon ? "common" : act == MenuAct::SoundTheme ? "theme" : "off";
@@ -3955,7 +3988,8 @@ int main(int argc, char **argv) {
             a.messageModal = true;
         } else if (m.act == MenuAct::Update) {
             runUpdate(idx);
-        } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects || m.act == MenuAct::XButton) {
+        } else if (m.act == MenuAct::Language || m.act == MenuAct::Effects || m.act == MenuAct::XButton || m.act == MenuAct::PspEmu ||
+                   m.act == MenuAct::N3dsEmu) {
             adjust(m.act, 1);
         } else if (m.act == MenuAct::HbFav) {
             a.hbList = ScanHomebrew(gHome + "/cache", gSelfNro).games;

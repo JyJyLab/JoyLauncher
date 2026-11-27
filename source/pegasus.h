@@ -49,4 +49,7 @@ bool SaveLibraryCache(const std::string &path, const std::string &sig, const std
 bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vector<Collection> &cols);
 
 // launch 템플릿을 실행 파일 경로와 인자 문자열로 나눈다. {file.path} 를 치환한다.
+// 에뮬레이터 고르기: psp = auto/ppsspp/ppsspp-nx, n3ds = auto/dekopon/raikopon
+void SetEmuPrefs(const std::string &psp, const std::string &n3ds);
+bool EmuInstalled(const std::string &which);
 bool BuildLaunch(const Game &g, std::string &nroPath, std::string &argString);
