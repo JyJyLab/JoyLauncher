@@ -27,6 +27,9 @@ void JoyCanvas(int &w, int &h);
 const std::string &JoyLayoutFile();
 const Layout &JoyLayout();
 void JoySetLang(bool en);
+// 미리보기 플랫폼: android = 안드로이드판 표시(X = BGM, 앱 즐겨찾기), startSelect = 닌텐도 계열이 아닌 패드([+][-] → START·SELECT)
+// 테마 파일은 바뀌지 않음 (빌더 테마는 두 판 공통)
+void JoySetPlatform(bool android, bool startSelect);
 // 지금 렌더 대상(1280x720)에 화면 그리기. games: 게임 목록 화면
 void JoyRender(bool games);
 // 마지막으로 그린 화면의 요소 자리 ("categories.list", "games.list.title" …)

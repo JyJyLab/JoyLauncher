@@ -84,6 +84,15 @@ void JoySetLayoutText(const std::string &text, const std::string *square) {
 
 const Layout &JoyLayout() { return gTheme.layout; }
 
+// 미리보기 플랫폼 (보이는 글·버튼 이름만 바뀜, 테마 파일은 두 판 공통 그대로)
+void JoySetPlatform(bool android, bool startSelect) {
+    gPreviewAndroid = android;
+    gPadStartSelect = android && startSelect;
+    for (auto &c : gB.cols)
+        if (c.virt && c.shortName == "hbfav") c.name = android ? "앱 즐겨찾기" : "홈브루 즐겨찾기";
+    gB.text.Clear();
+}
+
 void JoySetLang(bool en) {
     SetLang(en ? Lang::En : Lang::Ko);
     gB.text.Clear();

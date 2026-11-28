@@ -69,3 +69,20 @@ const char *EsdeSystemName(const std::string &lowerName) {
 }
 
 const std::vector<EsdeSystem> &EsdeSystems() { return kSystems; }
+
+const char *EsdeArtFallback(const std::string &id) {
+    // ES-DE 에는 같은 기계의 지역판이 따로 있다 (megadrivejp, snesna …): 그림은 본래 기종 것으로
+    static const std::map<std::string, std::string> kBase = {
+        {"famicom", "nes"}, {"sfc", "snes"}, {"snesna", "snes"}, {"sufami", "snes"}, {"sgb", "gb"}, {"genesis", "megadrive"},
+        {"megadrivejp", "megadrive"}, {"megacd", "segacd"}, {"megacdjp", "segacd"}, {"sega32xjp", "sega32x"},
+        {"sega32xna", "sega32x"}, {"mark3", "mastersystem"}, {"saturnjp", "saturn"}, {"tg16", "pcengine"},
+        {"tg-cd", "pcenginecd"}, {"neogeocdjp", "neogeocd"}, {"wonderswan", "wswan"}, {"wonderswancolor", "wswanc"},
+        {"msx", "msx1"}, {"msxturbor", "msx2"}, {"naomi2", "naomi"}, {"naomigd", "naomi"}, {"atomiswave", "naomi"},
+        {"mame", "arcade"}, {"fbneo", "arcade"}, {"fba", "arcade"}, {"cps", "arcade"}, {"cps1", "arcade"}, {"cps2", "arcade"},
+        {"cps3", "arcade"}, {"neogeo", "arcade"}, {"consolearcade", "arcade"}, {"stv", "arcade"}, {"model2", "arcade"},
+        {"model3", "arcade"}, {"naomi", "arcade"}, {"triforce", "arcade"}, {"n64dd", "n64"}, {"amiga600", "amiga"},
+        {"amiga1200", "amiga"}, {"amigacd32", "amiga"}, {"androidgames", "androidapps"}, {"android", "androidapps"},
+    };
+    auto it = kBase.find(id);
+    return it == kBase.end() ? "" : it->second.c_str();
+}

@@ -54,3 +54,5 @@ bool LoadLibraryCache(const std::string &path, const std::string &sig, std::vect
 void SetEmuPrefs(const std::string &psp, const std::string &n3ds);
 bool EmuInstalled(const std::string &which);
 bool BuildLaunch(const Game &g, std::string &nroPath, std::string &argString);
+// 롬 폴더 이름으로 찾은 기종의 테마 그림 이름 (모르면 "")
+std::string ThemeSystemId(const std::string &folder);

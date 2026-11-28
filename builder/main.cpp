@@ -80,6 +80,12 @@ struct Builder {
     Uint32 sizeAt = 0;
     // 화면비 미리보기 (안드로이드판): 0 16:9 · 1 16:10 · 2 4:3 · 3 1:1
     int aspect = 0;
+    // 미리보기 플랫폼: 0 스위치 · 1 안드로이드 · 2 안드로이드 (Xbox 계열 패드, [+][-] → START·SELECT)
+    // 보이는 글·버튼 이름만 바뀜. 테마 파일은 하나 (빌더 테마는 두 판 공통 — 기본 수칙)
+    int platform = 0;
+    bool compatReq = false;               // 다음 프레임에 공통 점검
+    std::vector<std::string> compat;      // 공통 점검 결과
+    bool compatDone = false;
     bool sqEdit = false;   // 1:1 에서 layout_1x1.txt 를 편집 중 (doc = 그 파일, mainText = layout.txt)
     std::string mainText;
     std::string tabReq;   // 처음 열 아래 탭 (시험용 --panel)
@@ -153,7 +159,58 @@ static void ApplyNow() {
     bool hs = B.aspect == 3 && !B.theme.empty() && ReadFile(SquarePath(), sq);
     JoySetLayoutText(B.doc.Str(), hs ? &sq : nullptr);
 }
+// 공통 점검: 네 화면비(스위치 16:9, 안드로이드 16:10·4:3·1:1)에서 그려 보고 화면 밖으로 나간 요소를 찾는다
+static void CompatCheckNow() {
+    B.compat.clear();
+    B.compatDone = true;
+    if (B.theme.empty()) return;
+    std::string main = B.sqEdit ? B.mainText : B.doc.Str(), sq;
+    bool hasSq = B.sqEdit ? (sq = B.doc.Str(), true) : ReadFile(SquarePath(), sq);
+    static const float asp[] = {1280.0f / 720.0f, 1.6f, 4.0f / 3.0f, 1.0f};
+    static const char *nm[] = {"16:9 (스위치·안드로이드)", "16:10 (안드로이드)", "4:3 (안드로이드)", "1:1 (안드로이드)"};
+    SDL_Texture *old = SDL_GetRenderTarget(B.r);
+    for (int i = 0; i < 4; i++) {
+        JoySetAspect(asp[i]);
+        JoySetLayoutText(main, i == 3 && hasSq ? &sq : nullptr);
+        int cw, ch;
+        JoyCanvas(cw, ch);
+        SDL_Texture *t = SDL_CreateTexture(B.r, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, cw, ch);
+        if (!t) continue;
+        std::set<std::string> bad;
+        for (int games = 0; games < 2; games++) {
+            SDL_SetRenderTarget(B.r, t);
+            JoyRender(games != 0);
+            for (const auto &kv : JoyBounds()) {
+                const SDL_Rect &r = kv.second;
+                if (r.w <= 0 || r.h <= 0) continue;
+                // 목록(캐러셀 양옆 칸 등)은 화면 밖까지 이어지는 것이 정상
+                if (kv.first.size() >= 5 && kv.first.compare(kv.first.size() - 5, 5, ".list") == 0) continue;
+                int over = 0;  // 4 점 넘게 밖으로 나가면 (글자 그림자·테두리 정도는 봐 줌)
+                over = std::max({over, -r.x, -r.y, r.x + r.w - cw, r.y + r.h - ch});
+                if (over > 4) bad.insert(kv.first);
+            }
+        }
+        SDL_SetRenderTarget(B.r, old);
+        SDL_DestroyTexture(t);
+        for (const auto &b : bad) B.compat.push_back(std::string(nm[i]) + ": " + b + " 가 화면 밖으로 나감");
+    }
+    if (!hasSq) B.compat.push_back("안내: layout_1x1.txt 없음 → 안드로이드 정사각 화면은 내장 1:1 구성으로 보임 (화면비 1:1 에서 \"1:1 구성 만들기\")");
+    bool hb = false, af = false;
+    for (const char *k : {"icons", "backgrounds", "logos"})
+        for (const auto &f : ListDir(ThemeDir() + "/" + k, false)) {
+            if (Lower(Stem(f)) == "hbfav") hb = true;
+            if (Lower(Stem(f)) == "appfav") af = true;
+        }
+    if (hb && !af) B.compat.push_back("안내: appfav 그림 없음 → 안드로이드 앱 즐겨찾기는 hbfav 그림을 그대로 씀");
+    // 원래 화면비로 되돌림
+    JoySetAspect(asp[B.aspect]);
+    gApplyPending = true;
+}
 static void FlushApply() {
+    if (B.compatReq) {
+        B.compatReq = false;
+        CompatCheckNow();
+    }
     if (gReloadPending) {
         JoyLoadTheme(B.theme);
         gReloadPending = false;
@@ -1103,7 +1160,7 @@ static std::string CurrentSystemId() {
 }
 // ---------------------------------------------------------------- 화면비 미리보기 (안드로이드판)
 static const float kAspects[] = {1280.0f / 720.0f, 1.6f, 4.0f / 3.0f, 1.0f};
-static const char *kAspectNames[] = {"16:9 (스위치·기본)", "16:10 (안드로이드)", "4:3 (안드로이드)", "1:1 (안드로이드)"};
+static const char *kAspectNames[] = {"16:9 (공통)", "16:10 (안드로이드)", "4:3 (안드로이드)", "1:1 (안드로이드)"};
 static void EnterSquareEdit() {
     std::string sq;
     if (B.sqEdit || B.theme.empty() || !ReadFile(SquarePath(), sq)) return;
@@ -1158,12 +1215,31 @@ static void CreateSquare() {
     Status("1:1 구성 만듦: layout_1x1.txt (요소는 내장 1:1 구성에서 시작)");
 }
 
+static const char *kPlatformNames[] = {"스위치", "안드로이드", "안드로이드 Xbox 패드"};
+static void SetPlatform(int p) {
+    B.platform = p;
+    JoySetPlatform(p >= 1, p == 2);
+    // 스위치는 16:9 화면뿐: 다른 화면비를 보던 중이면 16:9 로
+    if (p == 0 && B.aspect != 0) SetAspect(0);
+    Apply();
+}
 static void Canvas() {
     // 위 도구 줄
+    ImGui::SetNextItemWidth(200);
+    if (ImGui::BeginCombo("미리보기", kPlatformNames[B.platform])) {
+        for (int i = 0; i < 3; i++)
+            if (ImGui::Selectable(kPlatformNames[i], i == B.platform) && i != B.platform) SetPlatform(i);
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("보이는 글·버튼 이름만 바뀝니다. 만든 테마는 스위치·안드로이드 공통입니다.");
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(150);
     if (ImGui::BeginCombo("화면비", kAspectNames[B.aspect])) {
         for (int i = 0; i < 4; i++)
-            if (ImGui::Selectable(kAspectNames[i], i == B.aspect) && i != B.aspect) SetAspect(i);
+            if (ImGui::Selectable(kAspectNames[i], i == B.aspect) && i != B.aspect) {
+                SetAspect(i);
+                if (i != 0 && B.platform == 0) SetPlatform(1);  // 16:10·4:3·1:1 은 안드로이드 화면
+            }
         ImGui::EndCombo();
     }
     bool editable = B.aspect == 0 || B.sqEdit;  // 16:10·4:3 은 layout.txt 를 폭에 맞춘 결과 (끌기 편집은 16:9 에서)
@@ -2062,6 +2138,48 @@ static void ThemePanel() {
     }
     msRow("transition_ms", "화면 전환 시간", 220);
     ImGui::TextDisabled("스위치 옵션의 \"화면 효과\" 를 끄면 모두 바로 바뀜. 미리보기에서 ◀▶·A·B 로 확인");
+    ImGui::SeparatorText("공통 점검 (스위치·안드로이드)");
+    ImGui::TextDisabled("빌더로 만든 테마는 두 판에서 그대로 씁니다. 네 화면비에서 화면 밖 요소·빠진 파일을 찾습니다.");
+    if (ImGui::Button("공통 점검")) B.compatReq = true;
+    if (B.compatDone) {
+        ImGui::SameLine();
+        if (B.compat.empty()) ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "문제 없음");
+        else ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "%d 건", (int)B.compat.size());
+        for (const auto &m : B.compat) ImGui::BulletText("%s", m.c_str());
+    }
+    ImGui::SeparatorText("테마 BGM (bgm 폴더, 두 판 공통)");
+    {
+        std::string bd = ThemeDir() + "/bgm";
+        std::vector<std::string> songs;
+        for (const auto &f : ListDir(bd, false)) {
+            std::string e = Ext(f);
+            if (e == "mp3" || e == "ogg") songs.push_back(f);
+        }
+        ImGui::TextDisabled("mp3·ogg. 런처 옵션의 소리를 \"테마 BGM\" 으로 하면 재생 (곡은 테마와 함께 보내짐)");
+        if (ImGui::Button("곡 넣기")) {
+            Browse("mp3 ogg", [bd](const std::string &src) {
+                std::error_code ec;
+                fs::create_directories(P(bd), ec);
+                fs::copy_file(P(src), P(bd) / P(src).filename(), fs::copy_options::overwrite_existing, ec);
+                Status(ec ? "곡 넣기 실패: " + ec.message() : "곡 넣음: " + U8(P(src).filename()));
+            });
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%d 곡", (int)songs.size());
+        std::string del;
+        for (const auto &f : songs) {
+            ImGui::PushID(f.c_str());
+            if (ImGui::SmallButton("빼기")) del = f;
+            ImGui::SameLine();
+            ImGui::TextUnformatted(f.c_str());
+            ImGui::PopID();
+        }
+        if (!del.empty()) {
+            std::error_code ec;
+            fs::remove(P(bd + "/" + del), ec);
+            Status("곡 뺌: " + del);
+        }
+    }
     ImGui::SeparatorText("최소 버전");
     std::string req = B.doc.Get("theme", "requires");
     ImGui::SetNextItemWidth(160);
@@ -2852,7 +2970,8 @@ int main(int argc, char **argv) {
     fs::current_path(P(ExeDir(argv[0])), ec);
     std::string shot;
     std::string openName, selArg, newArg, ftpHost, ftpDel;
-    int aspectArg = 0;
+    int aspectArg = 0, platformArg = 0;
+    bool compatArg = false;
     int ftpPort = 0, wizArg = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -2860,6 +2979,8 @@ int main(int argc, char **argv) {
         else if (a == "--theme" && i + 1 < argc) openName = argv[++i];
         else if (a == "--select" && i + 1 < argc) selArg = argv[++i];
         else if (a == "--games") B.games = true;
+        else if (a == "--platform" && i + 1 < argc) platformArg = atoi(argv[++i]);  // 시험: 미리보기 0 스위치 · 1 안드로이드 · 2 안드로이드 Xbox 패드
+        else if (a == "--compat") compatArg = true;  // 시험: 공통 점검 결과를 출력
         else if (a == "--aspect" && i + 1 < argc) aspectArg = atoi(argv[++i]);  // 시험: 화면비 미리보기 0 16:9 · 1 16:10 · 2 4:3 · 3 1:1
         else if (a == "--tab" && i + 1 < argc) B.assetKind = argv[++i];
         else if (a == "--panel" && i + 1 < argc) B.tabReq = argv[++i];
@@ -2902,7 +3023,12 @@ int main(int argc, char **argv) {
     LoadCats();
     LoadFtpSettings();
     if (!openName.empty() && IsDir(B.home + "/themes/" + openName)) OpenTheme(openName);
+    if (platformArg > 0 && platformArg < 3) SetPlatform(platformArg);
     if (aspectArg > 0 && aspectArg < 4) SetAspect(aspectArg);
+    if (compatArg) {
+        B.winTheme = true;
+        B.compatReq = true;
+    }
     else {
         auto ts = ListDir(B.home + "/themes", true);
         if (!ts.empty()) OpenTheme(ts[0]);
@@ -3066,6 +3192,11 @@ int main(int argc, char **argv) {
         SDL_SetRenderDrawColor(B.r, 24, 24, 28, 255);
         SDL_RenderClear(B.r);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), B.r);
+        if (compatArg && B.compatDone) {
+            printf("compat %d\n", (int)B.compat.size());
+            for (const auto &m : B.compat) printf("  %s\n", m.c_str());
+            compatArg = false;
+        }
         if (!shot.empty() && ++frames >= 3) {
             int w, h;
             SDL_GetRendererOutputSize(B.r, &w, &h);

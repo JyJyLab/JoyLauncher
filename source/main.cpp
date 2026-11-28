@@ -109,6 +109,9 @@ static bool gBgmShuffle = false;
 static bool gEffects = true;      // 설정: 화면 효과 (effects=on/off)
 static std::string gPspEmu = "auto";   // 설정: PSP 에뮬 (psp_emu=auto/ppsspp/ppsspp-nx)
 static std::string g3dsEmu = "auto";   // 설정: 3DS 에뮬 (n3ds_emu=auto/dekopon/raikopon)
+// 테마 빌더의 안드로이드판 미리보기 (스위치 실기에서는 항상 false): X = BGM, 앱 즐겨찾기, [+][-] → START·SELECT
+static bool gPreviewAndroid = false;
+static bool gPadStartSelect = false;
 static bool gXButton = true;      // 설정: X 버튼으로 홈브루 메뉴 열기 (x_button=on/off). 끄면 X 는 아무것도 안 하고 도움말에서 빠짐
 static bool gAnimAllowed = true;  // 데스크톱 스냅샷에서는 끔
 static bool AnimOn() { return gEffects && gAnimAllowed; }
@@ -833,6 +836,11 @@ static std::string ThemeFind(const std::map<std::string, std::string> &m, const 
         }
         return "";
     }
+    // 안드로이드판 미리보기: 앱 즐겨찾기는 appfav 그림이 있으면 그것 (없으면 hbfav 그림을 그대로 씀 — 안드로이드판과 같은 규칙)
+    if (gPreviewAndroid && c->virt && c->shortName == "hbfav") {
+        std::string af = first({alias("appfav"), direct("appfav"), alias("홈브루 즐겨찾기")});
+        if (!af.empty()) return af;
+    }
     // 1) theme.txt 에 카테고리 이름(또는 shortname)으로 지정한 그림 (직접 지정이 항상 우선)
     std::string r = first({alias(c->name), c->shortName.empty() ? "" : alias(c->shortName)});
     if (!r.empty()) return r;
@@ -853,7 +861,16 @@ static std::string ThemeFind(const std::map<std::string, std::string> &m, const 
     auto esde = [&](const std::string &k) -> std::string {
         if (k.empty()) return "";
         std::string id = EsdeSystemName(LowerAscii(k));
-        return id.empty() ? "" : first({alias(id), direct(id)});
+        // 기종 표의 폴더: 롬 폴더 이름이 "PS2 한글"·"Nintendo 3DS" 같은 꼴이어도 그 기종 그림 (안드로이드판과 같게)
+        if (id.empty()) id = ThemeSystemId(k);
+        if (id.empty()) return "";
+        std::string r2 = first({alias(id), direct(id)});
+        // megadrivejp → megadrive 처럼 지역판 기종은 본래 기종의 그림으로
+        if (r2.empty()) {
+            std::string base = EsdeArtFallback(id);
+            if (!base.empty()) r2 = first({alias(base), direct(base)});
+        }
+        return r2;
     };
     // 4) 여러 폴더를 합친 카테고리: 그림이 있는 첫 폴더 (예: psx+psp+ps2 를 합친 "Play Station"), 폴더 이름의 기종 이름까지
     for (const auto &f : c->folders) {
@@ -1344,10 +1361,34 @@ static void TrackBox(const SDL_Rect &r) {
 static TTF_Font *FontRaw(bool bold, int size, bool theme);
 static bool ButtonIconsOn();
 static bool IsButtonLabel(const std::string &b) {
-    static const char *k[] = {"A", "B", "X", "Y", "L", "R", "ZL", "ZR", "+", "-", "−"};
+    static const char *k[] = {"A", "B", "X", "Y", "L", "R", "ZL", "ZR", "+", "-", "−", "START", "SELECT"};
     for (const char *x : k)
         if (b == x) return true;
     return false;
+}
+// 도움말의 버튼 이름을 지금 상황에 맞게: 닌텐도 계열이 아닌 컨트롤러면 [+] [-] → [START] [SELECT],
+// A·B 바꾸기를 켰으면 [A] ↔ [B]. 테마가 적은 도움말(스위치판과 같은 글)에도 그대로 적용된다
+static std::string PadHint(const std::string &s) {
+    if (!gPadStartSelect || s.find('[') == std::string::npos) return s;
+    std::string out;
+    for (size_t i = 0; i < s.size();) {
+        size_t e = s[i] == '[' ? s.find(']', i) : std::string::npos;
+        if (e == std::string::npos || e - i > 8) { out += s[i++]; continue; }
+        std::stringstream in(s.substr(i + 1, e - i - 1));
+        std::string rep, part;
+        bool ok = true, first = true;
+        while (std::getline(in, part, '/')) {
+            if (!IsButtonLabel(part)) { ok = false; break; }
+            if (gPadStartSelect && part == "+") part = "START";
+            else if (gPadStartSelect && (part == "-" || part == "−")) part = "SELECT";
+            rep += (first ? "" : "/") + part;
+            first = false;
+        }
+        if (!ok || first) { out += s[i++]; continue; }
+        out += "[" + rep + "]";
+        i = e + 1;
+    }
+    return out;
 }
 // 글자를 [버튼] 과 나머지로 나눔. 버튼이 하나도 없으면 false
 struct HintPart { std::string text; bool button; };
@@ -1358,7 +1399,7 @@ static bool SplitButtons(const std::string &s, std::vector<HintPart> &out) {
     std::string cur;
     while (i < s.size()) {
         size_t e = s[i] == '[' ? s.find(']', i) : std::string::npos;
-        if (e != std::string::npos && e - i <= 6) {
+        if (e != std::string::npos && e - i <= 8) {
             std::string in = s.substr(i + 1, e - i - 1);
             std::vector<std::string> keys;
             size_t sl = in.find('/');
@@ -1388,7 +1429,14 @@ static SDL_Texture *ButtonTexture(App &a, const std::string &label, int h, SDL_C
     auto it = a.text.map.find(k);
     if (it != a.text.map.end()) return it->second;
     bool round = label == "A" || label == "B" || label == "X" || label == "Y" || label == "+" || label == "−";
+    bool word = label == "START" || label == "SELECT";  // 글자가 긴 버튼: 글자 폭에 맞춘 둥근 막대 (안드로이드 미리보기)
     int w = round ? h : (int)(h * (label.size() > 1 ? 1.8f : 1.5f));
+    int fs = std::max(8, (int)(h * (round ? 0.78f : word ? 0.56f : 0.7f)));
+    if (word)
+        if (TTF_Font *wf = FontRaw(true, fs, false)) {
+            int tw = 0;
+            if (TTF_SizeUTF8(wf, label.c_str(), &tw, nullptr) == 0) w = tw + (int)(h * 0.72f);
+        }
     SDL_Surface *sf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_RGBA32);
     if (!sf) return nullptr;
     // 모양: 동그라미 / 둥근 막대 (가장자리 부드럽게, 4x4 표본)
@@ -1422,7 +1470,6 @@ static SDL_Texture *ButtonTexture(App &a, const std::string &label, int h, SDL_C
         if (label == "+") cut((w - th) / 2, (h - len) / 2, th, len);
     }
     // 글자 자리는 비움 (내장 굵은 글꼴)
-    int fs = std::max(8, (int)(h * (round ? 0.78f : 0.7f)));
     if (label != "+" && label != "−")
     if (TTF_Font *lf = FontRaw(true, fs, false)) {
         SDL_Surface *ls = TTF_RenderUTF8_Blended(lf, label.c_str(), SDL_Color{255, 255, 255, 255});
@@ -1661,7 +1708,10 @@ static std::string StripX(const std::string &s) {
     return out;
 }
 // 도움말의 "[X] <이름>": 안드로이드판용 테마의 "[X] BGM" 등은 이 판의 X 기능(홈브루)으로. X 버튼을 껐으면 빼기
-static std::string FixX(const std::string &s) { return gXButton ? FixXLabel(s, T("홈브루"), false) : StripX(s); }
+static std::string FixX(const std::string &s) {
+    if (gPreviewAndroid) return PadHint(FixXLabel(s, "BGM", true));  // 안드로이드판: X = BGM (같은 테마 글)
+    return gXButton ? FixXLabel(s, T("홈브루"), false) : StripX(s);
+}
 
 static SDL_Rect DrawImage(App &a, SDL_Texture *t, int x, int y, int w, int h) {
     int bw, bh;
@@ -3067,6 +3117,7 @@ static void RebuildHbFavorites(App &a, bool keepPos) {
                  a.cols.end());
     if (!gHbFav.empty()) {
         Collection hb = BuildHomebrewFavorites(gHbFav, gHome + "/cache");
+        if (gPreviewAndroid) hb.name = "앱 즐겨찾기";  // 빌더의 안드로이드판 미리보기 (같은 hbfav 자리)
         if (!hb.games.empty()) {
             int pos = !a.cols.empty() && a.cols[0].virt && a.cols[0].shortName == "favorites" ? 1 : 0;
             a.cols.insert(a.cols.begin() + pos, hb);
