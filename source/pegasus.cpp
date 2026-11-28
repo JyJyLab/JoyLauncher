@@ -475,10 +475,32 @@ std::vector<Entry> ReadEntries(const std::string &path) {
     return out;
 }
 
+// 목록 파일이 있는 폴더에서 목록 밖 롬도 등록 (ES-DE·Pegasus 와 같은 동작, 스위치 BACKLOG #51)
+struct AutoOpt {
+    std::string col;                       // 넣을 카테고리 (비면 폴더 이름, 자동 인식 카테고리)
+    const std::set<std::string> *exts = nullptr;    // 이 확장자만 (Pegasus extensions:)
+    const std::set<std::string> *noExts = nullptr;  // 이 확장자 제외 (Pegasus ignore-extensions:)
+    const std::string *launch = nullptr;   // 메타데이터의 실행 설정 (Pegasus launch:)
+    std::string sort;                      // 카테고리 정렬 이름 (col 을 쓸 때)
+};
+void ScanAuto(const std::string &dir, Library &lib, const AutoOpt &opt = AutoOpt());
+
 void ParsePegasus(const std::string &dir, Library &lib) {
     std::vector<Entry> entries = ReadEntries(dir + "/metadata.pegasus.txt");
     std::string colName, colLaunch, colSort;
     std::set<std::string> ignored;
+    // 컬렉션마다 extensions: 가 있으면 목록 밖 파일도 같은 컬렉션에 넣는다 (Pegasus 와 같게)
+    struct ColScan { std::string name, launch, sort; std::set<std::string> exts, noExts; };
+    std::vector<ColScan> colScans;
+    auto extList = [](const std::string &v, std::set<std::string> &out) {
+        std::string cur;
+        for (char ch : v + ",") {
+            if (ch == ',' || ch == ' ' || ch == '\t') {
+                if (!cur.empty()) { if (cur[0] == '.') cur.erase(0, 1); if (!cur.empty()) out.insert(Lower(cur)); }
+                cur.clear();
+            } else cur += ch;
+        }
+    };
     Game cur;
     // 이미지 asset 우선순위: boxFront > box > cartridge > titlescreen > screenshot > logo/wheel > marquee
     static const char *kAssetKeys[] = {"assets.boxfront", "assets.box_front", "assets.box", "assets.boxfull", "assets.box_full",
@@ -526,6 +548,8 @@ void ParsePegasus(const std::string &dir, Library &lib) {
     for (const Entry &e : entries) {
         if (e.key == "collection") {
             flush();
+            colScans.push_back(ColScan());
+            colScans.back().name = e.value;
             colName = e.value;
             colLaunch.clear();
             colSort.clear();
@@ -544,6 +568,9 @@ void ParsePegasus(const std::string &dir, Library &lib) {
         if (!inGame) {
             if (e.key == "launch" || e.key == "command") colLaunch = e.value;
             else if (e.key == "sort-by" || e.key == "sort_by") colSort = e.value;
+            else if ((e.key == "extension" || e.key == "extensions") && !colScans.empty()) extList(e.value, colScans.back().exts);
+            else if ((e.key == "ignore-extension" || e.key == "ignore-extensions") && !colScans.empty())
+                extList(e.value, colScans.back().noExts);
             else if ((e.key == "shortname" || e.key == "short_name") && !colName.empty() && !e.value.empty() &&
                      !lib.shortNames.count(colName))
                 lib.shortNames[colName] = e.value;
@@ -573,6 +600,27 @@ void ParsePegasus(const std::string &dir, Library &lib) {
     char buf[512];
     snprintf(buf, sizeof(buf), "[pegasus] %s: %d (missing %d, unsupported %d)\n", dir.c_str(), added, missing, unsupported);
     lib.log += buf;
+    {
+        size_t ci = (size_t)-1;
+        bool inG = false;
+        for (const Entry &e : entries) {
+            if (e.key == "collection") { ci++; inG = false; continue; }
+            if (e.key == "game") { inG = true; continue; }
+            if (inG || ci >= colScans.size()) continue;
+            if (e.key == "launch" || e.key == "command") colScans[ci].launch = e.value;
+            else if (e.key == "sort-by" || e.key == "sort_by") colScans[ci].sort = e.value;
+        }
+    }
+    for (const ColScan &c : colScans) {
+        if (c.exts.empty()) continue;  // files: 만 있는 컬렉션은 목록 전용 (Pegasus 와 같음)
+        AutoOpt o;
+        o.col = c.name.empty() ? Base(dir) : c.name;
+        o.exts = &c.exts;
+        o.noExts = &c.noExts;
+        o.launch = &c.launch;
+        o.sort = c.sort;
+        ScanAuto(dir, lib, o);
+    }
 }
 
 // ---------------------------------------------------------------- 2) gamelist.xml
@@ -620,7 +668,11 @@ void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlP
         if (end == std::string::npos) break;
         std::string blk = xml.substr(pos, end - pos);
         pos = end + 7;
-        if (XmlTag(blk, "hidden") == "true") continue;
+        if (XmlTag(blk, "hidden") == "true") {
+            std::string hp = XmlTag(blk, "path");
+            if (!hp.empty()) lib.seen.insert(PathKey(Join(dir, hp)));  // 목록 밖 자동 등록에서도 숨김
+            continue;
+        }
         Game g;
         std::string rel = XmlTag(blk, "path");
         if (rel.empty()) continue;
@@ -651,6 +703,10 @@ void ParseGamelist(const std::string &dir, Library &lib, const std::string &xmlP
     snprintf(buf, sizeof(buf), "[%s] %s: %d (missing %d, unsupported %d)\n", esde ? "esde" : "gamelist", dir.c_str(), added,
              missing, unsupported);
     lib.log += buf;
+    // 목록에 없는 롬도 같은 카테고리로 (ES-DE 는 폴더를 먼저 다 찾고 gamelist 는 정보만 덧씌움)
+    AutoOpt o;
+    o.col = col;
+    ScanAuto(dir, lib, o);
 }
 
 // ---------------------------------------------------------------- 3) 목록 없는 롬 폴더
@@ -672,7 +728,7 @@ bool IsRomFile(const std::string &file, const EmuSystem *sys, bool any) {
     return EmuSystemForExt(e) != nullptr;
 }
 
-void ScanAuto(const std::string &dir, Library &lib) {
+void ScanAuto(const std::string &dir, Library &lib, const AutoOpt &opt) {
     const EmuSystem *sys = SystemForDir(dir);
     bool user = !sys && EmuUserHas(Base(dir));
     std::vector<std::string> files = ListDir(dir, false);
@@ -702,23 +758,28 @@ void ScanAuto(const std::string &dir, Library &lib) {
         }
     int added = 0;
     for (const auto &f : files) {
-        if (hide.count(Lower(f)) || !IsRomFile(f, sys, user)) continue;
+        if (hide.count(Lower(f))) continue;
+        if (opt.exts) {
+            if (!opt.exts->count(Lower(Ext(f))) || (opt.noExts && opt.noExts->count(Lower(Ext(f))))) continue;
+        } else if (!IsRomFile(f, sys, user)) continue;
+        if (lib.seen.count(PathKey(dir + "/" + f))) continue;  // 목록에 이미 있음·ignore-files·hidden
         if (Ext(f) == "zip" && IsBiosName(Stem(f))) continue;
         Game g;
         g.file = dir + "/" + f;
         g.title = Stem(f);
-        if (!ResolveLaunch(dir, "", g, "")) continue;
-        g.how = "메타데이터 없음, " + g.how;
+        if (!ResolveLaunch(dir, opt.launch ? *opt.launch : "", g, "")) continue;
+        g.how = (opt.col.empty() ? "메타데이터 없음, " : "목록에 없는 파일, ") + g.how;
         g.boxart = FindBoxart(dir, f);
         g.screenshot = FindScreenshot(dir, f);
         g.video = FindVideo(dir, f);
         AddEsdeMedia(dir, f, g);
-        std::string col = Base(dir);
-        if (lib.Add(col, "~" + col, g)) added++;  // 자동 인식 카테고리는 뒤쪽으로
+        std::string col = opt.col.empty() ? Base(dir) : opt.col;
+        std::string sortBy = opt.col.empty() ? "~" + col : opt.sort;  // 자동 인식 카테고리는 뒤쪽으로
+        if (lib.Add(col, sortBy, g)) added++;
     }
     if (added) {
         char buf[512];
-        snprintf(buf, sizeof(buf), "[auto] %s: %d\n", dir.c_str(), added);
+        snprintf(buf, sizeof(buf), "[auto%s] %s: %d\n", opt.col.empty() ? "" : "+list", dir.c_str(), added);
         lib.log += buf;
     }
 }
@@ -808,6 +869,13 @@ void SigDir(const std::string &dir, int depth, std::string &sig, bool parentHasM
         bool user = !sys && EmuUserHas(Base(dir));
         for (const auto &f : ListDir(dir, false))
             if (IsRomFile(f, sys, user)) sig += "F" + f + "\n";
+    } else if (meta && !parentHasMeta) {  // 목록 폴더도 목록 밖 롬을 넣으므로 항목 수로 확인
+        if (DIR *d = opendir(dir.c_str())) {
+            long n = 0;
+            while (readdir(d)) n++;
+            closedir(d);
+            sig += "n" + std::to_string(n) + "\n";
+        }
     }
     if (depth <= 0) return;
     for (const auto &s : ListDir(dir, true)) SigDir(dir + "/" + s, depth - 1, sig, meta || parentHasMeta);

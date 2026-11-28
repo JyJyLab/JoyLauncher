@@ -19,6 +19,9 @@ dim=40
 대전-아케이드=arcade_fighting
 슈팅-아케이드=arcade_shooting
 Play Station=PS1
+PlayStation 2=PS2
+Sony PlayStation 2=PS2
+Nintendo 3DS=3DS
 
 [런처가 폴더로 추정한 기종 이름]
 아케이드 (FBNeo)=ARCADE
@@ -85,3 +88,6 @@ cps1=ARCADE
 cps2=ARCADE
 cps3=ARCADE
 dos=DOS
+playstation2=PS2
+n3ds=3DS
+nintendo3ds=3DS
